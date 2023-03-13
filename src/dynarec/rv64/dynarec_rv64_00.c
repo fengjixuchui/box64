@@ -52,6 +52,15 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
     MAYUSE(cacheupd);
 
     switch(opcode) {
+        case 0x29:
+            INST_NAME("SUB Ed, Gd");
+            SETFLAGS(X_ALL, SF_SET_PENDING);
+            nextop = F8;
+            GETGD;
+            GETED(0);
+            emit_sub32(dyn, ninst, rex, ed, gd, x3, x4, x5);
+            WBACK;
+            break;
 
         case 0x50:
         case 0x51:
@@ -65,6 +74,23 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             gd = xRAX+(opcode&0x07)+(rex.b<<3);
             SD(gd, xRSP, -8);
             SUBI(xRSP, xRSP, 8);
+            break;
+
+        case 0x81:
+        case 0x83:
+            nextop = F8;
+            switch((nextop>>3)&7) {
+                case 5:
+                    if(opcode==0x81) {INST_NAME("SUB Ed, Id");} else {INST_NAME("SUB Ed, Ib");}
+                    SETFLAGS(X_ALL, SF_SET_PENDING);
+                    GETED((opcode==0x81)?4:1);
+                    if(opcode==0x81) i64 = F32S; else i64 = F8S;
+                    emit_sub32c(dyn, ninst, rex, ed, i64, x2, x3, x4, x5);
+                    WBACK;
+                    break;
+                default:
+                    DEFAULT;
+            }
             break;
 
         case 0x89:
