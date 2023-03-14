@@ -73,6 +73,7 @@ f28–31  ft8–11  FP temporaries                  Caller
 #define x3      13
 #define x4      14
 #define x5      15
+#define x6      8
 // used to clear the upper 32bits
 #define xMASK   7
 // 32bits version of scratch
@@ -154,7 +155,7 @@ f28–31  ft8–11  FP temporaries                  Caller
 // rd = rs1 - rs2
 #define SUB(rd, rs1, rs2)           EMIT(R_type(0b0100000, rs2, rs1, 0b000, rd, 0b0110011))
 // rd = rs1 - rs2
-#define SUBxw(rd, rs1, rs2)          EMIT(R_type(0b0100000, rs2, rs1, 0b000, rd, rex.w?0b0110011:0b0111011))
+#define SUBxw(rd, rs1, rs2)         EMIT(R_type(0b0100000, rs2, rs1, 0b000, rd, rex.w?0b0110011:0b0111011))
 // rd = rs1<<rs2
 #define SLL(rd, rs1, rs2)           EMIT(R_type(0b0000000, rs2, rs1, 0b001, rd, 0b0110011))
 // rd = (rs1<rs2)?1:0
@@ -163,6 +164,8 @@ f28–31  ft8–11  FP temporaries                  Caller
 #define SLTU(rd, rs1, rs2)          EMIT(R_type(0b0000000, rs2, rs1, 0b011, rd, 0b0110011))
 // rd = rs1 ^ rs2
 #define XOR(rd, rs1, rs2)           EMIT(R_type(0b0000000, rs2, rs1, 0b100, rd, 0b0110011))
+// rd = rs1 ^ rs2
+#define XORxw(rd, rs1, rs2)         do{ XOR(rd, rs1, rs2); if (!rex.w) ZEROUP(rd); }while(0)
 // rd = rs1>>rs2 logical
 #define SRL(rd, rs1, rs2)           EMIT(R_type(0b0000000, rs2, rs1, 0b101, rd, 0b0110011))
 // rd = rs1>>rs2 aritmetic
@@ -221,6 +224,8 @@ f28–31  ft8–11  FP temporaries                  Caller
 
 // rd = [rs1 + imm12]
 #define LD(rd, rs1, imm12)          EMIT(I_type(imm12, rs1, 0b011, rd, 0b0000011))
+// rd = [rs1 + imm12]
+#define LDxw(rd, rs1, imm12)        EMIT(I_type(imm12, rs1, 0b011<<(1-rex.w), rd, 0b0000011))
 // [rs1 + imm12] = rs2
 #define SD(rs2, rs1, imm12)         EMIT(S_type(imm12, rs2, rs1, 0b011, 0b0100011))
 // [rs1 + imm12] = rs2
@@ -232,6 +237,11 @@ f28–31  ft8–11  FP temporaries                  Caller
 #define SRLI(rd, rs1, imm6)         EMIT(I_type(imm6, rs1, 0b101, rd, 0b0010011))
 // Shift Right Aritmetic Immediate
 #define SRAI(rd, rs1, imm6)         EMIT(I_type((imm6)|(0b010000<<6), rs1, 0b101, rd, 0b0010011))
+
+// rd = rs1 + imm12
+#define ADDIW(rd, rs1, imm12)       EMIT(I_type((imm12)&0b111111111111, rs1, 0b000, rd, 0b0011011))
+
+#define SEXT_W(rd, rs1)             ADDIW(rd, rs1, 0)
 
 // rd = rs1<<rs2
 #define SLLW(rd, rs1, rs2)           EMIT(R_type(0b0000000, rs2, rs1, 0b001, rd, 0b0111011))

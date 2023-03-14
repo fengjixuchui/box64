@@ -62,6 +62,16 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             WBACK;
             break;
 
+        case 0x31:
+            INST_NAME("XOR Ed, Gd");
+            SETFLAGS(X_ALL, SF_SET_PENDING);
+            nextop = F8;
+            GETGD;
+            GETED(0);
+            emit_xor32(dyn, ninst, rex, ed, gd, x3, x4);
+            WBACK;
+            break;
+
         case 0x50:
         case 0x51:
         case 0x52:
@@ -76,6 +86,22 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             SUBI(xRSP, xRSP, 8);
             break;
 
+        case 0x58:
+        case 0x59:
+        case 0x5A:
+        case 0x5B:
+        case 0x5C:
+        case 0x5D:
+        case 0x5E:
+        case 0x5F:
+            INST_NAME("POP reg");
+            gd = xRAX+(opcode&0x07)+(rex.b<<3);
+            LD(gd, xRSP, 0);
+            if(gd!=xRSP) {
+                ADDI(xRSP, xRSP, 8);
+            }
+            break;
+
         case 0x81:
         case 0x83:
             nextop = F8;
@@ -85,7 +111,7 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                     SETFLAGS(X_ALL, SF_SET_PENDING);
                     GETED((opcode==0x81)?4:1);
                     if(opcode==0x81) i64 = F32S; else i64 = F8S;
-                    emit_sub32c(dyn, ninst, rex, ed, i64, x2, x3, x4, x5);
+                    emit_sub32c(dyn, ninst, rex, ed, i64, x3, x4, x5, x6);
                     WBACK;
                     break;
                 default:
@@ -106,6 +132,19 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             }
             break;
 
+        case 0x8B:
+            INST_NAME("MOV Gd, Ed");
+            nextop=F8;
+            GETGD;
+            if(MODREG) {
+                MVxw(gd, xRAX+(nextop&7)+(rex.b<<3));
+            } else {
+                addr = geted(dyn, addr, ninst, nextop, &ed, x2, x1, &fixedaddress, rex, &lock, 1, 0);
+                SMREADLOCK(lock);
+                LDxw(gd, ed, fixedaddress);
+            }
+            break;
+
         case 0x8D:
             INST_NAME("LEA Gd, Ed");
             nextop=F8;
@@ -120,22 +159,6 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                 else if(!rex.w) {
                     ZEROUP(gd);   //truncate the higher 32bits as asked
                 }
-            }
-            break;
-
-        case 0x58:
-        case 0x59:
-        case 0x5A:
-        case 0x5B:
-        case 0x5C:
-        case 0x5D:
-        case 0x5E:
-        case 0x5F:
-            INST_NAME("POP reg");
-            gd = xRAX+(opcode&0x07)+(rex.b<<3);
-            LD(gd, xRSP, 0);
-            if(gd!=xRSP) {
-                ADDI(xRSP, xRSP, 8);
             }
             break;
 
