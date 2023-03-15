@@ -71,7 +71,14 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             emit_xor32(dyn, ninst, rex, ed, gd, x3, x4);
             WBACK;
             break;
-
+        case 0x39:
+            INST_NAME("CMP Ed, Gd");
+            SETFLAGS(X_ALL, SF_SET_PENDING);
+            nextop = F8;
+            GETGD;
+            GETED(0);
+            emit_cmp32(dyn, ninst, rex, ed, gd, x3, x4, x5, x6);
+            break;
         case 0x50:
         case 0x51:
         case 0x52:
@@ -106,6 +113,14 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
         case 0x83:
             nextop = F8;
             switch((nextop>>3)&7) {
+                case 0: //ADD
+                    if(opcode==0x81) {INST_NAME("ADD Ed, Id");} else {INST_NAME("ADD Ed, Ib");}
+                    SETFLAGS(X_ALL, SF_SET_PENDING);
+                    GETED((opcode==0x81)?4:1);
+                    if(opcode==0x81) i64 = F32S; else i64 = F8S;
+                    emit_add32c(dyn, ninst, rex, ed, i64, x3, x4, x5, x6);
+                    WBACK;
+                    break;
                 case 5:
                     if(opcode==0x81) {INST_NAME("SUB Ed, Id");} else {INST_NAME("SUB Ed, Ib");}
                     SETFLAGS(X_ALL, SF_SET_PENDING);
@@ -118,7 +133,14 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                     DEFAULT;
             }
             break;
-
+        case 0x85:
+            INST_NAME("TEST Ed, Gd");
+            SETFLAGS(X_ALL, SF_SET_PENDING);
+            nextop=F8;
+            GETGD;
+            GETED(0);
+            emit_test32(dyn, ninst, rex, ed, gd, x3, x4, x5);
+            break;
         case 0x89:
             INST_NAME("MOV Ed, Gd");
             nextop=F8;
@@ -177,7 +199,46 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                     DEFAULT;
             }
             break;
+        case 0xC6:
+            INST_NAME("MOV Eb, Ib");
+            nextop=F8;
+            if(MODREG) {   // reg <= u8
+                u8 = F8;
+                if(!rex.rex) {
+                    ed = (nextop&7);
+                    eb1 = xRAX+(ed&3);  // Ax, Cx, Dx or Bx
+                    eb2 = (ed&4)>>2;    // L or H
+                } else {
+                    eb1 = xRAX+(nextop&7)+(rex.b<<3);
+                    eb2 = 0;
+                }
 
+                if (eb2) {
+                    // load a mask to x3 (ffffffffffff00ff)
+                    LUI(x3, 0xffff0);
+                    ADDI(x3, x3, 0xff);
+                    // apply mask
+                    AND(eb1, eb1, x3);
+                    ADDI(x4, xZR, u8);
+                    SLLI(x4, x4, 8);
+                    OR(eb1, eb1, x4);
+                } else {
+                    SRLI(eb1, eb1, 8);
+                    SLLI(eb1, eb1, 8);
+                    ADDI(eb1, eb1, u8);
+                }
+            } else {                    // mem <= u8
+                addr = geted(dyn, addr, ninst, nextop, &wback, x2, x1, &fixedaddress, rex, &lock, 0, 1);
+                u8 = F8;
+                if(u8) {
+                    ADDI(x3, xZR, u8);
+                    ed = x3;
+                } else
+                    ed = xZR;
+                SB(ed, wback, fixedaddress);
+                SMWRITELOCK(lock);
+            }
+            break;
         default:
             DEFAULT;
     }
