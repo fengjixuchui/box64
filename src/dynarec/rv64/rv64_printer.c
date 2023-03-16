@@ -19,8 +19,8 @@ typedef struct {
 } insn_t;
 
 static const char gpnames[32][9] = {
-    "zero", "ra",   "sp",   "gp",   "tp",   "t0_flags",   "t1_rip",   "t2",
-    "s0",   "s1",   "a0",   "a1",   "a2",   "a3",   "a4",   "a5",
+    "zero", "ra",   "sp",   "gp",   "tp",   "t0_mask",   "t1",   "t2_rip",
+    "s0_flags",   "s1",   "a0",   "a1",   "a2",   "a3",   "a4",   "a5",
     "a6_rax",   "a7_rcx",   "s2_rdx",   "s3_rbx",   "s4_rsp",   "s5_rbp",   "s6_rsi",   "s7_rdi",
     "s8_r8",   "s9_r9",   "s10_r10",  "s11_r11",  "t3_r12",   "t4_r13",   "t5_r14",   "t6_r15",
 };
@@ -758,6 +758,7 @@ const char* rv64_print(uint32_t data, uintptr_t addr)
                     insn.name = "srli";
                 } else if (imm116 == 0x10) { /* SRAI */
                     insn.name = "srai";
+                    insn.imm&=0b111111;
                 }
                 break;
             }
@@ -801,11 +802,12 @@ const char* rv64_print(uint32_t data, uintptr_t addr)
                     break;
                 case 0x20: /* SRAIW */
                     insn.name = "sraiw";
+                    insn.imm&=0b111111;
                     break;
                 }
             }
             }
-            PRINT_rd_rs1_rs2();
+            PRINT_rd_rs1_imm();
         }
         case 0x8: {
             uint32_t funct3 = FUNCT3(data);

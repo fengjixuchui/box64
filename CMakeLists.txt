@@ -305,6 +305,7 @@ set(ELFLOADER_SRC
     "${BOX64_ROOT}/src/libtools/sdl2rwops.c"
     "${BOX64_ROOT}/src/libtools/signals.c"
     "${BOX64_ROOT}/src/libtools/threads.c"
+    "${BOX64_ROOT}/src/tools/bitutils.c"
     "${BOX64_ROOT}/src/tools/box64stack.c"
     "${BOX64_ROOT}/src/tools/bridge.c"
     "${BOX64_ROOT}/src/tools/callback.c"
@@ -625,7 +626,7 @@ if(RV64_DYNAREC)
     #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_6664.c"
     #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_66f0.c"
     #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_f20f.c"
-    #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_f30f.c"
+    "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_f30f.c"
     )
 endif()
 

@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <assert.h>
 
+#include "bitutils.h"
 #include "debug.h"
 #include "box64context.h"
 #include "dynarec.h"
@@ -202,25 +203,31 @@ void jump_to_next(dynarec_rv64_t* dyn, uintptr_t ip, int reg, int ninst)
         TABLE64(x3, tbl);
         SRLI(x2, xRIP, JMPTABL_START3);
         SLLI(x2, x2, 3);
-        LD(x3, x3, x2);
-        LUI(x4, JMPTABLE_MASK2);    // x4 = mask
-        SRLI(x2, xRIP, JMPTABL_START2);
+        ADD(x3, x3, x2);
+        LD(x3, x3, 0);
+        MOV64x(x4, JMPTABLE_MASK2<<3);    // x4 = mask
+        SRLI(x2, xRIP, JMPTABL_START2-3);
         AND(x2, x2, x4);
-        SLLI(x2, x2, 3);
-        LD(x3, x3, x2);
+        ADD(x3, x3, x2);
+        LD(x3, x3, 0);
         if(JMPTABLE_MASK2!=JMPTABLE_MASK1) {
-            LUI(x4, JMPTABLE_MASK1);    // x4 = mask
+            MOV64x(x4, JMPTABLE_MASK1<<3);    // x4 = mask
         }
-        SRLI(x2, xRIP, JMPTABL_START1);
+        SRLI(x2, xRIP, JMPTABL_START1-3);
         AND(x2, x2, x4);
-        SLLI(x2, x2, 3);
-        LD(x3, x3, x2);
-        if(JMPTABLE_MASK1!=JMPTABLE_MASK0) {
-            LUI(x4, JMPTABLE_MASK0);    // x4 = mask
+        ADD(x3, x3, x2);
+        LD(x3, x3, 0);
+        if(JMPTABLE_MASK0<2048) {
+            ANDI(x2, xRIP, JMPTABLE_MASK0);
+        } else {
+            if(JMPTABLE_MASK1!=JMPTABLE_MASK0) {
+                MOV64x(x4, JMPTABLE_MASK0);    // x4 = mask
+            }
+            AND(x2, xRIP, x4);
         }
-        AND(x2, x2, x4);
         SLLI(x2, x2, 3);
-        LD(x2, x3, x2);
+        ADD(x3, x3, x2);
+        LD(x2, x3, 0);
     } else {
         uintptr_t p = getJumpTableAddress64(ip);
         MAYUSE(p);
@@ -237,6 +244,231 @@ void jump_to_next(dynarec_rv64_t* dyn, uintptr_t ip, int reg, int ninst)
     #endif
     SMEND();
     JALR(x2); // save LR...
+}
+
+void ret_to_epilog(dynarec_rv64_t* dyn, int ninst)
+{
+    MAYUSE(dyn); MAYUSE(ninst);
+    MESSAGE(LOG_DUMP, "Ret to epilog\n");
+    POP1(xRIP);
+    MV(x1, xRIP);
+    SMEND();
+    /*if(box64_dynarec_callret) {
+        // pop the actual return address from RV64 stack
+        LDPx_S7_offset(x2, x6, xSP, 0);
+        CBZx(x6, 5*4);
+        ADDx_U12(xSP, xSP, 16);
+        SUBx_REG(x6, x6, xRIP); // is it the right address?
+        CBNZx(x6, 2*4);
+        BLR(x2);
+        // not the correct return address, regular jump
+    }*/
+    uintptr_t tbl = getJumpTable64();
+    MOV64x(x3, tbl);
+    SRLI(x2, xRIP, JMPTABL_START3);
+    SLLI(x2, x2, 3);
+    ADD(x3, x3, x2);
+    LD(x3, x3, 0);
+    MOV64x(x4, JMPTABLE_MASK2<<3);    // x4 = mask
+    SRLI(x2, xRIP, JMPTABL_START2-3);
+    AND(x2, x2, x4);
+    ADD(x3, x3, x2);
+    LD(x3, x3, 0);
+    if(JMPTABLE_MASK2!=JMPTABLE_MASK1) {
+        MOV64x(x4, JMPTABLE_MASK1<<3);    // x4 = mask
+    }
+    SRLI(x2, xRIP, JMPTABL_START1-3);
+    AND(x2, x2, x4);
+    ADD(x3, x3, x2);
+    LD(x3, x3, 0);
+    if(JMPTABLE_MASK0<2048) {
+        ANDI(x2, xRIP, JMPTABLE_MASK0);
+    } else {
+        if(JMPTABLE_MASK1!=JMPTABLE_MASK0) {
+            MOV64x(x4, JMPTABLE_MASK0);    // x4 = mask
+        }
+        AND(x2, xRIP, x4);
+    }
+    SLLI(x2, x2, 3);
+    ADD(x3, x3, x2);
+    LD(x2, x3, 0);
+    JALR(x2); // save LR
+    CLEARIP();
+}
+
+void retn_to_epilog(dynarec_rv64_t* dyn, int ninst, int n)
+{
+    MAYUSE(dyn); MAYUSE(ninst);
+    MESSAGE(LOG_DUMP, "Retn to epilog\n");
+    POP1(xRIP);
+    if(n>0x7ff) {
+        MOV64x(w1, n);
+        ADD(xRSP, xRSP, x1);
+    } else {
+        ADDI(xRSP, xRSP, n);
+    }
+    MV(x1, xRIP);
+    SMEND();
+    /*if(box64_dynarec_callret) {
+        // pop the actual return address from RV64 stack
+        LDPx_S7_offset(x2, x6, xSP, 0);
+        CBZx(x6, 5*4);
+        ADDx_U12(xSP, xSP, 16);
+        SUBx_REG(x6, x6, xRIP); // is it the right address?
+        CBNZx(x6, 2*4);
+        BLR(x2);
+        // not the correct return address, regular jump
+    }*/
+    uintptr_t tbl = getJumpTable64();
+    MOV64x(x3, tbl);
+    SRLI(x2, xRIP, JMPTABL_START3);
+    SLLI(x2, x2, 3);
+    ADD(x3, x3, x2);
+    LD(x3, x3, 0);
+    MOV64x(x4, JMPTABLE_MASK2<<3);    // x4 = mask
+    SRLI(x2, xRIP, JMPTABL_START2-3);
+    AND(x2, x2, x4);
+    ADD(x3, x3, x2);
+    LD(x3, x3, 0);
+    if(JMPTABLE_MASK2!=JMPTABLE_MASK1) {
+        MOV64x(x4, JMPTABLE_MASK1<<3);    // x4 = mask
+    }
+    SRLI(x2, xRIP, JMPTABL_START1-3);
+    AND(x2, x2, x4);
+    ADD(x3, x3, x2);
+    LD(x3, x3, 0);
+    if(JMPTABLE_MASK0<2048) {
+        ANDI(x2, xRIP, JMPTABLE_MASK0);
+    } else {
+        if(JMPTABLE_MASK1!=JMPTABLE_MASK0) {
+            MOV64x(x4, JMPTABLE_MASK0);    // x4 = mask
+        }
+        AND(x2, xRIP, x4);
+    }
+    SLLI(x2, x2, 3);
+    ADD(x3, x3, x2);
+    LD(x2, x3, 0);
+    JALR(x2); // save LR
+    CLEARIP();
+}
+
+void call_c(dynarec_rv64_t* dyn, int ninst, void* fnc, int reg, int ret, int saveflags, int savereg)
+{
+    MAYUSE(fnc);
+    if(savereg==0)
+        savereg = x6;
+    if(saveflags) {
+        FLAGS_ADJUST_TO11(xFlags, reg);
+        SD(xFlags, xEmu, offsetof(x64emu_t, eflags));
+    }
+    fpu_pushcache(dyn, ninst, reg, 0);
+    if(ret!=-2) {
+        ADDI(xSP, xSP, -16);   // RV64 stack needs to be 16byte aligned
+        SD(xEmu, xSP, 0);
+        SD(savereg, xSP, 8);
+        // x5..x8, x10..x17, x28..x31 those needs to be saved by caller
+        STORE_REG(RAX);
+        STORE_REG(RCX);
+        STORE_REG(R12);
+        STORE_REG(R13);
+        STORE_REG(R14);
+        STORE_REG(R15);
+        SD(xRIP, xEmu, offsetof(x64emu_t, ip));
+    }
+    TABLE64(reg, (uintptr_t)fnc);
+    JALR(reg);
+    if(ret>=0) {
+        MV(ret, xEmu);
+    }
+    if(ret!=-2) {
+        LD(xEmu, xSP, 0);
+        LD(savereg, xSP, 8);
+        ADDI(xSP, xSP, 16);
+        #define GO(A)   if(ret!=x##A) {LOAD_REG(A);}
+        GO(RAX);
+        GO(RCX);
+        GO(R12);
+        GO(R13);
+        GO(R14);
+        GO(R15);
+        if(ret!=xRIP)
+            LD(xRIP, xEmu, offsetof(x64emu_t, ip));
+        #undef GO
+    }
+    // regenerate mask
+    XORI(xMASK, xZR, -1);
+    SRLI(xMASK, xMASK, 32);
+
+    fpu_popcache(dyn, ninst, reg, 0);
+    if(saveflags) {
+        LD(xFlags, xEmu, offsetof(x64emu_t, eflags));
+        FLAGS_ADJUST_FROM11(xFlags, reg);
+    }
+    SET_NODF();
+    dyn->last_ip = 0;
+}
+
+void call_n(dynarec_rv64_t* dyn, int ninst, void* fnc, int w)
+{
+    MAYUSE(fnc);
+    FLAGS_ADJUST_TO11(xFlags, x3);
+    SD(xFlags, xEmu, offsetof(x64emu_t, eflags));
+    fpu_pushcache(dyn, ninst, x3, 1);
+    // x5..x8, x10..x17, x28..x31 those needs to be saved by caller
+    // RDI, RSI, RDX, RCX, R8, R9 are used for function call
+    ADDI(xSP, xSP, -16);
+    SD(xEmu, xSP, 0);
+    SD(xRIP, xSP, 8);   // ARM64 stack needs to be 16byte aligned
+    STORE_REG(R12);
+    STORE_REG(R13);
+    STORE_REG(R14);
+    STORE_REG(R15);
+    // float and double args
+    if(abs(w)>1) {
+        /*MESSAGE(LOG_DUMP, "Getting %d XMM args\n", abs(w)-1);
+        for(int i=0; i<abs(w)-1; ++i) {
+            sse_get_reg(dyn, ninst, x6, i, w);
+        }*/
+        MESSAGE(LOG_DUMP, "Warning XMM args not ready\n");
+    }
+    if(w<0) {
+        /*
+        MESSAGE(LOG_DUMP, "Return in XMM0\n");
+        sse_get_reg_empty(dyn, ninst, x6, 0);
+        */
+        MESSAGE(LOG_DUMP, "Warning return in XMM args not ready\n");
+    }
+    // prepare regs for native call
+    MV(A0, xRDI);
+    MV(A1, xRSI);
+    MV(A2, xRDX);
+    MV(A3, xRCX);
+    MV(A4, xR8);
+    MV(A5, xR9);
+    // native call
+    TABLE64(16, (uintptr_t)fnc);    // using x16 as scratch regs for call address
+    JALR(16);
+    // put return value in x64 regs
+    if(w>0) {
+        MV(xRAX, A0);
+        MV(xRDX, A1);
+    }
+    // all done, restore all regs
+    LD(xEmu, xSP, 0);
+    LD(xRIP, xSP, 8);
+    ADDI(xSP, xSP, 16);
+    LOAD_REG(R12);
+    LOAD_REG(R13);
+    LOAD_REG(R14);
+    LOAD_REG(R15);
+    // regenerate mask
+    XORI(xMASK, xZR, -1);
+    SRLI(xMASK, xMASK, 32);
+
+    fpu_popcache(dyn, ninst, x3, 1);
+    LD(xFlags, xEmu, offsetof(x64emu_t, eflags));
+    FLAGS_ADJUST_FROM11(xFlags, x3);
+    SET_NODF();
 }
 
 void fpu_reset(dynarec_rv64_t* dyn)
@@ -287,62 +519,39 @@ void fpu_popcache(dynarec_rv64_t* dyn, int ninst, int s1, int not07)
 
 void rv64_move32(dynarec_rv64_t* dyn, int ninst, int reg, int32_t val)
 {
-    int32_t up=(val>>12);
-    int32_t r = val-(up<<12);
-    // check if there is the dreaded sign bit on imm12
-    if(r&0b100000000000 && r!=0xffffffff) {
-        ++up;
-        r = val-(up<<12);
+    // Depending on val, the following insns are emitted.
+    // val == 0               -> ADDI
+    // lo12 != 0 && hi20 == 0 -> ADDI
+    // lo12 == 0 && hi20 != 0 -> LUI
+    // else                   -> LUI+ADDI
+    int32_t hi20 = (val+0x800)>>12 & 0xfffff;
+    int32_t lo12 = val&0xfff;
+
+    int src = xZR;
+    if (hi20) {
+        LUI(reg, hi20);
+        src = reg;
     }
-    LUI(reg, up);
-    if(r) {
-        ADDI(reg, reg, r);
-    }
+    if (lo12 || !hi20) ADDI(reg, src, lo12);
 }
 
 void rv64_move64(dynarec_rv64_t* dyn, int ninst, int reg, int64_t val)
 {
-    if(((val<<(64-12))>>(64-12))==val) {
-        // simple 12bit value
-        MOV_U12(reg, (val&0b111111111111));
-        return;
-    }
     if(((val<<32)>>32)==val) {
         // 32bits value
         rv64_move32(dyn, ninst, reg, val);
         return;
     }
-    if((val&0xffffffffLL)==val && (val&0x80000000)) {
-        // 32bits value, but with a sign bit
-        rv64_move32(dyn, ninst, reg, val);
-        ZEROUP(reg);
-        return;
-    }
-    //TODO: optimize that later
-    // Start with the upper 32bits
-    rv64_move32(dyn, ninst, reg, val>>32);
-    // now the lower part
-    uint32_t r = val&0xffffffff;
-    int s = 11;
-    if((r>>21)&0b11111111111) {
-        SLLI(reg, reg, s);
-        ORI(reg, reg, (r>>21)&0b11111111111);
-        s = 0;
-    }
-    s+=11;
-    if((r>>10)&0b11111111111) {
-        SLLI(reg, reg, s);
-        ORI(reg, reg, (r>>10)&0b11111111111);
-        s = 0;
-    }
-    s+=10;
-    if(r&0b1111111111) {
-        SLLI(reg, reg, s);
-        ORI(reg, reg, r&0b1111111111);
-        s=0;
-    }
-    if(s) {
-        SLLI(reg, reg, s);
+
+    int64_t lo12 = (val<<52)>>52;
+    int64_t hi52 = (val+0x800)>>12;
+    int shift = 12+TrailingZeros64((uint64_t)hi52);
+    hi52 = ((hi52>>(shift-12))<<shift)>>shift;
+    rv64_move64(dyn, ninst, reg, hi52);
+    SLLI(reg, reg, shift);
+
+    if (lo12) {
+        ADDI(reg, reg, lo12);
     }
 }
 

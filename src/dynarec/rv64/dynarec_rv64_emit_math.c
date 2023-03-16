@@ -98,7 +98,7 @@ void emit_add32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int64_t c, i
             XOR(s3, s3, s4);
             ANDI(s3, s3, 1); // OF: xor of two MSB's of cc
             BEQZ(s3, 4);
-            ORI(xFlags, xFlags, 1 << F_OF);
+            ORI(xFlags, xFlags, 1 << F_OF2);
         }
     }
     IFX(X_SF) {
@@ -146,7 +146,7 @@ void emit_sub32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s
     if (!rex.w) {
         ZEROUP(s1);
     }
-    CALC_SUB_FLAGS(s5, s2, s1, s3, s4);
+    CALC_SUB_FLAGS(s5, s2, s1, s3, s4, rex.w?64:32);
     IFX(X_ZF) {
         BEQZ(s1, 4);
         ORI(xFlags, xFlags, 1 << F_ZF);
@@ -210,7 +210,7 @@ void emit_sub32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int64_t c, i
     if (!rex.w) {
         ZEROUP(s1);
     }
-    CALC_SUB_FLAGS(s5, s2, s1, s3, s4);
+    CALC_SUB_FLAGS(s5, s2, s1, s3, s4, rex.w?64:32);
     IFX(X_ZF) {
         BEQZ(s1, 4);
         ORI(xFlags, xFlags, 1 << F_ZF);

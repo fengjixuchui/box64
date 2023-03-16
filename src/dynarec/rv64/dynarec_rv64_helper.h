@@ -73,8 +73,75 @@
                     ed = x1;                            \
                 }
 
+// FAKEED like GETED, but doesn't get anything
+#define FAKEED  if(!MODREG) {   \
+                    addr = fakeed(dyn, addr, ninst, nextop); \
+                }
+
 // Write back ed in wback (if wback not 0)
 #define WBACK       if(wback) {SDxw(ed, wback, fixedaddress); SMWRITE();}
+
+// GETEB will use i for ed, and can use r3 for wback.
+#define GETEB(i, D) if(MODREG) {                \
+                    if(rex.rex) {               \
+                        wback = xRAX+(nextop&7)+(rex.b<<3);     \
+                        wb2 = 0;                \
+                    } else {                    \
+                        wback = (nextop&7);     \
+                        wb2 = (wback>>2)*8;     \
+                        wback = xRAX+(wback&3); \
+                    }                           \
+                    MV(i, wback);               \
+                    if (wb2) SRLI(i, i, wb2);   \
+                    ANDI(i, i, 0xff);           \
+                    wb1 = 0;                    \
+                    ed = i;                     \
+                } else {                        \
+                    SMREAD();                   \
+                    addr = geted(dyn, addr, ninst, nextop, &wback, x2, x3, &fixedaddress, rex, NULL, 0, D); \
+                    LBU(i, wback, fixedaddress);\
+                    wb1 = 1;                    \
+                    ed = i;                     \
+                }
+// CALL will use x6 for the call address. Return value can be put in ret (unless ret is -1)
+// R0 will not be pushed/popd if ret is -2
+#define CALL(F, ret) call_c(dyn, ninst, F, x6, ret, 1, 0)
+// CALL_ will use x6 for the call address. Return value can be put in ret (unless ret is -1)
+// R0 will not be pushed/popd if ret is -2
+#define CALL_(F, ret, reg) call_c(dyn, ninst, F, x6, ret, 1, reg)
+// CALL_S will use x6 for the call address. Return value can be put in ret (unless ret is -1)
+// R0 will not be pushed/popd if ret is -2. Flags are not save/restored
+#define CALL_S(F, ret) call_c(dyn, ninst, F, x6, ret, 0, 0)
+
+#define MARK    dyn->insts[ninst].mark = dyn->native_size
+#define GETMARK dyn->insts[ninst].mark
+#define MARK2   dyn->insts[ninst].mark2 = dyn->native_size
+#define GETMARK2 dyn->insts[ninst].mark2
+#define MARK3   dyn->insts[ninst].mark3 = dyn->native_size
+#define GETMARK3 dyn->insts[ninst].mark3
+#define MARKF   dyn->insts[ninst].markf = dyn->native_size
+#define GETMARKF dyn->insts[ninst].markf
+#define MARKSEG dyn->insts[ninst].markseg = dyn->native_size
+#define GETMARKSEG dyn->insts[ninst].markseg
+#define MARKLOCK dyn->insts[ninst].marklock = dyn->native_size
+#define GETMARKLOCK dyn->insts[ninst].marklock
+
+// Branch to MARK if reg1==reg2 (use j64)
+#define BEQ_MARK(reg1, reg2)           \
+    j64 = GETMARK-(dyn->native_size);  \
+    BEQ(reg1, reg2, j64)
+// Branch to MARK if reg1!=reg2 (use j64)
+#define BNE_MARK(reg1, reg2)           \
+    j64 = GETMARK-(dyn->native_size);  \
+    BNE(reg1, reg2, j64)
+// Branch to NEXT if reg1==0 (use j64)
+#define CBZ_NEXT(reg1)                  \
+    j64 = (dyn->insts)?(dyn->insts[ninst].epilog-(dyn->native_size)):0; \
+    BEQ(reg1, xZR, j64)
+// Branch to NEXT if reg1!=0 (use j64)
+#define CBNZ_NEXT(reg1)                 \
+    j64 = (dyn->insts)?(dyn->insts[ninst].epilog-(dyn->native_size)):0; \
+    BNE(reg1, xZR, j64)
 
 #define IFX(A)  if((dyn->insts[ninst].x64.gen_flags&(A)))
 #define IFX_PENDOR0  if((dyn->insts[ninst].x64.gen_flags&(X_PEND) || !dyn->insts[ninst].x64.gen_flags))
@@ -82,14 +149,45 @@
 #define IFX2X(A, B) if((dyn->insts[ninst].x64.gen_flags==(A) || dyn->insts[ninst].x64.gen_flags==(B) || dyn->insts[ninst].x64.gen_flags==((A)|(B))))
 #define IFXN(A, B)  if((dyn->insts[ninst].x64.gen_flags&(A) && !(dyn->insts[ninst].x64.gen_flags&(B))))
 
+#define STORE_REG(A)    SD(x##A, xEmu, offsetof(x64emu_t, regs[_##A]))
+#define LOAD_REG(A)     LD(x##A, xEmu, offsetof(x64emu_t, regs[_##A]))
+
+// Need to also store current value of some register, as they may be used by functions like setjump
+#define STORE_XEMU_CALL()   \
+    STORE_REG(RBX);         \
+    STORE_REG(RDX);         \
+    STORE_REG(RSP);         \
+    STORE_REG(RBP);         \
+    STORE_REG(RDI);         \
+    STORE_REG(RSI);         \
+    STORE_REG(R8);          \
+    STORE_REG(R9);          \
+    STORE_REG(R10);         \
+    STORE_REG(R11);         \
+
+#define LOAD_XEMU_CALL()    \
+
+#define LOAD_XEMU_REM()     \
+    LOAD_REG(RBX);          \
+    LOAD_REG(RDX);          \
+    LOAD_REG(RSP);          \
+    LOAD_REG(RBP);          \
+    LOAD_REG(RDI);          \
+    LOAD_REG(RSI);          \
+    LOAD_REG(R8);           \
+    LOAD_REG(R9);           \
+    LOAD_REG(R10);          \
+    LOAD_REG(R11);          \
+
+
 #define SET_DFNONE(S)    if(!dyn->f.dfnone) {MOV_U12(S, d_none); SD(S, xEmu, offsetof(x64emu_t, df)); dyn->f.dfnone=1;}
 #define SET_DF(S, N)     if((N)!=d_none) {MOV_U12(S, (N)); SD(S, xEmu, offsetof(x64emu_t, df)); dyn->f.dfnone=0;} else SET_DFNONE(S)
 #define SET_NODF()          dyn->f.dfnone = 0
 #define SET_DFOK()          dyn->f.dfnone = 1
 
-#define CLEAR_FLAGS() IFX(X_ALL) {ANDI(xFlags, xFlags, ~((1UL<<F_AF) | (1UL<<F_CF) | (1UL<<F_OF) | (1UL<<F_ZF) | (1UL<<F_SF) | (1UL<<F_PF)));}
+#define CLEAR_FLAGS() IFX(X_ALL) {ANDI(xFlags, xFlags, ~((1UL<<F_AF) | (1UL<<F_CF) | (1UL<<F_OF2) | (1UL<<F_ZF) | (1UL<<F_SF) | (1UL<<F_PF)));}
 
-#define CALC_SUB_FLAGS(op1_, op2, res, scratch1, scratch2)                \
+#define CALC_SUB_FLAGS(op1_, op2, res, scratch1, scratch2, width)         \
     IFX(X_AF | X_CF | X_OF) {                                             \
         /* calc borrow chain */                                           \
         /* bc = (res & (~op1 | op2)) | (~op1 & op2) */                    \
@@ -104,21 +202,41 @@
             ORI(xFlags, xFlags, 1 << F_AF);                               \
         }                                                                 \
         IFX(X_CF) {                                                       \
-            /* cf = bc & (rex.w?(1<<63):(1<<31)) */                       \
-            SRLI(scratch1, scratch2, rex.w?63:31);                        \
+            /* cf = bc & (1<<(width-1)) */                                \
+            if (width == 8) {                                             \
+                ANDI(scratch1, scratch2, 0x80);                           \
+            } else {                                                      \
+                SRLI(scratch1, scratch2, width-1);                        \
+                if (width == 16) ANDI(scratch1, scratch1, 1);             \
+            }                                                             \
             BEQZ(scratch1, 4);                                            \
             ORI(xFlags, xFlags, 1 << F_CF);                               \
         }                                                                 \
         IFX(X_OF) {                                                       \
-            /* of = ((bc >> rex.w?62:30) ^ (bc >> rex.w?63:31)) & 0x1; */ \
-            SRLI(scratch1, scratch2, rex.w?62:30);                        \
+            /* of = ((bc >> (width-2)) ^ (bc >> (width-1))) & 0x1; */     \
+            SRLI(scratch1, scratch2, width-2);                            \
             SRLI(scratch2, scratch1, 1);                                  \
             XOR(scratch1, scratch1, scratch2);                            \
             ANDI(scratch1, scratch1, 1);                                  \
             BEQZ(scratch1, 4);                                            \
-            ORI(xFlags, xFlags, 1 << F_OF);                               \
+            ORI(xFlags, xFlags, 1 << F_OF2);                              \
         }                                                                 \
     }
+
+// Adjust the xFlags bit 11 -> bit 5, result in reg (can be xFlags, but not s1)
+#define FLAGS_ADJUST_FROM11(reg, s1)\
+    ANDI(reg, xFlags, ~(1<<5));     \
+    SRLI(s1, reg, 11-5);            \
+    ANDI(s1, s1, 1<<5);             \
+    OR(reg, reg, s1)
+
+// Adjust the xFlags bit 5 -> bit 11, source in reg (can be xFlags, but not s1)
+#define FLAGS_ADJUST_TO11(reg, s1)  \
+    MOV64x(s1, ~(1<<11));           \
+    AND(xFlags, reg, s1);           \
+    ANDI(s1, xFlags, 1<<5);         \
+    SLLI(s1, s1, 11-5);             \
+    OR(xFlags, xFlags, s1)
 
 #ifndef MAYSETFLAGS
 #define MAYSETFLAGS()
@@ -126,12 +244,36 @@
 
 #ifndef READFLAGS
 #define READFLAGS(A) \
-
+    if(((A)!=X_PEND && dyn->f.pending!=SF_SET)          \
+    && (dyn->f.pending!=SF_SET_PENDING)) {              \
+        if(dyn->f.pending!=SF_PENDING) {                \
+            LD(x3, xEmu, offsetof(x64emu_t, df));       \
+            j64 = (GETMARKF)-(dyn->native_size);        \
+            BEQ(x3, xZR, j64);                          \
+        }                                               \
+        CALL_(UpdateFlags, -1, 0);                      \
+        FLAGS_ADJUST_FROM11(xFlags, x3);                \
+        MARKF;                                          \
+        dyn->f.pending = SF_SET;                        \
+        SET_DFOK();                                     \
+    }
 #endif
 
 #ifndef SETFLAGS
 #define SETFLAGS(A, B)                                                                          \
-
+    if(dyn->f.pending!=SF_SET                                                                   \
+    && ((B)&SF_SUB)                                                                             \
+    && (dyn->insts[ninst].x64.gen_flags&(~(A))))                                                \
+        READFLAGS(((dyn->insts[ninst].x64.gen_flags&X_PEND)?X_ALL:dyn->insts[ninst].x64.gen_flags)&(~(A)));\
+    if(dyn->insts[ninst].x64.gen_flags) switch(B) {                                             \
+        case SF_SUBSET:                                                                         \
+        case SF_SET: dyn->f.pending = SF_SET; break;                                            \
+        case SF_PENDING: dyn->f.pending = SF_PENDING; break;                                    \
+        case SF_SUBSET_PENDING:                                                                 \
+        case SF_SET_PENDING:                                                                    \
+            dyn->f.pending = (dyn->insts[ninst].x64.gen_flags&X_PEND)?SF_SET_PENDING:SF_SET;    \
+            break;                                                                              \
+    } else dyn->f.pending = SF_SET
 #endif
 #ifndef JUMP
 #define JUMP(A, C)
@@ -142,7 +284,12 @@
 #ifndef BARRIER_NEXT
 #define BARRIER_NEXT(A)
 #endif
-
+#define UFLAG_OP1(A) if(dyn->insts[ninst].x64.gen_flags) {SDxw(A, xEmu, offsetof(x64emu_t, op1));}
+#define UFLAG_OP2(A) if(dyn->insts[ninst].x64.gen_flags) {SDxw(A, xEmu, offsetof(x64emu_t, op2));}
+#define UFLAG_OP12(A1, A2) if(dyn->insts[ninst].x64.gen_flags) {SDxw(A1, xEmu, offsetof(x64emu_t, op1));SDxw(A2, 0, offsetof(x64emu_t, op2));}
+#define UFLAG_RES(A) if(dyn->insts[ninst].x64.gen_flags) {SDxw(A, xEmu, offsetof(x64emu_t, res));}
+#define UFLAG_DF(r, A) if(dyn->insts[ninst].x64.gen_flags) {SET_DF(r, A)}
+#define UFLAG_IF if(dyn->insts[ninst].x64.gen_flags)
 #ifndef DEFAULT
 #define DEFAULT      *ok = -1; BARRIER(2)
 #endif
@@ -157,7 +304,7 @@
 #else
 // put value in the Table64 even if not using it for now to avoid difference between Step2 and Step3. Needs to be optimized later...
 #define GETIP(A)                                        \
-    if(dyn->last_ip && ((A)-dyn->last_ip)<0x1000) {     \
+    if(dyn->last_ip && ((A)-dyn->last_ip)<2048) {       \
         uint64_t _delta_ip = (A)-dyn->last_ip;          \
         dyn->last_ip += _delta_ip;                      \
         if(_delta_ip) {                                 \
@@ -171,7 +318,7 @@
             TABLE64(xRIP, dyn->last_ip);                \
     }
 #define GETIP_(A)                                       \
-    if(dyn->last_ip && ((A)-dyn->last_ip)<0x1000) {     \
+    if(dyn->last_ip && ((A)-dyn->last_ip)<2048) {       \
         uint64_t _delta_ip = (A)-dyn->last_ip;          \
         if(_delta_ip) {ADDI(xRIP, xRIP, _delta_ip);}    \
     } else {                                            \
@@ -322,7 +469,6 @@ void* rv64_next(x64emu_t* emu, uintptr_t addr);
 #define sse_get_reg     STEPNAME(sse_get_reg)
 #define sse_get_reg_empty STEPNAME(sse_get_reg_empty)
 #define sse_forget_reg   STEPNAME(sse_forget_reg)
-#define sse_purge07cache STEPNAME(sse_purge07cache)
 
 #define fpu_pushcache   STEPNAME(fpu_pushcache)
 #define fpu_popcache    STEPNAME(fpu_popcache)
@@ -353,16 +499,16 @@ uintptr_t geted(dynarec_rv64_t* dyn, uintptr_t addr, int ninst, uint8_t nextop, 
 // generic x64 helper
 void jump_to_epilog(dynarec_rv64_t* dyn, uintptr_t ip, int reg, int ninst);
 void jump_to_next(dynarec_rv64_t* dyn, uintptr_t ip, int reg, int ninst);
-//void ret_to_epilog(dynarec_rv64_t* dyn, int ninst);
-//void retn_to_epilog(dynarec_rv64_t* dyn, int ninst, int n);
+void ret_to_epilog(dynarec_rv64_t* dyn, int ninst);
+void retn_to_epilog(dynarec_rv64_t* dyn, int ninst, int n);
 //void iret_to_epilog(dynarec_rv64_t* dyn, int ninst, int is64bits);
-//void call_c(dynarec_rv64_t* dyn, int ninst, void* fnc, int reg, int ret, int saveflags, int save_reg);
-//void call_n(dynarec_rv64_t* dyn, int ninst, void* fnc, int w);
+void call_c(dynarec_rv64_t* dyn, int ninst, void* fnc, int reg, int ret, int saveflags, int save_reg);
+void call_n(dynarec_rv64_t* dyn, int ninst, void* fnc, int w);
 //void grab_segdata(dynarec_rv64_t* dyn, uintptr_t addr, int ninst, int reg, int segment);
-//void emit_cmp8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, int s5);
+void emit_cmp8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, int s5, int s6);
 //void emit_cmp16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, int s5);
 void emit_cmp32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4, int s5, int s6);
-//void emit_cmp8_0(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);
+void emit_cmp8_0(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);
 //void emit_cmp16_0(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);
 //void emit_cmp32_0(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s3, int s4);
 //void emit_test8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, int s5);
@@ -422,7 +568,7 @@ void emit_xor32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s
 //void emit_shl32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4);
 //void emit_shl32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4);
 //void emit_shr32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4);
-//void emit_shr32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4);
+void emit_shr32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4);
 void emit_sar32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4);
 //void emit_rol32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4);
 //void emit_ror32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4);
@@ -514,7 +660,7 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
 //uintptr_t dynarec64_6664(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int seg, int* ok, int* need_epilog);
 //uintptr_t dynarec64_66F0(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 //uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int* ok, int* need_epilog);
-//uintptr_t dynarec64_F30F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int* ok, int* need_epilog);
+uintptr_t dynarec64_F30F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int* ok, int* need_epilog);
 
 #if STEP < 2
 #define PASS2(A)
