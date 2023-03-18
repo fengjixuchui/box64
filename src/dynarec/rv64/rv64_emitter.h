@@ -108,8 +108,10 @@ f28–31  ft8–11  FP temporaries                  Caller
 #define SPLIT20(A)  (((A)+0x800)>>12)
 #define SPLIT12(A)  ((A)&0xfff)
 
-// MOVE64x is quite complex, so use a function for this
+// MOV64x/MOV32w is quite complex, so use a function for this
 #define MOV64x(A, B)    rv64_move64(dyn, ninst, A, B)
+#define MOV32w(A, B)    rv64_move32(dyn, ninst, A, B, 1)
+#define MOV64xw(A, B)   if(rex.w) {MOV64x(A, B);} else {MOV32w(A, B);}
 
 // ZERO the upper part
 #define ZEROUP(r)       AND(r, r, xMASK)
@@ -201,7 +203,10 @@ f28–31  ft8–11  FP temporaries                  Caller
 // rd = -rs1
 #define NEG(rd, rs1)                SUB(rd, xZR, rs1)
 // rd = rs1 == 0
-#define SEQZ(rd, rs1)               SLTIU(rd, rs1, 0)
+#define SEQZ(rd, rs1)               SLTIU(rd, rs1, 1)
+// rd = rs1 != 0
+#define SNEZ(rd, rs1)               SLTU(rd, xZR, rs1)
+
 
 #define BEQ(rs1, rs2, imm13)       EMIT(B_type(imm13, rs2, rs1, 0b000, 0b1100011))
 #define BNE(rs1, rs2, imm13)       EMIT(B_type(imm13, rs2, rs1, 0b001, 0b1100011))
@@ -274,6 +279,8 @@ f28–31  ft8–11  FP temporaries                  Caller
 
 // Shift Left Immediate, 32-bit, sign-extended
 #define SLLIW(rd, rs1, imm5)        EMIT(I_type(imm5, rs1, 0b001, rd, 0b0011011))
+// Shift Left Immediate
+#define SLLIxw(rd, rs1, imm)        if (rex.w) { SLLI(rd, rs1, imm); } else { SLLIW(rd, rs1, imm); }
 // Shift Right Logical Immediate, 32-bit, sign-extended
 #define SRLIW(rd, rs1, imm5)        EMIT(I_type(imm5, rs1, 0b101, rd, 0b0011011))
 // Shift Right Logical Immediate
@@ -282,5 +289,16 @@ f28–31  ft8–11  FP temporaries                  Caller
 #define SRAIW(rd, rs1, imm5)        EMIT(I_type((imm5)|(0b0100000<<5), rs1, 0b101, rd, 0b0011011))
 // Shift Right Arithmetic Immediate
 #define SRAIxw(rd, rs1, imm)        if (rex.w) { SRAI(rd, rs1, imm); } else { SRAIW(rd, rs1, imm); }
+
+// RV32M
+// rd = rs1 * rs2
+#define MUL(rd, rs1, rs2)           EMIT(R_type(0b0000001, rs2, rs1, 0b000, rd, 0b0110011))
+#define MULH(rd, rs1, rs2)          EMIT(R_type(0b0000001, rs2, rs1, 0b001, rd, 0b0110011))
+
+// RV64M
+// rd = rs1 * rs2
+#define MULW(rd, rs1, rs2)          EMIT(R_type(0b0000001, rs2, rs1, 0b000, rd, 0b0111011))
+// rd = rs1 * rs2
+#define MULxw(rd, rs1, rs2)         EMIT(R_type(0b0000001, rs2, rs1, 0b000, rd, rex.w?0b0110011:0b0111011))
 
 #endif //__RV64_EMITTER_H__
