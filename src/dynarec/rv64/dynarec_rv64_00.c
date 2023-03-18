@@ -71,6 +71,16 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             emit_add32(dyn, ninst, rex, gd, ed, x3, x4, x5);
             break;
 
+        case 0x09:
+            INST_NAME("OR Ed, Gd");
+            SETFLAGS(X_ALL, SF_SET_PENDING);
+            nextop = F8;
+            GETGD;
+            GETED(0);
+            emit_or32(dyn, ninst, rex, ed, gd, x3, x4);
+            WBACK;
+            break;
+
         case 0x0F:
             switch(rep) {
             case 0:
@@ -161,6 +171,29 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             }
             break;
 
+        case 0x63:
+            INST_NAME("MOVSXD Gd, Ed");
+            nextop = F8;
+            GETGD;
+            if(rex.w) {
+                if(MODREG) {   // reg <= reg
+                    MV(gd, xRAX+(nextop&7)+(rex.b<<3));
+                } else {                    // mem <= reg
+                    SMREAD();
+                    addr = geted(dyn, addr, ninst, nextop, &ed, x2, x1, &fixedaddress, rex, NULL, 1, 0);
+                    LW(gd, ed, fixedaddress);
+                }
+            } else {
+                if(MODREG) {   // reg <= reg
+                    AND(gd, xRAX+(nextop&7)+(rex.b<<3), xMASK);
+                } else {                    // mem <= reg
+                    SMREAD();
+                    addr = geted(dyn, addr, ninst, nextop, &ed, x2, x1, &fixedaddress, rex, NULL, 1, 0);
+                    LWU(gd, ed, fixedaddress);
+                }
+            }
+            break;
+            
         case 0x66:
             addr = dynarec64_66(dyn, addr, ip, ninst, rex, rep, ok, need_epilog);
             break;
@@ -176,6 +209,39 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             } else {
                 MOV64x(x3, i64);
                 PUSH1(x3);
+            }
+            break;
+        case 0x69:
+            INST_NAME("IMUL Gd, Ed, Id");
+            SETFLAGS(X_ALL, SF_PENDING);
+            nextop = F8;
+            GETGD;
+            GETED(4);
+            i64 = F32S;
+            MOV64xw(x4, i64);
+            if(rex.w) {
+                // 64bits imul
+                UFLAG_IF {
+                    MULH(x3, ed, x4);
+                    MULW(gd, ed, x4);
+                    UFLAG_OP1(x3);
+                    UFLAG_RES(gd);
+                    UFLAG_DF(x3, d_imul64);
+                } else {
+                    MULxw(gd, ed, x4);
+                }
+            } else {
+                // 32bits imul
+                UFLAG_IF {
+                    MUL(gd, ed, x4);
+                    UFLAG_RES(gd);
+                    SRLI(x3, gd, 32);
+                    UFLAG_OP1(x3);
+                    UFLAG_DF(x3, d_imul32);
+                    ZEROUP(gd);
+                } else {
+                    MULxw(gd, ed, x4);
+                }
             }
             break;
 
@@ -240,6 +306,14 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                     emit_add32c(dyn, ninst, rex, ed, i64, x3, x4, x5, x6);
                     WBACK;
                     break;
+                case 1: // OR
+                    if(opcode==0x81) {INST_NAME("OR Ed, Id");} else {INST_NAME("OR Ed, Ib");}
+                    SETFLAGS(X_ALL, SF_SET_PENDING);
+                    GETED((opcode==0x81)?4:1);
+                    if(opcode==0x81) i64 = F32S; else i64 = F8S;
+                    emit_or32c(dyn, ninst, rex, ed, i64, x3, x4);
+                    WBACK;
+                    break;
                 case 4: // AND
                     if(opcode==0x81) {INST_NAME("AND Ed, Id");} else {INST_NAME("AND Ed, Ib");}
                     SETFLAGS(X_ALL, SF_SET_PENDING);
@@ -289,6 +363,45 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             emit_test32(dyn, ninst, rex, ed, gd, x3, x4, x5);
             break;
 
+        case 0x88:
+            INST_NAME("MOV Eb, Gb");
+            nextop = F8;
+            gd = ((nextop&0x38)>>3)+(rex.r<<3);
+            if(rex.rex) {
+                gb2 = 0;
+                gb1 = xRAX + gd;
+            } else {
+                gb2 = ((gd&4)>>2);
+                gb1 = xRAX+(gd&3);
+            }
+            gd = x4;
+            if(gb2) {
+                SRLI(x4, gb1, gb2);
+                gb1 = x4;
+            }
+            if(MODREG) {
+                ed = (nextop&7) + (rex.b<<3);
+                if(rex.rex) {
+                    eb1 = xRAX+ed;
+                    eb2 = 0;
+                } else {
+                    eb1 = xRAX+(ed&3);  // Ax, Cx, Dx or Bx
+                    eb2 = ((ed&4)>>2);    // L or H
+                }
+                ANDI(gd, gb1, 0xff);
+                if(eb2) {
+                    ADDI(x1, xZR, ~0xff);
+                    SLLI(x1, x1, 8);
+                    ANDI(x1, eb1, x1);
+                    SLLI(gd, gd, 8);    // it might be possible to avoid SRLI/SLLI, but that will do for now
+                }
+                ORI(eb1, eb1, gd);
+            } else {
+                addr = geted(dyn, addr, ninst, nextop, &ed, x2, x1, &fixedaddress, rex, &lock, 1, 0);
+                SB(gb1, ed, fixedaddress);
+                SMWRITELOCK(lock);
+            }
+            break;
         case 0x89:
             INST_NAME("MOV Ed, Gd");
             nextop=F8;
@@ -360,7 +473,15 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                 ZEROUP(xRAX);
             }
             break;
-
+        case 0x99:
+            INST_NAME("CDQ");
+            if(rex.w) {
+                SRLI(xRDX, xRAX, 63);
+            } else {
+                SLLI(xRDX, xRAX, 32);
+                SRLI(xRDX, xRDX, 63);
+            }
+            break;
 
         case 0xB8:
         case 0xB9:
@@ -583,6 +704,38 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                     GETED(1);
                     emit_sar32c(dyn, ninst, rex, ed, 1, x3, x4);
                     WBACK;
+                    break;
+                default:
+                    DEFAULT;
+            }
+            break;
+
+        case 0xD3:
+            nextop = F8;
+            switch((nextop>>3)&7) {
+                case 4:
+                case 6:
+                    INST_NAME("SHL Ed, CL");
+                    SETFLAGS(X_ALL, SF_SET_PENDING);    // some flags are left undefined
+                    ANDI(x3, xRCX, rex.w?0x3f:0x1f);
+                    GETED(0);
+                    if(!rex.w && MODREG) {ZEROUP(ed);}
+                    CBZ_NEXT(x3);
+                    emit_shl32(dyn, ninst, rex, ed, x3, x5, x4, x6);
+                    WBACK;
+                    break;
+                case 7:
+                    INST_NAME("SAR Ed, CL");
+                    SETFLAGS(X_ALL, SF_PENDING);
+                    ANDI(x3, xRCX, rex.w?0x3f:0x1f);
+                    GETED(0);
+                    if(!rex.w && MODREG) {ZEROUP(ed);}
+                    CBZ_NEXT(x3);
+                    UFLAG_OP12(ed, x3);
+                    SRAxw(ed, ed, x3);
+                    WBACK;
+                    UFLAG_RES(ed);
+                    UFLAG_DF(x3, rex.w?d_sar64:d_sar32);
                     break;
                 default:
                     DEFAULT;

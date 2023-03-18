@@ -83,6 +83,42 @@
                     LD(x1, wback, fixedaddress);        \
                     ed = x1;                            \
                 }
+//GETEWW will use i for ed, and can use w for wback.
+#define GETEWW(w, i, D) if(MODREG) {        \
+                    wback = xRAX+(nextop&7)+(rex.b<<3);\
+                    SLLI(i, wback, 48);     \
+                    SRLI(i, i, 48);         \
+                    ed = i;                 \
+                    wb1 = 0;                \
+                } else {                    \
+                    SMREAD();               \
+                    addr = geted(dyn, addr, ninst, nextop, &wback, w, i, &fixedaddress, rex, NULL, 1, D); \
+                    LHU(i, wback, fixedaddress);\
+                    ed = i;                 \
+                    wb1 = 1;                \
+                }
+//GETEW will use i for ed, and can use r3 for wback.
+#define GETEW(i, D) GETEWW(x3, i, D)
+//GETSEW will use i for ed, and can use r3 for wback. This is the Signed version
+#define GETSEW(i, D) if(MODREG) {           \
+                    wback = xRAX+(nextop&7)+(rex.b<<3);\
+                    SLLI(i, wback, 48);     \
+                    SRAI(i, i, 48);         \
+                    ed = i;                 \
+                    wb1 = 0;                \
+                } else {                    \
+                    SMREAD();               \
+                    addr = geted(dyn, addr, ninst, nextop, &wback, x3, i, &fixedaddress, rex, NULL, 1, D); \
+                    LH(i, wback, fixedaddress); \
+                    ed = i;                 \
+                    wb1 = 1;                \
+                }
+// Write ed back to original register / memory
+#define EWBACK       EWBACKW(ed)
+// Write w back to original register / memory (w needs to be 16bits only!)
+#define EWBACKW(w)   if(wb1) {SH(w, wback, fixedaddress); SMWRITE();} else {SRLI(wback, wback, 16); SLLI(wback, wback, 16); OR(wback, wback, w);}
+// Write back gd in correct register (gd needs to be 16bits only!)
+#define GWBACK       do{int g=xRAX+((nextop&0x38)>>3)+(rex.r<<3); SRLI(g, g, 16); SLLI(g, g, 16); OR(g, g, gd);}while(0)
 
 // FAKEED like GETED, but doesn't get anything
 #define FAKEED  if(!MODREG) {   \
@@ -540,8 +576,8 @@ void emit_sub32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s
 void emit_sub32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int64_t c, int s2, int s3, int s4, int s5);
 //void emit_sub8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
 //void emit_sub8c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4, int s5);
-//void emit_or32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4);
-//void emit_or32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int64_t c, int s3, int s4);
+void emit_or32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4);
+void emit_or32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int64_t c, int s3, int s4);
 void emit_xor32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4);
 void emit_xor32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int64_t c, int s3, int s4);
 void emit_and32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4);
@@ -583,7 +619,7 @@ void emit_and32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int64_t c, i
 //void emit_neg32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s3, int s4);
 //void emit_neg16(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);
 //void emit_neg8(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);
-//void emit_shl32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4);
+void emit_shl32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4, int s5);
 void emit_shl32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4, int s5);
 //void emit_shr32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4);
 void emit_shr32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4);
