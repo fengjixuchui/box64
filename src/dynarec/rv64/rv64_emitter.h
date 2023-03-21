@@ -130,9 +130,9 @@ f28–31  ft8–11  FP temporaries                  Caller
 #define AUIPC(rd, imm20)               EMIT(U_type((imm20)<<12, rd, 0b0010111))
 
 #define JAL_gen(rd, imm21)             J_type(imm21, rd, 0b1101111)
-// Unconditionnal branch, no return address set
+// Unconditional branch, no return address set
 #define B(imm21)                       EMIT(JAL_gen(xZR, imm21))
-// Uncondiftionnal branch, return set to xRA
+// Unconditional branch, return set to xRA
 #define JAL(imm21)                     EMIT(JAL_gen(xRA, imm21))
 
 #define JALR_gen(rd, rs1, imm12)       I_type(imm12, rs1, 0b000, rd, 0b1100111)
@@ -173,6 +173,8 @@ f28–31  ft8–11  FP temporaries                  Caller
 #define ADDxw(rd, rs1, rs2)         EMIT(R_type(0b0000000, rs2, rs1, 0b000, rd, rex.w?0b0110011:0b0111011))
 // rd = rs1 - rs2
 #define SUB(rd, rs1, rs2)           EMIT(R_type(0b0100000, rs2, rs1, 0b000, rd, 0b0110011))
+// rd = rs1 - rs2
+#define SUBW(rd, rs1, rs2)          EMIT(R_type(0b0100000, rs2, rs1, 0b000, rd, 0b0111011))
 // rd = rs1 - rs2
 #define SUBxw(rd, rs1, rs2)         EMIT(R_type(0b0100000, rs2, rs1, 0b000, rd, rex.w?0b0110011:0b0111011))
 // rd = rs1<<rs2
@@ -215,8 +217,19 @@ f28–31  ft8–11  FP temporaries                  Caller
 #define BLTU(rs1, rs2, imm13)      EMIT(B_type(imm13, rs2, rs1, 0b110, 0b1100011))
 #define BGEU(rs1, rs2, imm13)      EMIT(B_type(imm13, rs2, rs1, 0b111, 0b1100011))
 
+// TODO: Find a better way to have conditionnal jumps? Imm is a relative jump address, so the the 2nd jump needs to be addapted
+#define BEQ_safe(rs1, rs2, imm)     if(imm>=-0x1000 && imm<=0x1000) {BEQ(rs1, rs2, imm); NOP();} else {BNE(rs1, rs2, 8); B(imm-4);}
+#define BNE_safe(rs1, rs2, imm)     if(imm>=-0x1000 && imm<=0x1000) {BNE(rs1, rs2, imm); NOP();} else {BEQ(rs1, rs2, 8); B(imm-4);}
+#define BLT_safe(rs1, rs2, imm)     if(imm>=-0x1000 && imm<=0x1000) {BLT(rs1, rs2, imm); NOP();} else {BGE(rs2, rs1, 8); B(imm-4);}
+#define BGE_safe(rs1, rs2, imm)     if(imm>=-0x1000 && imm<=0x1000) {BGE(rs1, rs2, imm); NOP();} else {BLT(rs2, rs1, 8); B(imm-4);}
+#define BLTU_safe(rs1, rs2, imm)    if(imm>=-0x1000 && imm<=0x1000) {BLTU(rs1, rs2, imm); NOP();} else {BGEU(rs2, rs1, 8); B(imm-4);}
+#define BGEU_safe(rs1, rs2, imm)    if(imm>=-0x1000 && imm<=0x1000) {BGEU(rs1, rs2, imm); NOP();} else {BLTU(rs2, rs1, 8); B(imm-4);}
+
 #define BEQZ(rs1, imm13)           BEQ(rs1, 0, imm13)
 #define BNEZ(rs1, imm13)           BNE(rs1, 0, imm13)
+
+#define BEQZ_safe(rs1, imm)         if(imm>=-0x1000 && imm<=0x1000) {BEQZ(rs1, imm); NOP();} else {BNEZ(rs1, 8); B(imm-4);}
+#define BNEZ_safe(rs1, imm)         if(imm>=-0x1000 && imm<=0x1000) {BNEZ(rs1, imm); NOP();} else {BEQZ(rs1, 8); B(imm-4);}
 
 // rd = 4-bytes[rs1+imm12] signed extended
 #define LW(rd, rs1, imm12)          EMIT(I_type(imm12, rs1, 0b010, rd, 0b0000011))
@@ -293,14 +306,48 @@ f28–31  ft8–11  FP temporaries                  Caller
 #define SRAIxw(rd, rs1, imm)        if (rex.w) { SRAI(rd, rs1, imm); } else { SRAIW(rd, rs1, imm); }
 
 // RV32M
-// rd = rs1 * rs2
+// rd =(lower) rs1 * rs2 (both signed)
 #define MUL(rd, rs1, rs2)           EMIT(R_type(0b0000001, rs2, rs1, 0b000, rd, 0b0110011))
+// rd =(upper) rs1 * rs2 (both signed)
 #define MULH(rd, rs1, rs2)          EMIT(R_type(0b0000001, rs2, rs1, 0b001, rd, 0b0110011))
+// rd =(upper) (signed)rs1 * (unsigned)rs2
+#define MULHSU(rd, rs1, rs2)        EMIT(R_type(0b0000001, rs2, rs1, 0b010, rd, 0b0110011))
+// rd =(upper) rs1 * rs2 (both unsigned)
+#define MULHU(rd, rs1, rs2)         EMIT(R_type(0b0000001, rs2, rs1, 0b011, rd, 0b0110011))
+// rd =(upper) rs1 / rs2
+#define DIV(rd, rs1, rs2)           EMIT(R_type(0b0000001, rs2, rs1, 0b100, rd, 0b0110011))
+#define DIVU(rd, rs1, rs2)          EMIT(R_type(0b0000001, rs2, rs1, 0b101, rd, 0b0110011))
+// rd = rs1 mod rs2
+#define REM(rd, rs1, rs2)           EMIT(R_type(0b0000001, rs2, rs1, 0b110, rd, 0b0110011))
+#define REMU(rd, rs1, rs2)          EMIT(R_type(0b0000001, rs2, rs1, 0b111, rd, 0b0110011))
 
 // RV64M
 // rd = rs1 * rs2
 #define MULW(rd, rs1, rs2)          EMIT(R_type(0b0000001, rs2, rs1, 0b000, rd, 0b0111011))
 // rd = rs1 * rs2
 #define MULxw(rd, rs1, rs2)         EMIT(R_type(0b0000001, rs2, rs1, 0b000, rd, rex.w?0b0110011:0b0111011))
+// rd = rs1 / rs2
+#define DIVW(rd, rs1, rs2)          EMIT(R_type(0b0000001, rs2, rs1, 0b100, rd, 0b0111011))
+#define DIVxw(rd, rs1, rs2)         EMIT(R_type(0b0000001, rs2, rs1, 0b100, rd, rex.w?0b0110011:0b0111011))
+#define DIVUW(rd, rs1, rs2)         EMIT(R_type(0b0000001, rs2, rs1, 0b101, rd, 0b0111011))
+#define DIVUxw(rd, rs1, rs2)        EMIT(R_type(0b0000001, rs2, rs1, 0b101, rd, rex.w?0b0110011:0b0111011))
+// rd = rs1 mod rs2
+#define REMW(rd, rs1, rs2)          EMIT(R_type(0b0000001, rs2, rs1, 0b110, rd, 0b0111011))
+#define REMxw(rd, rs1, rs2)         EMIT(R_type(0b0000001, rs2, rs1, 0b110, rd, rex.w?0b0110011:0b0111011))
+#define REMUW(rd, rs1, rs2)         EMIT(R_type(0b0000001, rs2, rs1, 0b111, rd, 0b0111011))
+#define REMUxw(rd, rs1, rs2)        EMIT(R_type(0b0000001, rs2, rs1, 0b111, rd, rex.w?0b0110011:0b0111011))
+
+#define AQ_RL(f5, aq, rl) ((f5 << 2) | ((aq&1) << 1) | (rl&1))
+
+// RV32A
+#define LR_W(rd, rs1, aq, rl)       EMIT(R_type(AQ_RL(0b00010, aq, rl), 0, rs1, 0b010, rd, 0b0101111))
+#define SC_W(rd, rs2, rs1, aq, rl)  EMIT(R_type(AQ_RL(0b00011, aq, rl), rs2, rs1, 0b010, rd, 0b0101111))
+
+// RV64A
+#define LR_D(rd, rs1, aq, rl)       EMIT(R_type(AQ_RL(0b00010, aq, rl), 0, rs1, 0b011, rd, 0b0101111))
+#define SC_D(rd, rs2, rs1, aq, rl)  EMIT(R_type(AQ_RL(0b00011, aq, rl), rs2, rs1, 0b011, rd, 0b0101111))
+
+#define LRxw(rd, rs1, aq, rl)       EMIT(R_type(AQ_RL(0b00010, aq, rl), 0, rs1, 0b010|rex.w, rd, 0b0101111))
+#define SCxw(rd, rs2, rs1, aq, rl)  EMIT(R_type(AQ_RL(0b00011, aq, rl), rs2, rs1, 0b010|rex.w, rd, 0b0101111))
 
 #endif //__RV64_EMITTER_H__

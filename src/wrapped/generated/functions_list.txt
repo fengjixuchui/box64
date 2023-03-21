@@ -69,6 +69,7 @@
 #() lFl
 #() lFp
 #() LFv
+#() LFi
 #() LFu
 #() LFL
 #() LFp
@@ -1271,6 +1272,7 @@
 #() iFpLlpp
 #() iFpLLpp
 #() iFpLppi
+#() iFpLppp
 #() iFppiiu
 #() iFppiip
 #() iFppiup
@@ -1978,6 +1980,7 @@
 #() vFppiiiiii
 #() vFppiiipii
 #() vFppipipii
+#() vFppippDDC
 #() vFppipppui
 #() vFppippppi
 #() vFppippppp
@@ -1986,6 +1989,7 @@
 #() vFppppiipi
 #() vFpppppuuu
 #() vFpppppppp
+#() iFEuipuupp
 #() iFEpippppp
 #() iFEpuuLppp
 #() iFEpUUuppp
@@ -2300,6 +2304,7 @@
 #() vFuffffffffffff
 #() vFpipppiiiiiiuu
 #() vFpippppppppppp
+#() vFpuppppppppppp
 #() vFppiiiiiiiiiii
 #() vFppiipppiiiiii
 #() vFppppppppppppp
@@ -2349,12 +2354,10 @@
 #() iFpppppppppppppppppppppppppppppppppp
 #defined(HAVE_LD80BITS) IFD
 #defined(HAVE_LD80BITS) DFD
-#defined(HAVE_LD80BITS) vFppippDDC
 #!defined(HAVE_LD80BITS) IFK
 #!defined(HAVE_LD80BITS) KFK
 #!defined(HAVE_LD80BITS) KFKK
 #!defined(HAVE_LD80BITS) KFKp
-#!defined(HAVE_LD80BITS) vFppippKKC
 #defined(NOALIGN) iFipiip
 #!defined(NOALIGN) iFEppu
 #!defined(NOALIGN) iFEiiip
@@ -2378,10 +2381,13 @@ wrappedatk:
 - uFp:
   - atk_add_focus_tracker
 - uFpp:
+  - atk_add_global_event_listener
   - atk_add_key_event_listener
 wrappedatkbridge:
 wrappedatomic:
 wrappedatspi:
+- pFppp:
+  - atspi_event_listener_new
 wrappedbz2:
 - iFp:
   - BZ2_bzCompressEnd
@@ -3090,6 +3096,8 @@ wrappedlibasound:
 - iFp:
   - snd_dlclose
   - snd_lib_error_set_handler
+- vFpp:
+  - snd_mixer_elem_set_callback
 - pFppp:
   - snd_dlsym
 - iFpipp:
@@ -3352,6 +3360,8 @@ wrappedlibc:
   - clone
 wrappedlibcrypt:
 wrappedlibcups:
+- iFuipuupp:
+  - cupsEnumDests
 wrappedlibdl:
 - iFp:
   - dlclose
@@ -3821,6 +3831,7 @@ wrappednspr4:
 wrappednss3:
 - vFp:
   - PK11_SetPasswordFunc
+  - PORT_SetUCS2_ASCIIConversionFunction
 - iFpp:
   - CERT_RegisterAlternateOCSPAIAInfoCallBack
 - iFpIppp:

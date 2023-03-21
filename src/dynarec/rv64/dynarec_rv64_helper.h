@@ -72,7 +72,23 @@
                     LDxw(x1, wback, fixedaddress);      \
                     ed = x1;                            \
                 }
-
+// GETSED can use r1 for ed, and r2 for wback. ed will be sign extended!
+#define GETSED(D)  if(MODREG) {                         \
+                    ed = xRAX+(nextop&7)+(rex.b<<3);    \
+                    wback = 0;                          \
+                    if(!rex.w) {                        \
+                        ADDW(x1, ed, xZR);              \
+                        ed = x1;                        \
+                    }                                   \
+                } else {                                \
+                    SMREAD()                            \
+                    addr = geted(dyn, addr, ninst, nextop, &wback, x2, x1, &fixedaddress, rex, NULL, 1, D); \
+                    if(rex.w)                           \
+                        LD(x1, wback, fixedaddress);    \
+                    else                                \
+                        LW(x1, wback, fixedaddress);    \
+                    ed = x1;                            \
+                }
 // GETEDx can use r1 for ed, and r2 for wback. wback is 0 if ed is xEAX..xEDI
 #define GETEDx(D) if(MODREG) {                          \
                     ed = xRAX+(nextop&7)+(rex.b<<3);    \
@@ -82,6 +98,16 @@
                     addr = geted(dyn, addr, ninst, nextop, &wback, x2, x1, &fixedaddress, rex, NULL, 1, D); \
                     LD(x1, wback, fixedaddress);        \
                     ed = x1;                            \
+                }
+//GETEDH can use hint for ed, and r1 or r2 for wback (depending on hint). wback is 0 if ed is xEAX..xEDI
+#define GETEDH(hint, D) if(MODREG) {                    \
+                    ed = xRAX+(nextop&7)+(rex.b<<3);    \
+                    wback = 0;                          \
+                } else {                                \
+                    SMREAD();                           \
+                    addr = geted(dyn, addr, ninst, nextop, &wback, (hint==x2)?x1:x2, ed, &fixedaddress, rex, NULL, 1, D); \
+                    LDxw(hint, wback, fixedaddress);    \
+                    ed = hint;                          \
                 }
 //GETEWW will use i for ed, and can use w for wback.
 #define GETEWW(w, i, D) if(MODREG) {        \
@@ -150,6 +176,60 @@
                     wb1 = 1;                    \
                     ed = i;                     \
                 }
+//GETSEB sign extend EB, will use i for ed, and can use r3 for wback.
+#define GETSEB(i, D) if(MODREG) {                \
+                    if(rex.rex) {               \
+                        wback = xRAX+(nextop&7)+(rex.b<<3);     \
+                        wb2 = 0;                \
+                    } else {                    \
+                        wback = (nextop&7);     \
+                        wb2 = (wback>>2)*8;     \
+                        wback = xRAX+(wback&3); \
+                    }                           \
+                    MV(i, wback);               \
+                    SLLIW(i, i, 24-wb2);        \
+                    SRAIW(i, i, 24);            \
+                    wb1 = 0;                    \
+                    ed = i;                     \
+                } else {                        \
+                    SMREAD();                   \
+                    addr = geted(dyn, addr, ninst, nextop, &wback, x2, x3, &fixedaddress, rex, NULL, 0, D); \
+                    LB(i, wback, fixedaddress); \
+                    wb1 = 1;                    \
+                    ed = i;                     \
+                }
+
+//GETGB will use i for gd
+#define GETGB(i) if(rex.rex) {                                \
+                    gb1 = xRAX+((nextop&0x38)>>3)+(rex.r<<3); \
+                    gb2 = 0;                                  \
+                } else {                                      \
+                    gd = (nextop&0x38)>>3;                    \
+                    gb2 = ((gd&4)>>2);                        \
+                    gb1 = xRAX+(gd&3);                        \
+                }                                             \
+                gd = i;                                       \
+                MV(gd, gb1);                                  \
+                if (gb2) SRLI(gd, gd, gb2*8);                 \
+                ANDI(gd, gd, 0xff);
+
+// Write eb (ed) back to original register / memory, using s1 as scratch
+#define EBBACK(s1) if(wb1) {                            \
+                    SB(ed, wback, fixedaddress);        \
+                    SMWRITE();                          \
+                } else if(wb2) {                        \
+                    assert(wb2 == 8);                   \
+                    MOV64x(s1, 0xffffffffffff00ffLL);   \
+                    AND(wback, wback, s1);              \
+                    ANDI(ed, ed, 0xff);                 \
+                    SLLI(s1, ed, 8);                    \
+                    OR(wback, wback, s1);               \
+                } else {                                \
+                    ANDI(wback, wback, ~0xff);          \
+                    ANDI(ed, ed, 0xff);                 \
+                    OR(wback, wback, ed);               \
+                }
+
 // CALL will use x6 for the call address. Return value can be put in ret (unless ret is -1)
 // R0 will not be pushed/popd if ret is -2
 #define CALL(F, ret) call_c(dyn, ninst, F, x6, ret, 1, 0)
@@ -173,22 +253,54 @@
 #define MARKLOCK dyn->insts[ninst].marklock = dyn->native_size
 #define GETMARKLOCK dyn->insts[ninst].marklock
 
+#define Bxx_gen(OP, M, reg1, reg2)      \
+    j64 = GET##M - dyn->native_size;    \
+    B##OP (reg1, reg2, j64)
+
 // Branch to MARK if reg1==reg2 (use j64)
-#define BEQ_MARK(reg1, reg2)           \
-    j64 = GETMARK-(dyn->native_size);  \
-    BEQ(reg1, reg2, j64)
+#define BEQ_MARK(reg1, reg2) Bxx_gen(EQ, MARK, reg1, reg2)
 // Branch to MARK if reg1!=reg2 (use j64)
-#define BNE_MARK(reg1, reg2)           \
-    j64 = GETMARK-(dyn->native_size);  \
-    BNE(reg1, reg2, j64)
+#define BNE_MARK(reg1, reg2) Bxx_gen(NE, MARK, reg1, reg2)
+// Branch to MARK if reg1<reg2 (use j64)
+#define BLT_MARK(reg1, reg2) Bxx_gen(LT, MARK, reg1, reg2)
+// Branch to MARK if reg1>=reg2 (use j64)
+#define BGE_MARK(reg1, reg2) Bxx_gen(GE, MARK, reg1, reg2)
+// Branch to MARK2 if reg1==reg2 (use j64)
+#define BEQ_MARK2(reg1, reg2) Bxx_gen(EQ, MARK2, reg1,reg2)
+// Branch to MARK2 if reg1!=reg2 (use j64)
+#define BNE_MARK2(reg1, reg2) Bxx_gen(NE, MARK2, reg1,reg2)
+// Branch to MARK2 if reg1<>reg2 (use j64)
+#define BLT_MARK2(reg1, reg2) Bxx_gen(LT, MARK2, reg1,reg2)
+// Branch to MARK3 if reg1==reg2 (use j64)
+#define BEQ_MARK3(reg1, reg2) Bxx_gen(EQ, MARK3, reg1, reg2)
+// Branch to MARK3 if reg1!=reg2 (use j64)
+#define BNE_MARK3(reg1, reg2) Bxx_gen(NE, MARK3, reg1, reg2)
+// Branch to MARKLOCK if reg1!=reg2 (use j64)
+#define BNE_MARKLOCK(reg1, reg2) Bxx_gen(NE, MARKLOCK, reg1, reg2)
+// Branch to MARKLOCK if reg1!=0 (use j64)
+#define BNEZ_MARKLOCK(reg) BNE_MARKLOCK(reg, xZR)
+
 // Branch to NEXT if reg1==0 (use j64)
-#define CBZ_NEXT(reg1)                  \
+#define CBZ_NEXT(reg1)                 \
     j64 = (dyn->insts)?(dyn->insts[ninst].epilog-(dyn->native_size)):0; \
     BEQ(reg1, xZR, j64)
 // Branch to NEXT if reg1!=0 (use j64)
-#define CBNZ_NEXT(reg1)                 \
+#define CBNZ_NEXT(reg1)                \
     j64 = (dyn->insts)?(dyn->insts[ninst].epilog-(dyn->native_size)):0; \
     BNE(reg1, xZR, j64)
+// Branch to next instruction unconditionnal (use j64)
+#define B_NEXT_nocond                                               \
+    j64 = (dyn->insts)?(dyn->insts[ninst].epilog-(dyn->native_size)):0;\
+    B(j64)
+
+// Branch to MARKSEG if reg is 0 (use j64)
+#define CBZ_MARKSEG(reg)    \
+    j64 = GETMARKSEG-(dyn->native_size);   \
+    BEQZ(reg, j64);
+// Branch to MARKSEG if reg is not 0 (use j64)
+#define CBNZ_MARKSEG(reg)              \
+    j64 = GETMARKSEG-(dyn->native_size);   \
+    BNEZ(reg, j64);
 
 #define IFX(A)  if((dyn->insts[ninst].x64.gen_flags&(A)))
 #define IFX_PENDOR0  if((dyn->insts[ninst].x64.gen_flags&(X_PEND) || !dyn->insts[ninst].x64.gen_flags))
@@ -227,8 +339,8 @@
     LOAD_REG(R11);          \
 
 
-#define SET_DFNONE(S)    if(!dyn->f.dfnone) {MOV_U12(S, d_none); SW(S, xEmu, offsetof(x64emu_t, df)); dyn->f.dfnone=1;}
-#define SET_DF(S, N)     if((N)!=d_none) {MOV_U12(S, (N)); SW(S, xEmu, offsetof(x64emu_t, df)); dyn->f.dfnone=0;} else SET_DFNONE(S)
+#define SET_DFNONE()    if(!dyn->f.dfnone) {SW(xZR, xEmu, offsetof(x64emu_t, df)); dyn->f.dfnone=1;}
+#define SET_DF(S, N)     if((N)!=d_none) {MOV_U12(S, (N)); SW(S, xEmu, offsetof(x64emu_t, df)); dyn->f.dfnone=0;} else SET_DFNONE()
 #define SET_NODF()          dyn->f.dfnone = 0
 #define SET_DFOK()          dyn->f.dfnone = 1
 
@@ -254,7 +366,6 @@
                 ANDI(scratch1, scratch2, 0x80);                           \
             } else {                                                      \
                 SRLI(scratch1, scratch2, (width)-1);                      \
-                if ((width) == 16) ANDI(scratch1, scratch1, 1);           \
             }                                                             \
             BEQZ(scratch1, 8);                                            \
             ORI(xFlags, xFlags, 1 << F_CF);                               \
@@ -333,7 +444,7 @@
 #endif
 #define UFLAG_OP1(A) if(dyn->insts[ninst].x64.gen_flags) {SDxw(A, xEmu, offsetof(x64emu_t, op1));}
 #define UFLAG_OP2(A) if(dyn->insts[ninst].x64.gen_flags) {SDxw(A, xEmu, offsetof(x64emu_t, op2));}
-#define UFLAG_OP12(A1, A2) if(dyn->insts[ninst].x64.gen_flags) {SDxw(A1, xEmu, offsetof(x64emu_t, op1));SDxw(A2, 0, offsetof(x64emu_t, op2));}
+#define UFLAG_OP12(A1, A2) if(dyn->insts[ninst].x64.gen_flags) {SDxw(A1, xEmu, offsetof(x64emu_t, op1));SDxw(A2, xEmu, offsetof(x64emu_t, op2));}
 #define UFLAG_RES(A) if(dyn->insts[ninst].x64.gen_flags) {SDxw(A, xEmu, offsetof(x64emu_t, res));}
 #define UFLAG_DF(r, A) if(dyn->insts[ninst].x64.gen_flags) {SET_DF(r, A)}
 #define UFLAG_IF if(dyn->insts[ninst].x64.gen_flags)
@@ -344,6 +455,9 @@
 #ifndef TABLE64
 #define TABLE64(A, V)
 #endif
+
+#define ARCH_INIT()
+
 
 #if STEP < 2
 #define GETIP(A)
@@ -366,7 +480,7 @@
     }
 #define GETIP_(A)                                       \
     if(dyn->last_ip && ((A)-dyn->last_ip)<2048) {       \
-        uint64_t _delta_ip = (A)-dyn->last_ip;          \
+        int64_t _delta_ip = (A)-dyn->last_ip;           \
         if(_delta_ip) {ADDI(xRIP, xRIP, _delta_ip);}    \
     } else {                                            \
         if((A)<0xffffffff) {                            \
@@ -388,6 +502,7 @@
 #define MODREG  ((nextop&0xC0)==0xC0)
 
 void rv64_epilog();
+void rv64_epilog_fast();
 void* rv64_next(x64emu_t* emu, uintptr_t addr);
 
 #ifndef STEPNAME
@@ -423,6 +538,7 @@ void* rv64_next(x64emu_t* emu, uintptr_t addr);
 #define geted32         STEPNAME(geted32)
 #define geted16         STEPNAME(geted16)
 #define jump_to_epilog  STEPNAME(jump_to_epilog)
+#define jump_to_epilog_fast  STEPNAME(jump_to_epilog_fast)
 #define jump_to_next    STEPNAME(jump_to_next)
 #define ret_to_epilog   STEPNAME(ret_to_epilog)
 #define retn_to_epilog  STEPNAME(retn_to_epilog)
@@ -439,6 +555,7 @@ void* rv64_next(x64emu_t* emu, uintptr_t addr);
 #define emit_test8      STEPNAME(emit_test8)
 #define emit_test16     STEPNAME(emit_test16)
 #define emit_test32     STEPNAME(emit_test32)
+#define emit_test32c    STEPNAME(emit_test32)
 #define emit_add32      STEPNAME(emit_add32)
 #define emit_add32c     STEPNAME(emit_add32c)
 #define emit_add8       STEPNAME(emit_add8)
@@ -552,22 +669,24 @@ uintptr_t geted(dynarec_rv64_t* dyn, uintptr_t addr, int ninst, uint8_t nextop, 
 
 // generic x64 helper
 void jump_to_epilog(dynarec_rv64_t* dyn, uintptr_t ip, int reg, int ninst);
+void jump_to_epilog_fast(dynarec_rv64_t* dyn, uintptr_t ip, int reg, int ninst);
 void jump_to_next(dynarec_rv64_t* dyn, uintptr_t ip, int reg, int ninst);
 void ret_to_epilog(dynarec_rv64_t* dyn, int ninst);
 void retn_to_epilog(dynarec_rv64_t* dyn, int ninst, int n);
 //void iret_to_epilog(dynarec_rv64_t* dyn, int ninst, int is64bits);
 void call_c(dynarec_rv64_t* dyn, int ninst, void* fnc, int reg, int ret, int saveflags, int save_reg);
 void call_n(dynarec_rv64_t* dyn, int ninst, void* fnc, int w);
-//void grab_segdata(dynarec_rv64_t* dyn, uintptr_t addr, int ninst, int reg, int segment);
+void grab_segdata(dynarec_rv64_t* dyn, uintptr_t addr, int ninst, int reg, int segment);
 void emit_cmp8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, int s5, int s6);
-//void emit_cmp16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, int s5);
+void emit_cmp16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, int s5, int s6);
 void emit_cmp32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4, int s5, int s6);
 void emit_cmp8_0(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);
-//void emit_cmp16_0(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);
+void emit_cmp16_0(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);
 void emit_cmp32_0(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s3, int s4);
-//void emit_test8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, int s5);
+void emit_test8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, int s5);
 //void emit_test16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, int s5);
 void emit_test32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4, int s5);
+void emit_test32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int64_t c, int s3, int s4, int s5);
 void emit_add32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4, int s5);
 void emit_add32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int64_t c, int s2, int s3, int s4, int s5);
 //void emit_add8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
@@ -587,18 +706,18 @@ void emit_and32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int64_t c, i
 //void emit_xor8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
 //void emit_xor8c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
 //void emit_and8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
-//void emit_and8c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
+void emit_and8c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
 //void emit_add16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
 //void emit_add16c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
 //void emit_sub16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
 //void emit_sub16c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
-//void emit_or16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
+void emit_or16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
 //void emit_or16c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
 //void emit_xor16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
 //void emit_xor16c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
 //void emit_and16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
 //void emit_and16c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
-//void emit_inc32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s3, int s4);
+void emit_inc32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4, int s5);
 //void emit_inc16(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);
 //void emit_inc8(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);
 //void emit_dec32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s3, int s4);
@@ -610,10 +729,10 @@ void emit_and32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int64_t c, i
 //void emit_adc8c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4, int s5);
 //void emit_adc16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
 //void emit_adc16c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
-//void emit_sbb32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4);
+void emit_sbb32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4, int s5);
 //void emit_sbb32c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
-//void emit_sbb8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
-//void emit_sbb8c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4, int s5);
+void emit_sbb8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, int s5);
+void emit_sbb8c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4, int s5, int s6);
 //void emit_sbb16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
 //void emit_sbb16c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
 //void emit_neg32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s3, int s4);
@@ -697,7 +816,7 @@ void fpu_popcache(dynarec_rv64_t* dyn, int ninst, int s1, int not07);
 
 uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int* ok, int* need_epilog);
-//uintptr_t dynarec64_64(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int seg, int* ok, int* need_epilog);
+uintptr_t dynarec64_64(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int seg, int* ok, int* need_epilog);
 //uintptr_t dynarec64_65(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep,int* ok, int* need_epilog);
 uintptr_t dynarec64_66(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 //uintptr_t dynarec64_67(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
@@ -709,7 +828,7 @@ uintptr_t dynarec64_66(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
 //uintptr_t dynarec64_DD(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 //uintptr_t dynarec64_DE(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 //uintptr_t dynarec64_DF(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
-//uintptr_t dynarec64_F0(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
+uintptr_t dynarec64_F0(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int* ok, int* need_epilog);
 //uintptr_t dynarec64_6664(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int seg, int* ok, int* need_epilog);
 //uintptr_t dynarec64_66F0(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
@@ -814,6 +933,7 @@ uintptr_t dynarec64_F30F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
         INST_NAME(T1 "LE " T2);                             \
         GO( SRLI(x1, xFlags, F_SF-F_OF2);                   \
             XOR(x1, x1, xFlags);                            \
+            ANDI(x1, x1, 1<<F_OF2);                         \
             ANDI(x3, xFlags, 1<<F_ZF);                      \
             OR(x1, x1, x3);                                 \
             ANDI(x1, x1, (1<<F_OF2) | (1<<F_ZF))            \
@@ -823,6 +943,7 @@ uintptr_t dynarec64_F30F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
         INST_NAME(T1 "G " T2);                              \
         GO( SRLI(x1, xFlags, F_SF-F_OF2);                   \
             XOR(x1, x1, xFlags);                            \
+            ANDI(x1, x1, 1<<F_OF2);                         \
             ANDI(x3, xFlags, 1<<F_ZF);                      \
             OR(x1, x1, x3);                                 \
             ANDI(x1, x1, (1<<F_OF2) | (1<<F_ZF))            \

@@ -66,6 +66,19 @@ uintptr_t dynarec64_66(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             addr = dynarec64_660F(dyn, addr, ip, ninst, rex, ok, need_epilog);
             break;
 
+        case 0x3D:
+            INST_NAME("CMP AX, Iw");
+            SETFLAGS(X_ALL, SF_SET_PENDING);
+            i32 = F16;
+            SLLI(x1, xRAX, 48);
+            SRLI(x1, x1, 48);
+            if(i32) {
+                MOV32w(x2, i32);
+                emit_cmp16(dyn, ninst, x1, x2, x3, x4, x5, x6);
+            } else {
+                emit_cmp16_0(dyn, ninst, x1, x3, x4);
+            }
+            break;
         case 0x70:
         case 0x71:
         case 0x72:
@@ -85,6 +98,43 @@ uintptr_t dynarec64_66(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             // just use regular conditional jump
             return dynarec64_00(dyn, addr-1, ip, ninst, rex, rep, ok, need_epilog);
 
+        case 0x81:
+        case 0x83:
+            nextop = F8;
+            switch((nextop>>3)&7) {
+                case 1: // OR
+                    if(opcode==0x81) {INST_NAME("OR Ew, Iw");} else {INST_NAME("OR Ew, Ib");}
+                    SETFLAGS(X_ALL, SF_SET_PENDING);
+                    GETEW(x1, (opcode==0x81)?2:1);
+                    if(opcode==0x81) i16 = F16S; else i16 = F8S;
+                    MOV64x(x5, i16);
+                    emit_or16(dyn, ninst, x1, x5, x2, x4);
+                    EWBACK;
+                    break;
+                default:
+                    DEFAULT;
+            }
+            break;
+        case 0x89:
+            INST_NAME("MOV Ew, Gw");
+            nextop = F8;
+            GETGD;
+            if(MODREG) {
+                ed = xRAX+(nextop&7)+(rex.b<<3);
+                if(ed!=gd) {
+                    // we don't use GETGW above, so we need let gd & 0xffff.
+                    LUI(x1, 0xffff0);
+                    AND(ed, ed, x1);
+                    SLLI(x2, gd, 48);
+                    SRLI(x2, x2, 48);
+                    OR(ed, ed, x2);
+                }
+            } else {
+                addr = geted(dyn, addr, ninst, nextop, &ed, x2, x1, &fixedaddress, rex, &lock, 0, 0);
+                SH(gd, ed, fixedaddress);
+                SMWRITELOCK(lock);
+            }
+            break;
         case 0xC1:
             nextop = F8;
             switch((nextop>>3)&7) {

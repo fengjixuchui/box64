@@ -45,6 +45,7 @@ uintptr_t native_pass(dynarec_native_t* dyn, uintptr_t addr)
     dyn->forward_size = 0;
     dyn->forward_ninst = 0;
     fpu_reset(dyn);
+    ARCH_INIT();
     int reset_n = -1;
     dyn->last_ip = (dyn->insts && dyn->insts[0].pred_sz)?0:ip;  // RIP is always set at start of block unless there is a predecessor!
     int stopblock = 2+(FindElfAddress(my_context, addr)?0:1); // if block is in elf_memory, it can be extended with bligblocks==2, else it needs 3
@@ -73,7 +74,7 @@ uintptr_t native_pass(dynarec_native_t* dyn, uintptr_t addr)
                 }
             }
             reset_n = -1;
-        } else if(ninst && (dyn->insts[ninst].pred_sz!=1 || dyn->insts[ninst].pred[0]!=ninst-1))
+        } else if(ninst && (dyn->insts[ninst].pred_sz>1 || (dyn->insts[ninst].pred_sz==1 && dyn->insts[ninst].pred[0]!=ninst-1)))
             dyn->last_ip = 0;   // reset IP if some jump are comming here
         fpu_propagate_stack(dyn, ninst);
         NEW_INST;

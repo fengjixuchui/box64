@@ -163,8 +163,8 @@ uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                 addr = geted(dyn, addr, ninst, nextop, &ed, x2, x4, &fixedaddress, rex, NULL, 1, 0); \
                 B##NO(x1, 8);                       \
                 LDxw(gd, ed, fixedaddress);         \
-                if(!rex.w) {ZEROUP(gd);}            \
-            }
+            }                                       \
+            if(!rex.w) ZEROUP(gd);
 
         GOCOND(0x40, "CMOV", "Gd, Ed");
         #undef GO
@@ -187,7 +187,7 @@ uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                 CHECK_CACHE()) {                                        \
                 /* out of the block */                                  \
                 i32 = dyn->insts[ninst].epilog-(dyn->native_size);      \
-                B##NO(x1, i32);                                         \
+                B##NO##_safe(x1, i32);                                  \
                 if(dyn->insts[ninst].x64.jmp_insts==-1) {               \
                     if(!(dyn->insts[ninst].x64.barrier&BARRIER_FLOAT))  \
                         fpu_purgecache(dyn, ninst, 1, x1, x2, x3);      \
@@ -200,7 +200,7 @@ uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             } else {                                                    \
                 /* inside the block */                                  \
                 i32 = dyn->insts[dyn->insts[ninst].x64.jmp_insts].address-(dyn->native_size);    \
-                B##YES(x1, i32);                                        \
+                B##YES##_safe(x1, i32);                                 \
             }
 
         GOCOND(0x80, "J", "Id");
@@ -321,7 +321,7 @@ uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                     eb2 = (ed&4)>>2;    // L or H
                 }
                 if (eb2) {
-                    SRLI(gd, eb1, wb2);
+                    SRLI(gd, eb1, 8);
                     ANDI(gd, gd, 0xff);
                 } else {
                     ANDI(gd, eb1, 0xff);
@@ -377,7 +377,7 @@ uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             if(MODREG) {
                 ed = xRAX+(nextop&7)+(rex.b<<3);
                 SLLI(gd, ed, 48);
-                SRLI(gd, gd, 48);
+                SRAI(gd, gd, 48);
             } else {
                 SMREAD();
                 addr = geted(dyn, addr, ninst, nextop, &ed, x3, x1, &fixedaddress, rex, NULL, 1, 0);

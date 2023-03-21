@@ -82,18 +82,28 @@ uintptr_t geted(dynarec_rv64_t* dyn, uintptr_t addr, int ninst, uint8_t nextop, 
             }
         } else if((nextop&7)==5) {
             int64_t tmp = F32S64;
-            if(i12 && (tmp>=-2048) && (tmp<=2047)) {
+            int64_t adj = dyn->last_ip?((addr+delta)-dyn->last_ip):0;
+            if(i12 && adj && (tmp+adj>=-2048) && (tmp+adj<=2047)) {
+                ret = xRIP;
+                *fixaddress = tmp+adj;
+            } else if(i12 && (tmp>=-2048) && (tmp<=2047)) {
                 GETIP(addr+delta);
                 ret = xRIP;
                 *fixaddress = tmp;
+            } else if(adj && (tmp+adj>=-2048) && (tmp+adj<=2047)) {
+                ADDI(ret, xRIP, tmp+adj);
             } else if((tmp>=-2048) && (tmp<=2047)) {
                 GETIP(addr+delta);
                 ADDI(ret, xRIP, tmp);
             } else if(tmp+addr+delta<0x100000000LL) {
                 MOV64x(ret, tmp+addr+delta);
             } else {
-                MOV64x(ret, tmp);
-                GETIP(addr+delta);
+                if(adj) {
+                    MOV64x(ret, tmp+adj);
+                } else {
+                    MOV64x(ret, tmp);
+                    GETIP(addr+delta);
+                }
                 ADD(ret, ret, xRIP);
             }
             switch(lock) {
@@ -185,6 +195,23 @@ void jump_to_epilog(dynarec_rv64_t* dyn, uintptr_t ip, int reg, int ninst)
         GETIP_(ip);
     }
     TABLE64(x2, (uintptr_t)rv64_epilog);
+    SMEND();
+    BR(x2);
+}
+
+void jump_to_epilog_fast(dynarec_rv64_t* dyn, uintptr_t ip, int reg, int ninst)
+{
+    MAYUSE(dyn); MAYUSE(ip); MAYUSE(ninst);
+    MESSAGE(LOG_DUMP, "Jump to epilog_fast\n");
+
+    if(reg) {
+        if(reg!=xRIP) {
+            MV(xRIP, reg);
+        }
+    } else {
+        GETIP_(ip);
+    }
+    TABLE64(x2, (uintptr_t)rv64_epilog_fast);
     SMEND();
     BR(x2);
 }
@@ -471,6 +498,31 @@ void call_n(dynarec_rv64_t* dyn, int ninst, void* fnc, int w)
     SET_NODF();
 }
 
+void grab_segdata(dynarec_rv64_t* dyn, uintptr_t addr, int ninst, int reg, int segment)
+{
+    (void)addr;
+    int64_t j64;
+    MAYUSE(j64);
+    MESSAGE(LOG_DUMP, "Get %s Offset\n", (segment==_FS)?"FS":"GS");
+    int t1 = x1, t2 = x4;
+    if(reg==t1) ++t1;
+    if(reg==t2) ++t2;
+    LWU(t2, xEmu, offsetof(x64emu_t, segs_serial[segment]));
+    LD(reg, xEmu, offsetof(x64emu_t, segs_offs[segment]));
+    if(segment==_GS) {
+        CBNZ_MARKSEG(t2);   // fast check
+    } else {
+        LD(t1, xEmu, offsetof(x64emu_t, context));
+        LWU(t1, t1, offsetof(box64context_t, sel_serial));
+        SUBW(t1, t1, t2);
+        CBZ_MARKSEG(t1);
+    }
+    MOV64x(x1, segment);
+    call_c(dyn, ninst, GetSegmentBaseEmu, t2, reg, 1, 0);
+    MARKSEG;
+    MESSAGE(LOG_DUMP, "----%s Offset\n", (segment==_FS)?"FS":"GS");
+}
+
 void fpu_reset(dynarec_rv64_t* dyn)
 {
     //TODO
@@ -591,7 +643,8 @@ void rv64_move32(dynarec_rv64_t* dyn, int ninst, int reg, int32_t val, int zerou
         src = reg;
     }
     if (lo12 || !hi20) ADDI(reg, src, lo12);
-    if(zeroup && ((hi20&0x80000) || (!hi20 && (lo12&0x800)))) {
+    if((zeroup && ((hi20&0x80000) || (!hi20 && (lo12&0x800)))
+    || (!zeroup && !(val&0x80000000) && ((hi20&0x80000) || (!hi20 && (lo12&0x800)))))) {
         ZEROUP(reg);
     }
 }

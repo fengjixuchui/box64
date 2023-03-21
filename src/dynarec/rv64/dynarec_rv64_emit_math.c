@@ -32,7 +32,7 @@ void emit_add32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s
         SDxw(s2, xEmu, offsetof(x64emu_t, op2));
         SET_DF(s3, rex.w?d_add64:d_add32b);
     } else IFX(X_ALL) {
-        SET_DFNONE(s3);
+        SET_DFNONE();
     }
     IFX(X_CF) {
         if (rex.w) {
@@ -121,7 +121,7 @@ void emit_add32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int64_t c, i
         SDxw(s2, xEmu, offsetof(x64emu_t, op2));
         SET_DF(s3, rex.w?d_add64:d_add32b);
     } else IFX(X_ALL) {
-        SET_DFNONE(s3);
+        SET_DFNONE();
     }
     IFX(X_CF) {
         if (rex.w) {
@@ -202,7 +202,7 @@ void emit_sub32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s
         SDxw(s2, xEmu, offsetof(x64emu_t, op2));
         SET_DF(s3, rex.w?d_sub64:d_sub32);
     } else IFX(X_ALL) {
-        SET_DFNONE(s3);
+        SET_DFNONE();
     }
 
     IFX(X_AF | X_CF | X_OF) {
@@ -254,7 +254,7 @@ void emit_sub32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int64_t c, i
         SDxw(s2, xEmu, offsetof(x64emu_t, op2));
         SET_DF(s3, rex.w?d_sub64:d_sub32);
     } else IFX(X_ALL) {
-        SET_DFNONE(s3);
+        SET_DFNONE();
     }
 
     IFX(X_AF | X_CF | X_OF) {
@@ -285,6 +285,152 @@ void emit_sub32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int64_t c, i
     if (!rex.w) {
         ZEROUP(s1);
     }
+    CALC_SUB_FLAGS(s5, s2, s1, s3, s4, rex.w?64:32);
+    IFX(X_ZF) {
+        BNEZ(s1, 8);
+        ORI(xFlags, xFlags, 1 << F_ZF);
+    }
+    IFX(X_PF) {
+        emit_pf(dyn, ninst, s1, s3, s4);
+    }
+}
+
+// emit INC32 instruction, from s1, store result in s1 using s3 and s4 as scratch
+void emit_inc32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4, int s5)
+{
+    IFX(X_ALL) {
+        ANDI(xFlags, xFlags, ~((1UL<<F_AF) | (1UL<<F_OF2) | (1UL<<F_ZF) | (1UL<<F_SF) | (1UL<<F_PF)));
+    }
+    IFX(X_PEND) {
+        SDxw(s1, xEmu, offsetof(x64emu_t, op1));
+        SET_DF(s3, rex.w?d_inc64:d_inc32);
+    } else IFX(X_ALL) {
+        SET_DFNONE();
+    }
+    IFX(X_AF | X_OF) {
+        ORI(s3, s1, 1);      // s3 = op1 | op2
+        ANDI(s5, s1, 1);      // s5 = op1 & op2
+    }
+
+    ADDIxw(s1, s1, 1);
+
+    IFX(X_PEND) {
+        SDxw(s1, xEmu, offsetof(x64emu_t, res));
+    }
+    IFX(X_AF | X_OF) {
+        NOT(s2, s1);   // s2 = ~res
+        AND(s3, s2, s3);   // s3 = ~res & (op1 | op2)
+        OR(s3, s3, s5);   // cc = (~res & (op1 | op2)) | (op1 & op2)
+        IFX(X_AF) {
+            ANDI(s2, s3, 0x08); // AF: cc & 0x08
+            BEQZ(s2, 8);
+            ORI(xFlags, xFlags, 1 << F_AF);
+        }
+        IFX(X_OF) {
+            SRLI(s3, s3, rex.w?62:30);
+            SRLI(s2, s3, 1);
+            XOR(s3, s3, s2);
+            ANDI(s3, s3, 1); // OF: xor of two MSB's of cc
+            BEQZ(s3, 8);
+            ORI(xFlags, xFlags, 1 << F_OF2);
+        }
+    }
+    IFX(X_SF) {
+        BGE(s1, xZR, 8);
+        ORI(xFlags, xFlags, 1 << F_SF);
+    }
+    if (!rex.w) {
+        ZEROUP(s1);
+    }
+    IFX(X_PF) {
+        emit_pf(dyn, ninst, s1, s3, s2);
+    }
+    IFX(X_ZF) {
+        BNEZ(s1, 8);
+        ORI(xFlags, xFlags, 1 << F_ZF);
+    }
+}
+
+// emit SBB8 instruction, from s1, s2, store result in s1 using s3, s4 and s5 as scratch
+void emit_sbb8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, int s5)
+{
+    IFX(X_PEND) {
+        SB(s1, xEmu, offsetof(x64emu_t, op1));
+        SB(s2, xEmu, offsetof(x64emu_t, op2));
+        SET_DF(s3, d_sbb8);
+    } else IFX(X_ALL) {
+        SET_DFNONE();
+    }
+
+    IFX(X_AF | X_CF | X_OF) {
+        // for later flag calculation
+        NOT(s5, s1);
+    }
+
+    SUBW(s1, s1, s2);
+    ANDI(s1, s1, 0xff);
+    ANDI(s3, xFlags, 1 << F_CF);
+    SUBW(s1, s1, s3);
+    ANDI(s1, s1, 0xff);
+
+    IFX(X_PEND) {
+        SB(s1, xEmu, offsetof(x64emu_t, res));
+    }
+
+    CALC_SUB_FLAGS(s5, s2, s1, s3, s4, 8);
+    IFX(X_SF) {
+        SRLI(s3, s1, 7);
+        BEQZ(s3, 8);
+        ORI(xFlags, xFlags, 1 << F_SF);
+    }
+    IFX(X_ZF) {
+        BNEZ(s1, 8);
+        ORI(xFlags, xFlags, 1 << F_ZF);
+    }
+    IFX(X_PF) {
+        emit_pf(dyn, ninst, s1, s3, s4);
+    }
+}
+
+// emit SBB8 instruction, from s1, constant c, store result in s1 using s3, s4, s5 and s6 as scratch
+void emit_sbb8c(dynarec_rv64_t* dyn, int ninst, int s1, int c, int s3, int s4, int s5, int s6)
+{
+    MOV32w(s6, c&0xff);
+    emit_sbb8(dyn, ninst, s1, s6, s3, s4, s5);
+}
+
+// emit SBB32 instruction, from s1, s2, store result in s1 using s3 and s4 as scratch
+void emit_sbb32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4, int s5)
+{
+    IFX(X_PEND) {
+        SDxw(s1, xEmu, offsetof(x64emu_t, op1));
+        SDxw(s2, xEmu, offsetof(x64emu_t, op2));
+        SET_DF(s3, rex.w?d_sbb64:d_sbb32);
+    } else IFX(X_ALL) {
+        SET_DFNONE();
+    }
+
+    IFX(X_AF | X_CF | X_OF) {
+        // for later flag calculation
+        NOT(s5, s1);
+    }
+
+    SUBxw(s1, s1, s2);
+    ANDI(s3, xFlags, 1 << F_CF);
+    SUBxw(s1, s1, s3);
+
+    IFX(X_SF) {
+        BGE(s1, xZR, 8);
+        ORI(xFlags, xFlags, 1 << F_SF);
+    }
+    if (!rex.w) {
+        ZEROUP(s1);
+    }
+
+    IFX(X_PEND) {
+        SDxw(s1, xEmu, offsetof(x64emu_t, res));
+    }
+
     CALC_SUB_FLAGS(s5, s2, s1, s3, s4, rex.w?64:32);
     IFX(X_ZF) {
         BNEZ(s1, 8);
