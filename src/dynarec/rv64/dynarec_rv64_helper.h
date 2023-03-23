@@ -109,6 +109,8 @@
                     LDxw(hint, wback, fixedaddress);    \
                     ed = hint;                          \
                 }
+// GETGW extract x64 register in gd, that is i
+#define GETGW(i) gd = xRAX+((nextop&0x38)>>3)+(rex.r<<3); SLLI(i, gd, 48); SRLI(i, i, 48); gd = i;
 //GETEWW will use i for ed, and can use w for wback.
 #define GETEWW(w, i, D) if(MODREG) {        \
                     wback = xRAX+(nextop&7)+(rex.b<<3);\
@@ -146,10 +148,25 @@
 // Write back gd in correct register (gd needs to be 16bits only!)
 #define GWBACK       do{int g=xRAX+((nextop&0x38)>>3)+(rex.r<<3); SRLI(g, g, 16); SLLI(g, g, 16); OR(g, g, gd);}while(0)
 
+//GETEDO can use r1 for ed, and r2 for wback. wback is 0 if ed is xEAX..xEDI
+#define GETEDO(O, D, S)   if(MODREG) {                  \
+                    ed = xRAX+(nextop&7)+(rex.b<<3);    \
+                    wback = 0;                          \
+                } else {                                \
+                    SMREAD();                           \
+                    addr = geted(dyn, addr, ninst, nextop, &wback, x2, S, &fixedaddress, rex, NULL, 0, D); \
+                    ADD(S, wback, O);                   \
+                    LDxw(x1, S, 0);                     \
+                    ed = x1;                            \
+                }
+
 // FAKEED like GETED, but doesn't get anything
 #define FAKEED  if(!MODREG) {   \
                     addr = fakeed(dyn, addr, ninst, nextop); \
                 }
+
+// GETGW extract x64 register in gd, that is i, Signed extented
+#define GETSGW(i) gd = xRAX+((nextop&0x38)>>3)+(rex.r<<3); SLLIW(i, gd, 16); SRAIW(i, i, 16); gd = i;
 
 // Write back ed in wback (if wback not 0)
 #define WBACK       if(wback) {SDxw(ed, wback, fixedaddress); SMWRITE();}
@@ -244,6 +261,43 @@
                     OR(wback, wback, ed);               \
                 }
 
+// Get direction with size Z and based of F_DF flag, on register r ready for load/store fetching
+// using s as scratch.
+#define GETDIR(r, s, Z)             \
+    MOV32w(r, Z); /* mask=1<<10 */  \
+    ANDI(s, xFlags, 1<<F_DF);       \
+    BEQZ(s, 8);                     \
+    SUB(r, xZR, r);                 \
+
+// Generic get GD, but reg value in gd (R_RAX is not added)
+#define GETG        gd = ((nextop&0x38)>>3)+(rex.r<<3)
+
+// Get GX as a Single (might use x1)
+#define GETGXSS(a)                      \
+    gd = ((nextop&0x38)>>3)+(rex.r<<3); \
+    a = sse_get_reg(dyn, ninst, x1, gd, 1)
+
+// Get GX as a Double (might use x1)
+#define GETGXSD(a)                      \
+    gd = ((nextop&0x38)>>3)+(rex.r<<3); \
+    a = sse_get_reg(dyn, ninst, x1, gd, 0)
+
+// Get GX as a Double (might use x1), no fetching old value
+#define GETGXSD_empty(a)                \
+    gd = ((nextop&0x38)>>3)+(rex.r<<3); \
+    a = sse_get_reg_empty(dyn, ninst, x1, gd, 0)
+
+// Get Ex as a single, not a quad (warning, x1 get used, x2 might too)
+#define GETEXSS(a, D)                                                                                   \
+    if(MODREG) {                                                                                        \
+        a = sse_get_reg(dyn, ninst, x1, (nextop&7)+(rex.b<<3), 1);                                      \
+    } else {                                                                                            \
+        SMREAD();                                                                                       \
+        a = fpu_get_scratch(dyn);                                                                       \
+        addr = geted(dyn, addr, ninst, nextop, &ed, x1, x2, &fixedaddress, rex, NULL, 1, D);            \
+        FLW(a, ed, fixedaddress);                                                                       \
+    }
+
 // CALL will use x6 for the call address. Return value can be put in ret (unless ret is -1)
 // R0 will not be pushed/popd if ret is -2
 #define CALL(F, ret) call_c(dyn, ninst, F, x6, ret, 1, 0)
@@ -275,6 +329,8 @@
 #define BEQ_MARK(reg1, reg2) Bxx_gen(EQ, MARK, reg1, reg2)
 // Branch to MARK if reg1!=reg2 (use j64)
 #define BNE_MARK(reg1, reg2) Bxx_gen(NE, MARK, reg1, reg2)
+// Branch to MARK if reg1!=0 (use j64)
+#define BNEZ_MARK(reg) BNE_MARK(reg, xZR)
 // Branch to MARK if reg1<reg2 (use j64)
 #define BLT_MARK(reg1, reg2) Bxx_gen(LT, MARK, reg1, reg2)
 // Branch to MARK if reg1>=reg2 (use j64)
@@ -283,12 +339,16 @@
 #define BEQ_MARK2(reg1, reg2) Bxx_gen(EQ, MARK2, reg1,reg2)
 // Branch to MARK2 if reg1!=reg2 (use j64)
 #define BNE_MARK2(reg1, reg2) Bxx_gen(NE, MARK2, reg1,reg2)
-// Branch to MARK2 if reg1<>reg2 (use j64)
+// Branch to MARK2 if reg1!=0 (use j64)
+#define BNEZ_MARK2(reg) BNE_MARK2(reg, xZR)
+// Branch to MARK2 if reg1<reg2 (use j64)
 #define BLT_MARK2(reg1, reg2) Bxx_gen(LT, MARK2, reg1,reg2)
 // Branch to MARK3 if reg1==reg2 (use j64)
 #define BEQ_MARK3(reg1, reg2) Bxx_gen(EQ, MARK3, reg1, reg2)
 // Branch to MARK3 if reg1!=reg2 (use j64)
 #define BNE_MARK3(reg1, reg2) Bxx_gen(NE, MARK3, reg1, reg2)
+// Branch to MARK3 if reg1!=0 (use j64)
+#define BNEZ_MARK3(reg) BNE_MARK3(reg, xZR)
 // Branch to MARKLOCK if reg1!=reg2 (use j64)
 #define BNE_MARKLOCK(reg1, reg2) Bxx_gen(NE, MARKLOCK, reg1, reg2)
 // Branch to MARKLOCK if reg1!=0 (use j64)
@@ -469,6 +529,9 @@
 #ifndef TABLE64
 #define TABLE64(A, V)
 #endif
+#ifndef FTABLE64
+#define FTABLE64(A, V)
+#endif
 
 #define ARCH_INIT()
 
@@ -638,7 +701,7 @@ void* rv64_next(x64emu_t* emu, uintptr_t addr);
 #define x87_do_pop      STEPNAME(x87_do_pop)
 #define x87_get_current_cache   STEPNAME(x87_get_current_cache)
 #define x87_get_cache   STEPNAME(x87_get_cache)
-#define x87_get_neoncache STEPNAME(x87_get_neoncache)
+#define x87_get_extcache STEPNAME(x87_get_extcache)
 #define x87_get_st      STEPNAME(x87_get_st)
 #define x87_get_st_empty  STEPNAME(x87_get_st)
 #define x87_refresh     STEPNAME(x87_refresh)
@@ -654,6 +717,7 @@ void* rv64_next(x64emu_t* emu, uintptr_t addr);
 #define sse_get_reg     STEPNAME(sse_get_reg)
 #define sse_get_reg_empty STEPNAME(sse_get_reg_empty)
 #define sse_forget_reg   STEPNAME(sse_forget_reg)
+#define sse_purge07cache STEPNAME(sse_purge07cache)
 
 #define fpu_pushcache   STEPNAME(fpu_pushcache)
 #define fpu_popcache    STEPNAME(fpu_popcache)
@@ -663,6 +727,7 @@ void* rv64_next(x64emu_t* emu, uintptr_t addr);
 #define fpu_purgecache  STEPNAME(fpu_purgecache)
 #define mmx_purgecache  STEPNAME(mmx_purgecache)
 #define x87_purgecache  STEPNAME(x87_purgecache)
+#define sse_purgecache  STEPNAME(sse_purgecache)
 #ifdef HAVE_TRACE
 #define fpu_reflectcache STEPNAME(fpu_reflectcache)
 #endif
@@ -698,17 +763,17 @@ void emit_cmp8_0(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);
 void emit_cmp16_0(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);
 void emit_cmp32_0(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s3, int s4);
 void emit_test8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, int s5);
-//void emit_test16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, int s5);
+void emit_test16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, int s5);
 void emit_test32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4, int s5);
 void emit_test32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int64_t c, int s3, int s4, int s5);
 void emit_add32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4, int s5);
 void emit_add32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int64_t c, int s2, int s3, int s4, int s5);
 //void emit_add8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
-//void emit_add8c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
+void emit_add8c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s2, int s3, int s4);
 void emit_sub32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4, int s5);
 void emit_sub32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int64_t c, int s2, int s3, int s4, int s5);
 //void emit_sub8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
-//void emit_sub8c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4, int s5);
+void emit_sub8c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s2, int s3, int s4, int s5);
 void emit_or32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4);
 void emit_or32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int64_t c, int s3, int s4);
 void emit_xor32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4);
@@ -721,7 +786,7 @@ void emit_or8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
 //void emit_xor8c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
 //void emit_and8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
 void emit_and8c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
-//void emit_add16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
+void emit_add16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
 //void emit_add16c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
 //void emit_sub16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
 //void emit_sub16c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
@@ -729,7 +794,7 @@ void emit_or16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
 //void emit_or16c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
 //void emit_xor16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
 //void emit_xor16c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
-//void emit_and16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
+void emit_and16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
 //void emit_and16c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
 void emit_inc32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4, int s5);
 //void emit_inc16(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);
@@ -766,37 +831,37 @@ void emit_pf(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);
 
 // x87 helper
 // cache of the local stack counter, to avoid upadte at every call
-//void x87_stackcount(dynarec_rv64_t* dyn, int ninst, int scratch);
+void x87_stackcount(dynarec_rv64_t* dyn, int ninst, int scratch);
 // fpu push. Return the Dd value to be used
-//int x87_do_push(dynarec_rv64_t* dyn, int ninst, int s1, int t);
+int x87_do_push(dynarec_rv64_t* dyn, int ninst, int s1, int t);
 // fpu push. Do not allocate a cache register. Needs a scratch register to do x87stack synch (or 0 to not do it)
-//void x87_do_push_empty(dynarec_rv64_t* dyn, int ninst, int s1);
+void x87_do_push_empty(dynarec_rv64_t* dyn, int ninst, int s1);
 // fpu pop. All previous returned Dd should be considered invalid
-//void x87_do_pop(dynarec_rv64_t* dyn, int ninst, int s1);
+void x87_do_pop(dynarec_rv64_t* dyn, int ninst, int s1);
 // get cache index for a x87 reg, return -1 if cache doesn't exist
-//int x87_get_current_cache(dynarec_rv64_t* dyn, int ninst, int st, int t);
+int x87_get_current_cache(dynarec_rv64_t* dyn, int ninst, int st, int t);
 // get cache index for a x87 reg, create the entry if needed
-//int x87_get_cache(dynarec_rv64_t* dyn, int ninst, int populate, int s1, int s2, int a, int t);
-// get neoncache index for a x87 reg
-//int x87_get_neoncache(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int a);
+int x87_get_cache(dynarec_rv64_t* dyn, int ninst, int populate, int s1, int s2, int a, int t);
+// get extcache index for a x87 reg
+int x87_get_extcache(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int a);
 // get vfpu register for a x87 reg, create the entry if needed
-//int x87_get_st(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int a, int t);
+int x87_get_st(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int a, int t);
 // get vfpu register for a x87 reg, create the entry if needed. Do not fetch the Stx if not already in cache
-//int x87_get_st_empty(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int a, int t);
+int x87_get_st_empty(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int a, int t);
 // refresh a value from the cache ->emu (nothing done if value is not cached)
-//void x87_refresh(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int st);
+void x87_refresh(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int st);
 // refresh a value from the cache ->emu and then forget the cache (nothing done if value is not cached)
-//void x87_forget(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int st);
+void x87_forget(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int st);
 // refresh the cache value from emu
-//void x87_reget_st(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int st);
+void x87_reget_st(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int st);
 // swap 2 x87 regs
-//void x87_swapreg(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int a, int b);
+void x87_swapreg(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int a, int b);
 // Set rounding according to cw flags, return reg to restore flags
-//int x87_setround(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3);
+int x87_setround(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3);
 // Restore round flag
-//void x87_restoreround(dynarec_rv64_t* dyn, int ninst, int s1);
+void x87_restoreround(dynarec_rv64_t* dyn, int ninst, int s1);
 // Set rounding according to mxcsr flags, return reg to restore flags
-//int sse_setround(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3);
+int sse_setround(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3);
 
 void CacheTransform(dynarec_rv64_t* dyn, int ninst, int cacheupd, int s1, int s2, int s3);
 
@@ -808,6 +873,39 @@ void rv64_move32(dynarec_rv64_t* dyn, int ninst, int reg, int32_t val, int zerou
 #else
 #define CHECK_CACHE()   (cacheupd = CacheNeedsTransform(dyn, ninst))
 #endif
+#define extcache_st_coherency STEPNAME(extcache_st_coherency)
+int extcache_st_coherency(dynarec_rv64_t* dyn, int ninst, int a, int b);
+
+#if STEP == 0
+#define ST_IS_F(A)          0
+#define X87_COMBINE(A, B)   EXT_CACHE_ST_D
+#define X87_ST0             EXT_CACHE_ST_D
+#define X87_ST(A)           EXT_CACHE_ST_D
+#elif STEP == 1
+#define ST_IS_F(A) (extcache_get_current_st(dyn, ninst, A)==EXT_CACHE_ST_F)
+#define X87_COMBINE(A, B) extcache_combine_st(dyn, ninst, A, B)
+#define X87_ST0     extcache_get_current_st(dyn, ninst, 0)
+#define X87_ST(A)   extcache_get_current_st(dyn, ninst, A)
+#else
+#define ST_IS_F(A) (extcache_get_st(dyn, ninst, A)==EXT_CACHE_ST_F)
+#if STEP == 3
+#define X87_COMBINE(A, B) extcache_st_coherency(dyn, ninst, A, B)
+#else
+#define X87_COMBINE(A, B) extcache_get_st(dyn, ninst, A)
+#endif
+#define X87_ST0     extcache_get_st(dyn, ninst, 0)
+#define X87_ST(A)   extcache_get_st(dyn, ninst, A)
+#endif
+
+//SSE/SSE2 helpers
+// get neon register for a SSE reg, create the entry if needed
+int sse_get_reg(dynarec_rv64_t* dyn, int ninst, int s1, int a, int single);
+// get neon register for a SSE reg, but don't try to synch it if it needed to be created
+int sse_get_reg_empty(dynarec_rv64_t* dyn, int ninst, int s1, int a, int single);
+// forget neon register for a SSE reg, create the entry if needed
+void sse_forget_reg(dynarec_rv64_t* dyn, int ninst, int a);
+// purge the XMM0..XMM7 cache (before function call)
+void sse_purge07cache(dynarec_rv64_t* dyn, int ninst, int s1);
 
 // common coproc helpers
 // reset the cache
@@ -828,6 +926,7 @@ void fpu_reflectcache(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3);
 void fpu_pushcache(dynarec_rv64_t* dyn, int ninst, int s1, int not07);
 void fpu_popcache(dynarec_rv64_t* dyn, int ninst, int s1, int not07);
 
+
 uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int* ok, int* need_epilog);
 uintptr_t dynarec64_64(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int seg, int* ok, int* need_epilog);
@@ -835,9 +934,9 @@ uintptr_t dynarec64_64(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
 uintptr_t dynarec64_66(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 //uintptr_t dynarec64_67(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 //uintptr_t dynarec64_D8(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
-//uintptr_t dynarec64_D9(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
+uintptr_t dynarec64_D9(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 //uintptr_t dynarec64_DA(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
-//uintptr_t dynarec64_DB(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
+uintptr_t dynarec64_DB(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 //uintptr_t dynarec64_DC(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 //uintptr_t dynarec64_DD(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 //uintptr_t dynarec64_DE(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
@@ -846,7 +945,7 @@ uintptr_t dynarec64_F0(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
 uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int* ok, int* need_epilog);
 //uintptr_t dynarec64_6664(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int seg, int* ok, int* need_epilog);
 //uintptr_t dynarec64_66F0(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
-//uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int* ok, int* need_epilog);
+uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int* ok, int* need_epilog);
 uintptr_t dynarec64_F30F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int* ok, int* need_epilog);
 
 #if STEP < 2

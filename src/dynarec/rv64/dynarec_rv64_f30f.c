@@ -47,11 +47,79 @@ uintptr_t dynarec64_F30F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
     MAYUSE(j64);
 
     switch(opcode) {
+        case 0x10:
+            INST_NAME("MOVSS Gx, Ex");
+            nextop = F8;
+            GETG;
+            if(MODREG) {
+                v0 = sse_get_reg(dyn, ninst, x1, gd, 1);
+                q0 = sse_get_reg(dyn, ninst, x1, (nextop&7) + (rex.b<<3), 1);
+                FMVS(v0, q0);
+            } else {
+                v0 = sse_get_reg_empty(dyn, ninst, x1, gd, 1);
+                SMREAD();
+                addr = geted(dyn, addr, ninst, nextop, &ed, x1, x2, &fixedaddress, rex, NULL, 8, 0);
+                FLW(v0, ed, fixedaddress);
+                // reset upper part
+                SW(xZR, xEmu, offsetof(x64emu_t, xmm[gd])+4);
+                SD(xZR, xEmu, offsetof(x64emu_t, xmm[gd])+8);
+            }
+            break;
+        case 0x11:
+            INST_NAME("MOVSS Ex, Gx");
+            nextop = F8;
+            GETG;
+            v0 = sse_get_reg(dyn, ninst, x1, gd, 1);
+            if(MODREG) {
+                q0 = sse_get_reg(dyn, ninst, x1, (nextop&7) + (rex.b<<3), 1);
+                FMVS(q0, v0);
+            } else {
+                addr = geted(dyn, addr, ninst, nextop, &ed, x1, x2, &fixedaddress, rex, NULL, 1, 0);
+                FSW(v0, ed, fixedaddress);
+                SMWRITE2();
+            }
+            break;
+            
         case 0x1E:
             INST_NAME("NOP / ENDBR32 / ENDBR64");
             nextop = F8;
             FAKEED;
             break;
+
+        case 0x2A:
+            INST_NAME("CVTSI2SS Gx, Ed");
+            nextop = F8;
+            GETGXSS(v0);
+            GETED(0);
+            if(rex.w) {
+                FCVTSL(v0, ed);
+            } else {
+                FCVTSW(v0, ed);
+            }
+            break;
+
+        case 0x58:
+            INST_NAME("ADDSS Gx, Ex");
+            nextop = F8;
+            GETGXSS(v0);
+            GETEXSS(d0, 0);
+            FADDS(v0, v0, d0);
+            break;
+        case 0x59:
+            INST_NAME("MULSS Gx, Ex");
+            nextop = F8;
+            GETGXSS(v0);
+            GETEXSS(d0, 0);
+            FMULS(v0, v0, d0);
+            break;
+        case 0x5A:
+            INST_NAME("CVTSS2SD Gx, Ex");
+            nextop = F8;
+            GETEXSS(v1, 0);
+            GETGXSD_empty(v0);
+            FCVTDS(v0, v1);
+            break;
+
         default:
             DEFAULT;
     }

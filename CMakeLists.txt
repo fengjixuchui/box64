@@ -615,9 +615,9 @@ if(RV64_DYNAREC)
     "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_66.c"
     #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_67.c"
     #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_d8.c"
-    #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_d9.c"
+    "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_d9.c"
     #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_da.c"
-    #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_db.c"
+    "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_db.c"
     #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_dc.c"
     #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_dd.c"
     #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_de.c"
@@ -626,7 +626,7 @@ if(RV64_DYNAREC)
     "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_660f.c"
     #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_6664.c"
     #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_66f0.c"
-    #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_f20f.c"
+    "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_f20f.c"
     "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_f30f.c"
     )
 endif()

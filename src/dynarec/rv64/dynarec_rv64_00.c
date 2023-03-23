@@ -98,7 +98,14 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             emit_or8(dyn, ninst, x1, x2, x3, x4);
             GBBACK(x5);
             break;
-
+        case 0x0B:
+            INST_NAME("OR Gd, Ed");
+            SETFLAGS(X_ALL, SF_SET_PENDING);
+            nextop = F8;
+            GETGD;
+            GETED(0);
+            emit_or32(dyn, ninst, rex, gd, ed, x3, x4);
+            break;
         case 0x0D:
             INST_NAME("OR EAX, Id");
             SETFLAGS(X_ALL, SF_SET_PENDING);
@@ -110,6 +117,9 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             switch(rep) {
             case 0:
                 addr = dynarec64_0F(dyn, addr, ip, ninst, rex, ok, need_epilog);
+                break;
+            case 1:
+                addr = dynarec64_F20F(dyn, addr, ip, ninst, rex, ok, need_epilog);
                 break;
             case 2:
                 addr = dynarec64_F30F(dyn, addr, ip, ninst, rex, ok, need_epilog);
@@ -169,7 +179,15 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             GETED(0);
             emit_sub32(dyn, ninst, rex, gd, ed, x3, x4, x5);
             break;
-
+        case 0x2C:
+            INST_NAME("SUB AL, Ib");
+            SETFLAGS(X_ALL, SF_SET_PENDING);
+            u8 = F8;
+            ANDI(x1, xRAX, 0xff);
+            emit_sub8c(dyn, ninst, x1, u8, x2, x3, x4, x5);
+            ANDI(xRAX, xRAX, ~0xff);
+            OR(xRAX, xRAX, x1);
+            break;
         case 0x31:
             INST_NAME("XOR Ed, Gd");
             SETFLAGS(X_ALL, SF_SET_PENDING);
@@ -188,6 +206,20 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             GETGD;
             GETED(0);
             emit_xor32(dyn, ninst, rex, gd, ed, x3, x4);
+            break;
+        case 0x35:
+            INST_NAME("XOR EAX, Id");
+            SETFLAGS(X_ALL, SF_SET_PENDING);
+            i64 = F32S;
+            emit_xor32c(dyn, ninst, rex, xRAX, i64, x3, x4);
+            break;
+        case 0x38:
+            INST_NAME("CMP Eb, Gb");
+            SETFLAGS(X_ALL, SF_SET_PENDING);
+            nextop = F8;
+            GETEB(x1, 0);
+            GETGB(x2);
+            emit_cmp8(dyn, ninst, x1, x2, x3, x4, x5, x6);
             break;
         case 0x39:
             INST_NAME("CMP Ed, Gd");
@@ -400,6 +432,14 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
         case 0x80:
             nextop = F8;
             switch((nextop>>3)&7) {
+                case 0: //ADD
+                    INST_NAME("ADD Eb, Ib");
+                    SETFLAGS(X_ALL, SF_SET_PENDING);
+                    GETEB(x1, 1);
+                    u8 = F8;
+                    emit_add8c(dyn, ninst, x1, u8, x2, x4, x5);
+                    EBBACK(x3);
+                    break;
                 case 3: // SBB
                     INST_NAME("SBB Eb, Ib");
                     READFLAGS(X_CF);
@@ -415,6 +455,14 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                     GETEB(x1, 1);
                     u8 = F8;
                     emit_and8c(dyn, ninst, x1, u8, x3, x4);
+                    EBBACK(x3);
+                    break;
+                case 5: // SUB
+                    INST_NAME("SUB Eb, Ib");
+                    SETFLAGS(X_ALL, SF_SET_PENDING);
+                    GETEB(x1, 1);
+                    u8 = F8;
+                    emit_sub8c(dyn, ninst, x1, u8, x2, x3, x4, x5);
                     EBBACK(x3);
                     break;
                 case 7: // CMP
@@ -522,7 +570,7 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             }
             gd = x4;
             if(gb2) {
-                SRLI(x4, gb1, gb2);
+                SRLI(x4, gb1, 8);
                 gb1 = x4;
             }
             if(MODREG) {
@@ -536,12 +584,13 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                 }
                 ANDI(gd, gb1, 0xff);
                 if(eb2) {
-                    ADDI(x1, xZR, ~0xff);
-                    SLLI(x1, x1, 8);
+                    MOV64x(x1, 0xffffffffffff00ffLL);
                     ANDI(x1, eb1, x1);
-                    SLLI(gd, gd, 8);    // it might be possible to avoid SRLI/SLLI, but that will do for now
+                    SLLI(gd, gd, 8);
+                    OR(eb1, x1, gd);
+                } else {
+                    OR(eb1, eb1, gd);
                 }
-                ORI(eb1, eb1, gd);
             } else {
                 addr = geted(dyn, addr, ninst, nextop, &ed, x2, x1, &fixedaddress, rex, &lock, 1, 0);
                 SB(gb1, ed, fixedaddress);
@@ -629,6 +678,37 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                 ZEROUP(xRDX);
             }
             break;
+        case 0xA5:
+            if(rep) {
+                INST_NAME("REP MOVSD");
+                CBZ_NEXT(xRCX);
+                ANDI(x1, xFlags, 1<<F_DF);
+                BNEZ_MARK2(x1);
+                MARK;   // Part with DF==0
+                LDxw(x1, xRSI, 0);
+                ADDI(xRSI, xRSI, rex.w?8:4);
+                SDxw(x1, xRDI, 0);
+                ADDI(xRDI, xRDI, rex.w?8:4);
+                SUBI(xRCX, xRCX, 1);
+                BNEZ_MARK(xRCX);
+                B_NEXT_nocond;
+                MARK2;  // Part with DF==1
+                LDxw(x1, xRSI, 0);
+                SUBI(xRSI, xRSI, rex.w?8:4);
+                SDxw(x1, xRDI, 0);
+                SUBI(xRDI, xRDI, rex.w?8:4);
+                SUBI(xRCX, xRCX, 1);
+                BNEZ_MARK2(xRCX);
+                // done
+            } else {
+                INST_NAME("MOVSD");
+                GETDIR(x3, x1, rex.w?8:4);
+                LDxw(x1, xRSI, 0);
+                SDxw(x1, xRDI, 0);
+                ADD(xRSI, xRSI, x3);
+                ADD(xRDI, xRDI, x3);
+            }
+            break;
         case 0xA8:
             INST_NAME("TEST AL, Ib");
             SETFLAGS(X_ALL, SF_SET_PENDING);
@@ -644,7 +724,31 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             MOV64xw(x2, i64);
             emit_test32(dyn, ninst, rex, xRAX, x2, x3, x4, x5);
             break;
-
+        case 0xAB:
+            if(rep) {
+                INST_NAME("REP STOSD");
+                CBZ_NEXT(xRCX);
+                ANDI(x1, xFlags, 1<<F_DF);
+                BNEZ_MARK2(x1);
+                MARK;   // Part with DF==0
+                SDxw(xRAX, xRDI, 0);
+                ADDI(xRDI, xRDI, rex.w?8:4);
+                SUBI(xRCX, xRCX, 1);
+                BNEZ_MARK(xRCX);
+                B_NEXT_nocond;
+                MARK2;  // Part with DF==1
+                SDxw(xRAX, xRDI, 0);
+                SUBI(xRDI, xRDI, rex.w?8:4);
+                SUBI(xRCX, xRCX, 1);
+                BNEZ_MARK2(xRCX);
+                // done
+            } else {
+                INST_NAME("STOSD");
+                GETDIR(x3, x1, rex.w?8:4);
+                SDxw(xRAX, xRDI, 0);
+                ADD(xRDI, xRDI, x3);
+            }
+            break;
         case 0xB0:
         case 0xB1:
         case 0xB2:
@@ -906,8 +1010,8 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                     *need_epilog = 1;
                 } else {
                     MESSAGE(LOG_DUMP, "Native Call to %s\n", GetNativeName(GetNativeFnc(ip)));
-                    //x87_forget(dyn, ninst, x3, x4, 0);
-                    //sse_purge07cache(dyn, ninst, x3);
+                    x87_forget(dyn, ninst, x3, x4, 0);
+                    sse_purge07cache(dyn, ninst, x3);
                     // disabling isSimpleWrapper because all signed value less than 64bits needs to be sign extended
                     // and return value needs to be cleanned up
                     tmp = 0;//isSimpleWrapper(*(wrapper_t*)(addr));
@@ -947,6 +1051,30 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                 #else
                 DEFAULT;
                 #endif
+            }
+            break;
+        case 0xD0:
+        case 0xD2:  // TODO: Jump if CL is 0
+            nextop = F8;
+            switch((nextop>>3)&7) {
+                case 5:
+                    if(opcode==0xD0) {
+                        INST_NAME("SHR Eb, 1");
+                        MOV32w(x2, 1);
+                    } else {
+                        INST_NAME("SHR Eb, CL");
+                        ANDI(x2, xRCX, 0x1F);
+                    }
+                    SETFLAGS(X_ALL, SF_PENDING);
+                    GETEB(x1, 0);
+                    UFLAG_OP12(ed, x2);
+                    SRLW(ed, ed, x2);
+                    EBBACK(x3);
+                    UFLAG_RES(ed);
+                    UFLAG_DF(x3, d_shr8);
+                    break;
+                default:
+                    DEFAULT;
             }
             break;
         case 0xD1:
@@ -1003,6 +1131,14 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             }
             break;
 
+        case 0xD9:
+            addr = dynarec64_D9(dyn, addr, ip, ninst, rex, rep, ok, need_epilog);
+            break;
+
+        case 0xDB:
+            addr = dynarec64_DB(dyn, addr, ip, ninst, rex, rep, ok, need_epilog);
+            break;
+
         case 0xE8:
             INST_NAME("CALL Id");
             i32 = F32S;
@@ -1032,7 +1168,7 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                     PUSH1(x2);
                     MESSAGE(LOG_DUMP, "Native Call to %s (retn=%d)\n", GetNativeName(GetNativeFnc(dyn->insts[ninst].natcall-1)), dyn->insts[ninst].retn);
                     // calling a native function
-                    //sse_purge07cache(dyn, ninst, x3);     // TODO: chack the fpxx to purge/save when implemented
+                    sse_purge07cache(dyn, ninst, x3);
                     if((box64_log<2 && !cycle_log) && dyn->insts[ninst].natcall) {
                         // disabling isSimpleWrapper because all signed value less than 64bits needs to be sign extended
                         // and return value needs to be cleanned up
@@ -1170,6 +1306,20 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                     MOV32w(x2, u8);
                     emit_test8(dyn, ninst, x1, x2, x3, x4, x5);
                     break;
+                case 4:
+                    INST_NAME("MUL AL, Ed");
+                    SETFLAGS(X_ALL, SF_PENDING);
+                    UFLAG_DF(x1, d_mul8);
+                    GETEB(x1, 0);
+                    ANDI(x2, xRAX, 0xff);
+                    MULW(x1, x2, x1);
+                    UFLAG_RES(x1);
+                    LUI(x2, 0xffff0);
+                    AND(xRAX, xRAX, x2);
+                    SLLI(x1, x1, 48);
+                    SRLI(x1, x1, 48);
+                    OR(xRAX, xRAX, x1);
+                    break;
                 default:
                     DEFAULT;
             }
@@ -1246,7 +1396,7 @@ uintptr_t dynarec64_00(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                         AND(x2, xRAX, xMASK);
                         OR(x3, x3, x2);
                         if(MODREG) {
-                            MV(x4, ed);
+                            AND(x4, ed, xMASK);
                             ed = x4;
                         }
                         DIVU(x2, x3, ed);
