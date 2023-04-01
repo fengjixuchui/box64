@@ -170,6 +170,7 @@
 #() iFpO
 #() iFSi
 #() IFEp
+#() IFip
 #() IFII
 #() IFpi
 #() IFpu
@@ -223,6 +224,7 @@
 #() DFDp
 #() DFpp
 #() lFii
+#() lFip
 #() lFll
 #() lFpi
 #() lFpl
@@ -253,6 +255,7 @@
 #() pFdi
 #() pFdd
 #() pFlp
+#() pFLi
 #() pFLu
 #() pFLL
 #() pFLp
@@ -890,6 +893,7 @@
 #() IFpppp
 #() IFSIii
 #() CFpupp
+#() CFppip
 #() uFEipp
 #() uFEupp
 #() uFEpup
@@ -905,6 +909,7 @@
 #() uFpuup
 #() uFpupu
 #() uFppiu
+#() uFppip
 #() uFppLp
 #() uFpppi
 #() uFpppu
@@ -1009,6 +1014,7 @@
 #() pFppiu
 #() pFppiL
 #() pFppip
+#() pFppCp
 #() pFppWW
 #() pFppuW
 #() pFppuu
@@ -1255,6 +1261,7 @@
 #() iFpippW
 #() iFpippp
 #() iFpCCCC
+#() iFpCpip
 #() iFpuill
 #() iFpuipi
 #() iFpuuip
@@ -1288,6 +1295,7 @@
 #() iFppllp
 #() iFpplpp
 #() iFppLip
+#() iFppLup
 #() iFppLpi
 #() iFppLpL
 #() iFppLpp
@@ -1364,6 +1372,7 @@
 #() pFpiipp
 #() pFpiCCC
 #() pFpiuuu
+#() pFpipip
 #() pFpippi
 #() pFpippp
 #() pFpCpup
@@ -1564,6 +1573,7 @@
 #() iFiiiiip
 #() iFiiiuwp
 #() iFiuiipi
+#() iFiLpppi
 #() iFipiipi
 #() iFipipip
 #() iFipippp
@@ -1599,6 +1609,7 @@
 #() iFpUuupp
 #() iFpUUUip
 #() iFpUUUUp
+#() iFpLipLu
 #() iFpLLppp
 #() iFppiiii
 #() iFppiiip
@@ -1676,8 +1687,10 @@
 #() pFEppApp
 #() pFiiiiii
 #() pFiCiiCi
+#() pFipippp
 #() pFdddddd
 #() pFpiiiiu
+#() pFpiiipp
 #() pFpiiCCC
 #() pFpiUUUU
 #() pFpippip
@@ -1891,6 +1904,7 @@
 #() pFuupupup
 #() pFdiiiIiI
 #() pFpiiUdii
+#() pFpipippp
 #() pFpCuwwWW
 #() pFpCuWCCC
 #() pFpCuuwwp
@@ -2045,6 +2059,7 @@
 #() pFEpppppiV
 #() pFEppppppi
 #() pFEppppppp
+#() pFiippipip
 #() pFiipppppp
 #() pFuiiiuuuu
 #() pFuupupipp
@@ -2315,6 +2330,7 @@
 #() pFpCuuwwWWWWuup
 #() pFpuupppwwwwWWC
 #() pFppppppppppppp
+#() vFippppppppppppp
 #() vFuffiiffiiffiip
 #() vFuddiiddiiddiip
 #() vFppiipppiiiiiii
@@ -2411,6 +2427,38 @@ wrappedcrypto:
 - vFpp:
   - X509_STORE_CTX_set_verify_cb
   - sk_pop_free
+- pFpp:
+  - OPENSSL_sk_pop_free
+- iFppp:
+  - ASN1_i2d_bio
+- pFpppp:
+  - ASN1_d2i_bio
+  - PEM_read_bio_DSAPrivateKey
+  - PEM_read_bio_DSA_PUBKEY
+  - PEM_read_bio_ECPrivateKey
+  - PEM_read_bio_EC_PUBKEY
+  - PEM_read_bio_PKCS7
+  - PEM_read_bio_RSAPrivateKey
+  - PEM_read_bio_RSA_PUBKEY
+  - PEM_read_bio_X509
+  - PEM_read_bio_X509_AUX
+  - PEM_read_bio_X509_CERT_PAIR
+  - PEM_read_bio_X509_CRL
+  - PEM_read_bio_X509_REQ
+- iFpiipp:
+  - ENGINE_ctrl
+- iFpplppi:
+  - ENGINE_ctrl_cmd
+- iFppppipp:
+  - PEM_write_bio_DSAPrivateKey
+  - PEM_write_bio_ECPrivateKey
+  - PEM_write_bio_RSAPrivateKey
+wrappedcrypto3:
+- vFp:
+  - CRYPTO_set_id_callback
+  - CRYPTO_set_locking_callback
+- vFpp:
+  - X509_STORE_CTX_set_verify_cb
 - pFpp:
   - OPENSSL_sk_pop_free
 - iFppp:
@@ -3082,6 +3130,8 @@ wrappedgtkx112:
   - gtk_toolbar_prepend_element
 - pFpipppppppi:
   - gtk_toolbar_insert_element
+wrappedicui18n72:
+wrappedicuuc72:
 wrappedkrb5:
 - iFppppppipp:
   - krb5_get_init_creds_password
@@ -3534,6 +3584,7 @@ wrappedlibncursesw6:
   - mvprintw
 - iFpiipV:
   - mvwprintw
+wrappedlibnuma:
 wrappedlibogg:
 wrappedlibpanel:
 wrappedlibpci:
@@ -3577,6 +3628,7 @@ wrappedlibpthread:
   - pthread_mutexattr_setkind_np
   - pthread_mutexattr_setprotocol
   - pthread_mutexattr_setpshared
+  - pthread_mutexattr_setrobust
   - pthread_mutexattr_settype
 - iFpL:
   - pthread_attr_setguardsize
@@ -3604,6 +3656,7 @@ wrappedlibpthread:
   - pthread_mutex_init
   - pthread_mutexattr_getkind_np
   - pthread_mutexattr_getprotocol
+  - pthread_mutexattr_getrobust
   - pthread_mutexattr_gettype
   - pthread_once
 - vFppp:
@@ -3643,6 +3696,25 @@ wrappedlibsndfile:
 - pFpipp:
   - sf_open_virtual
 wrappedlibssl:
+- pFp:
+  - SSL_get_verify_callback
+- vFpp:
+  - SSL_CTX_set_client_cert_cb
+  - SSL_CTX_set_default_passwd_cb
+  - SSL_set_psk_client_callback
+- vFpip:
+  - SSL_CTX_set_verify
+  - SSL_set_verify
+- vFppp:
+  - SSL_CTX_set_alpn_select_cb
+  - SSL_CTX_set_cert_verify_callback
+  - SSL_CTX_set_next_proto_select_cb
+- lFpip:
+  - SSL_CTX_callback_ctrl
+  - SSL_callback_ctrl
+- iFlpppp:
+  - SSL_get_ex_new_index
+wrappedlibssl3:
 - pFp:
   - SSL_get_verify_callback
 - vFpp:

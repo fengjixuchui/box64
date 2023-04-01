@@ -128,7 +128,7 @@ int GetStackSize(x64emu_t* emu, uintptr_t attr, void** stack, size_t* stacksize)
 		}
 		mutex_unlock(&my_context->mutex_thread);
 	}
-	// should a Warning be emited?
+	// should a Warning be emitted?
 	*stack = emu->init_stack;
 	*stacksize = emu->size_stack;
 	return 0;
@@ -535,7 +535,7 @@ EXPORT void my___pthread_register_cancel(void* E, void* B)
 {
 	// get a stack local copy of the args, as may be live in some register depending the architecture (like ARM)
 	if(cancel_deep<0) {
-		printf_log(LOG_NONE/*LOG_INFO*/, "BOX64: Warning, inconsistant value in __pthread_register_cancel (%d)\n", cancel_deep);
+		printf_log(LOG_NONE/*LOG_INFO*/, "BOX64: Warning, inconsistent value in __pthread_register_cancel (%d)\n", cancel_deep);
 		cancel_deep = 0;
 	}
 	if(cancel_deep!=CANCEL_MAX-1) 
@@ -846,6 +846,14 @@ EXPORT int my_pthread_mutexattr_gettype(x64emu_t* emu, my_mutexattr_t *attr, voi
 	attr->x86 = mattr.x86;
 	return ret;
 }
+EXPORT int my_pthread_mutexattr_getrobust(x64emu_t* emu, my_mutexattr_t *attr, void* p)
+{
+	my_mutexattr_t mattr = {0};
+	mattr.x86 = attr->x86;
+	int ret = pthread_mutexattr_getrobust(&mattr.nat, p);
+	attr->x86 = mattr.x86;
+	return ret;
+}
 EXPORT int my_pthread_mutexattr_init(x64emu_t* emu, my_mutexattr_t *attr)
 {
 	my_mutexattr_t mattr = {0};
@@ -889,6 +897,14 @@ EXPORT int my_pthread_mutexattr_settype(x64emu_t* emu, my_mutexattr_t *attr, int
 	return ret;
 }
 EXPORT int my___pthread_mutexattr_settype(x64emu_t* emu, my_mutexattr_t *attr, int t) __attribute__((alias("my_pthread_mutexattr_settype")));
+EXPORT int my_pthread_mutexattr_setrobust(x64emu_t* emu, my_mutexattr_t *attr, int t)
+{
+	my_mutexattr_t mattr = {0};
+	mattr.x86 = attr->x86;
+	int ret = pthread_mutexattr_setrobust(&mattr.nat, t);
+	attr->x86 = mattr.x86;
+	return ret;
+}
 
 #ifdef __SIZEOF_PTHREAD_MUTEX_T
 #if __SIZEOF_PTHREAD_MUTEX_T == 48
@@ -906,7 +922,7 @@ EXPORT int my_pthread_mutex_init(pthread_mutex_t *m, my_mutexattr_t *att)
 	#ifdef MUTEX_OVERSIZED_8
 	uint64_t save = *(uint64_t*)(((uintptr_t)m) + 40);
 	int ret = pthread_mutex_init(m, att?(&mattr.nat):NULL);
-	*(uint64_t*)(((uintptr_t)m) + 40) = save;	// put back overwriten value. Nasty but should be fast and quite safe
+	*(uint64_t*)(((uintptr_t)m) + 40) = save;	// put back overwritten value. Nasty but should be fast and quite safe
 	#elif defined(MUTEX_SIZE_X64)
 	int ret = pthread_mutex_init(m, att?(&mattr.nat):NULL);
 	#else
