@@ -51,6 +51,7 @@ uintptr_t dynarec64_DF(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
         case 0xF0 ... 0xF7:
             INST_NAME("FCOMIP ST0, STx");
             SETFLAGS(X_ALL, SF_SET);
+            SET_DFNONE();
             v1 = x87_get_st(dyn, ninst, x1, x2, 0, X87_COMBINE(0, nextop&7));
             v2 = x87_get_st(dyn, ninst, x1, x2, nextop&7, X87_COMBINE(0, nextop&7));
             CLEAR_FLAGS();
@@ -105,9 +106,9 @@ uintptr_t dynarec64_DF(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                     addr = geted(dyn, addr, ninst, nextop, &wback, x3, x4, &fixedaddress, rex, NULL, 1, 0);
                     LH(x1, wback, fixedaddress);
                     if(ST_IS_F(0)) {
-                        FCVTSL(v1, x1);
+                        FCVTSL(v1, x1, RD_RNE);
                     } else {
-                        FCVTDL(v1, x1);
+                        FCVTDL(v1, x1, RD_RNE);
                     }
                     break;
                 default:
