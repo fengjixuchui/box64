@@ -329,6 +329,35 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
                     }
                     break;
 
+                case 0x14:
+                    INST_NAME("PBLENDVPS Gx,Ex");
+                    nextop = F8;
+                    GETGX(q0, 1);
+                    GETEX(q1, 0, 0);
+                    v0 = sse_get_reg(dyn, ninst, x1, 0, 0);
+                    v1 = fpu_get_scratch(dyn);
+                    if(q0!=q1) {
+                        VSSHRQ_32(v1, v0, 31);    // bit[31]-> bit[31..0]
+                        VBICQ(q0, q0, v1);
+                        VANDQ(v1, q1, v1);
+                        VORRQ(q0, q0, v1);
+                    }
+                    break;
+                case 0x15:
+                    INST_NAME("PBLENDVPD Gx,Ex");
+                    nextop = F8;
+                    GETGX(q0, 1);
+                    GETEX(q1, 0, 0);
+                    v0 = sse_get_reg(dyn, ninst, x1, 0, 0);
+                    v1 = fpu_get_scratch(dyn);
+                    if(q0!=q1) {
+                        VSSHRQ_64(v1, v0, 63);    // bit[63]-> bit[63..0]
+                        VBICQ(q0, q0, v1);
+                        VANDQ(v1, q1, v1);
+                        VORRQ(q0, q0, v1);
+                    }
+                    break;
+
                 case 0x17:
                     INST_NAME("PTEST Gx, Ex");
                     nextop = F8;
@@ -735,6 +764,22 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
                         FRINTRRD(v1, q1, u8&3);
                     }
                     VMOVeD(q0, 0, v1, 0);
+                    break;
+
+                case 0x0C:
+                    INST_NAME("PBLENDPS Gx, Ex, Ib");
+                    nextop = F8;
+                    GETGX(q0, 1);
+                    GETEX(q1, 0, 1);
+                    u8 = F8&0b1111;
+                    if(u8==0b0011) {
+                        VMOVeD(q0, 0, q1, 0);
+                    } else if(u8==0b1100) {
+                        VMOVeD(q0, 1, q1, 1);
+                    } else for(int i=0; i<4; ++i)
+                        if(u8&(1<<i)) {
+                            VMOVeS(q0, i, q1, i);
+                        }
                     break;
 
                 case 0x0E:
