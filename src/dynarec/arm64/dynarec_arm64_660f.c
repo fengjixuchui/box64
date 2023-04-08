@@ -49,6 +49,7 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
     MAYUSE(j64);
     #if STEP > 1
     static const int8_t mask_shift8[] = { -7, -6, -5, -4, -3, -2, -1, 0 };
+    static const int8_t round_round[] = { 0, 2, 1, 3};
     #endif
 
     switch(opcode) {
@@ -261,6 +262,43 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
                     SQXTN2_16(q0, v0);
                     break;
 
+                case 0x05:
+                    INST_NAME("PHSUBW Gx, Ex");
+                    nextop = F8;
+                    GETGX(q0, 1);
+                    GETEX(q1, 0, 0);
+                    v0 = fpu_get_scratch(dyn);
+                    VTRNQ2_16(v0, q0, q0);  // v0 have all odd elements (in double)
+                    NEGQ_16(v0, v0);
+                    VTRNQ1_16(q0, q0, v0);  // re-inject negged element to q0
+                    if(q0==q1)
+                        v0 = q1;
+                    else {
+                        VTRNQ2_16(v0, q1, q1);
+                        NEGQ_16(v0, v0);
+                        VTRNQ1_16(v0, q1, v0);
+                    }
+                    VADDPQ_16(q0, q0, v0);
+                    break;
+                case 0x06:
+                    INST_NAME("PHSUBD Gx, Ex");
+                    nextop = F8;
+                    GETGX(q0, 1);
+                    GETEX(q1, 0, 0);
+                    v0 = fpu_get_scratch(dyn);
+                    VTRNQ2_32(v0, q0, q0);  // v0 have all odd elements (in double)
+                    NEGQ_32(v0, v0);
+                    VTRNQ1_32(q0, q0, v0);  // re-inject negged element to q0
+                    if(q0==q1)
+                        v0 = q1;
+                    else {
+                        VTRNQ2_32(v0, q1, q1);
+                        NEGQ_32(v0, v0);
+                        VTRNQ1_32(v0, q1, v0);
+                    }
+                    VADDPQ_32(q0, q0, v0);
+                    break;
+
                 case 0x08:
                     INST_NAME("PSIGNB Gx, Ex");
                     nextop = F8;
@@ -457,6 +495,37 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
                     SXTL_32(q0, q1);     // 32bits->64bits
                     break;
 
+                case 0x28:
+                    INST_NAME("PMULDQ Gx, Ex");
+                    nextop = F8;
+                    GETEX(q1, 0, 0);
+                    GETGX(q0, 1);
+                    VUZP1Q_32(q0, q0, q0);   // needs elem 0 and 2 in lower part
+                    if(q0==q1) {
+                        v0 = q0;
+                    } else {
+                        if(MODREG)
+                            v0 = fpu_get_scratch(dyn);
+                        else
+                            v0 = q1;
+                        VUZP1Q_32(v0, q1, q1);
+                    }
+                    VSMULL_32(q0, q0, v0);
+                    break;
+                case 0x29:
+                    INST_NAME("PCMPEQQ Gx, Ex");  // SSE4 opcode!
+                    nextop = F8;
+                    GETEX(q1, 0, 0);
+                    GETGX_empty(q0);
+                    VCMEQQ_64(q0, q0, q1);
+                    break;
+                case 0x2A:
+                    INST_NAME("MOVNTDQA Gx, Ex");
+                    nextop = F8;
+                    GETEX(q1, 0, 0);
+                    GETGX(q0, 1);
+                    VMOVQ(q0, q1);
+                    break;
                 case 0x2B:
                     INST_NAME("PACKUSDW Gx, Ex");  // SSE4 opcode!
                     nextop = F8;
@@ -473,14 +542,6 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
                         SMAXQ_32(v0, v0, q1);
                         UQXTN2_16(q0, v0);
                     }
-                    break;
-
-                case 0x29:
-                    INST_NAME("PCMPEQQ Gx, Ex");  // SSE4 opcode!
-                    nextop = F8;
-                    GETEX(q1, 0, 0);
-                    GETGX_empty(q0);
-                    VCMEQQ_64(q0, q0, q1);
                     break;
 
                 case 0x30:
@@ -591,7 +652,7 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
                     nextop = F8;
                     GETEX(q1, 0, 0);
                     GETGX(q0, 1);
-                    VUMULL_32(q0, q0, q1);
+                    VMULQ_32(q0, q0, q1);
                     break;
 
                 case 0xDB:
@@ -715,7 +776,7 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
                         VFRINTISQ(q0, q1);
                         x87_restoreround(dyn, ninst, u8);
                     } else {
-                        VFRINTRSQ(q0, q1, u8&3);
+                        VFRINTRSQ(q0, q1, round_round[u8&3]);
                     }
                     break;
                 case 0x09:
@@ -730,7 +791,7 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
                         VFRINTIDQ(q0, q1);
                         x87_restoreround(dyn, ninst, u8);
                     } else {
-                        VFRINTRDQ(q0, q1, u8&3);
+                        VFRINTRDQ(q0, q1, round_round[u8&3]);
                     }
                     break;
                 case 0x0A:
@@ -745,7 +806,7 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
                         FRINTXS(v1, q1);
                         x87_restoreround(dyn, ninst, u8);
                     } else {
-                        FRINTRRS(v1, q1, u8&3);
+                        FRINTRRS(v1, q1, round_round[u8&3]);
                     }
                     VMOVeS(q0, 0, v1, 0);
                     break;
@@ -761,11 +822,10 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
                         FRINTXD(v1, q1);
                         x87_restoreround(dyn, ninst, u8);
                     } else {
-                        FRINTRRD(v1, q1, u8&3);
+                        FRINTRRD(v1, q1, round_round[u8&3]);
                     }
                     VMOVeD(q0, 0, v1, 0);
                     break;
-
                 case 0x0C:
                     INST_NAME("PBLENDPS Gx, Ex, Ib");
                     nextop = F8;
@@ -793,7 +853,7 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
                         while(u8) {
                             if(u8&1) {
                                 if(!(i32&1) && u8&2) {
-                                    if(!(i32&1) && (u8&0xf)==0xf) {
+                                    if(!(i32&3) && (u8&0xf)==0xf) {
                                         // whole 64bits
                                         VMOVeD(q0, i32>>2, q1, i32>>2);
                                         i32+=4;

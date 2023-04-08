@@ -60,6 +60,7 @@ uintptr_t Run660F(x64emu_t *emu, rex_t rex, uintptr_t addr)
     uint64_t tmp64u;
     int64_t tmp64s, i64[4];
     float tmpf;
+    double tmpd;
     #ifndef NOALIGN
     int is_nan;
     #endif
@@ -343,6 +344,19 @@ uintptr_t Run660F(x64emu_t *emu, rex_t rex, uintptr_t addr)
                         GX->sw[4+i] = EX->sw[i*2+0] - EX->sw[i*2+1];
                 }
                 break;
+            case 0x06:  /* PHSUBD Gx, Ex */
+                nextop = F8;
+                GETEX(0);
+                GETGX;
+                for (int i=0; i<2; ++i)
+                    GX->sd[i] = GX->sd[i*2+0] - GX->sd[i*2+1];
+                if(GX == EX) {
+                    GX->q[1] = GX->q[0];
+                } else {
+                    for (int i=0; i<2; ++i)
+                        GX->sd[2+i] = EX->sd[i*2+0] - EX->sd[i*2+1];
+                }
+                break;
 
             case 0x08:  /* PSIGNB Gx, Ex */
                 nextop = F8;
@@ -485,6 +499,13 @@ uintptr_t Run660F(x64emu_t *emu, rex_t rex, uintptr_t addr)
                     GX->sq[i] = EX->sd[i];
                 break;
             
+            case 0x28:  /* PMULDQ Gx, Ex */
+                nextop = F8;
+                GETEX(0);
+                GETGX;
+                GX->sq[1] = ((int64_t)GX->sd[2])*(int64_t)EX->sd[2];
+                GX->sq[0] = ((int64_t)GX->sd[0])*(int64_t)EX->sd[0];
+                break;
             case 0x29:  /* PCMPEQQ Gx, Ex */
                 nextop = F8;
                 GETEX(0);
@@ -492,7 +513,13 @@ uintptr_t Run660F(x64emu_t *emu, rex_t rex, uintptr_t addr)
                 for(int i=1; i>=0; --i)
                     GX->sq[i] = (GX->sq[i]==EX->sq[i])?-1LL:0LL;
                 break;
-
+            case 0x2A:  /* MOVNTDQA Gx, Ex */
+                nextop = F8;
+                GETEX(0);
+                GETGX;
+                GX->q[0] = EX->q[0];
+                GX->q[1] = EX->q[1];
+                break;
             case 0x2B:  /* PACKUSDW Gx, Ex */
                 nextop = F8;
                 GETEX(0);
@@ -618,8 +645,24 @@ uintptr_t Run660F(x64emu_t *emu, rex_t rex, uintptr_t addr)
                 GETEX(0);
                 GETGX;
                 for(int i=0; i<4; ++i)
-                    if(GX->ud[i]<EX->ud[i])
-                        GX->ud[i] *= EX->ud[i];
+                    GX->ud[i] *= EX->ud[i];
+                break;
+            case 0x41:  /* PHMINPOSUW Gx, Ex */
+                nextop = F8;
+                GETEX(0);
+                GETGX;
+                tmp16u = EX->uw[0];
+                tmp16s = 0;
+                for(int i=1; i<8; ++i) {
+                    if(EX->uw[i]<tmp16u) {
+                        tmp16u = EX->uw[i];
+                        tmp16s = i;
+                    }
+                }
+                GX->q[1] = 0;
+                GX->uw[0] = tmp16u;
+                GX->uw[1] = tmp16s;
+                GX->ud[1] = 0;
                 break;
 
             case 0xDB:  /* AESIMC Gx, Ex */
@@ -756,7 +799,7 @@ uintptr_t Run660F(x64emu_t *emu, rex_t rex, uintptr_t addr)
                         break;
                     case ROUND_Chop:
                         for(int i=0; i<4; ++i)
-                            GX->f[i] = EX->f[i];
+                            GX->f[i] = truncf(EX->f[i]);
                         break;
                 }
                 break;
@@ -783,8 +826,8 @@ uintptr_t Run660F(x64emu_t *emu, rex_t rex, uintptr_t addr)
                         GX->d[1] = ceil(EX->d[1]);
                         break;
                     case ROUND_Chop:
-                        GX->d[0] = EX->d[0];
-                        GX->d[1] = EX->d[1];
+                        GX->d[0] = trunc(EX->d[0]);
+                        GX->d[1] = trunc(EX->d[1]);
                         break;
                 }
                 break;
@@ -808,7 +851,7 @@ uintptr_t Run660F(x64emu_t *emu, rex_t rex, uintptr_t addr)
                         GX->f[0] = ceilf(EX->f[0]);
                         break;
                     case ROUND_Chop:
-                        GX->f[0] = EX->f[0];
+                        GX->f[0] = truncf(EX->f[0]);
                         break;
                 }
                 break;
@@ -832,7 +875,7 @@ uintptr_t Run660F(x64emu_t *emu, rex_t rex, uintptr_t addr)
                         GX->d[0] = ceil(EX->d[0]);
                         break;
                     case ROUND_Chop:
-                        GX->d[0] = EX->d[0];
+                        GX->d[0] = trunc(EX->d[0]);
                         break;
                 }
                 break;
@@ -957,6 +1000,40 @@ uintptr_t Run660F(x64emu_t *emu, rex_t rex, uintptr_t addr)
                         tmpf += GX->f[i]*EX->f[i];
                 for(int i=0; i<4; ++i)
                     GX->f[i] = (tmp8u&(1<<i))?tmpf:0.0f;
+                break;
+            case 0x41:  /* DPPD Gx, Ex, Ib */
+                nextop = F8;
+                GETEX(1);
+                GETGX;
+                tmp8u = F8;
+                tmpd = 0.0;
+                if(tmp8u&(1<<(4+0)))
+                    tmpd += GX->d[0]*EX->d[0];
+                if(tmp8u&(1<<(4+1)))
+                    tmpd += GX->d[1]*EX->d[1];
+                GX->d[0] = (tmp8u&(1<<(0)))?tmpd:0.0;
+                GX->d[1] = (tmp8u&(1<<(1)))?tmpd:0.0;
+                break;
+
+            case 0x42:  /* MPSADBW Gx, Ex, Ib */
+                nextop = F8;
+                GETEX(1);
+                GETGX;
+                tmp8u = F8;
+                {
+                    int src = tmp8u&3;
+                    int dst = (tmp8u>>2)&1;
+                    int b[11];
+                    for (int i=0; i<11; ++i)
+                        b[i] = GX->ub[dst*4+i];
+                    for(int i=0; i<8; ++i) {
+                        int tmp = abs(b[i+0]-EX->ub[src*4+0]);
+                        tmp += abs(b[i+1]-EX->ub[src*4+1]);
+                        tmp += abs(b[i+2]-EX->ub[src*4+2]);
+                        tmp += abs(b[i+3]-EX->ub[src*4+3]);
+                        GX->uw[i] = tmp;
+                    }
+                }
                 break;
 
             case 0x44:  /* PCLMULQDQ Gx, Ex, Ib */
