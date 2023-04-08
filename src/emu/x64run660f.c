@@ -58,7 +58,7 @@ uintptr_t Run660F(x64emu_t *emu, rex_t rex, uintptr_t addr)
     int32_t tmp32s;
     uint32_t tmp32u;
     uint64_t tmp64u;
-    int64_t tmp64s;
+    int64_t tmp64s, i64[4];
     float tmpf;
     #ifndef NOALIGN
     int is_nan;
@@ -193,13 +193,27 @@ uintptr_t Run660F(x64emu_t *emu, rex_t rex, uintptr_t addr)
         GX->d[0] = EM->sd[0];
         GX->d[1] = EM->sd[1];
         break;
-
+    case 0x2B:                      /* MOVNTPD Ex, Gx */
+        nextop = F8;
+        GETEX(0);
+        GETGX;
+        EX->q[0] = GX->q[0];
+        EX->q[1] = GX->q[1];
+        break;
     case 0x2C:                      /* CVTTPD2PI Gm, Ex */
         nextop = F8;
         GETEX(0);
         GETGM;
-        GM->sd[0] = EX->d[0];
-        GM->sd[1] = EX->d[1];
+        tmp64s = EX->d[0];
+        if (tmp64s==(int32_t)tmp64s && !isnan(EX->d[0]))
+            GX->sd[0] = (int32_t)tmp64s;
+        else
+            GX->sd[0] = INT32_MIN;
+        tmp64s = EX->d[1];
+        if (tmp64s==(int32_t)tmp64s && !isnan(EX->d[1]))
+            GX->sd[1] = (int32_t)tmp64s;
+        else
+            GX->sd[1] = INT32_MIN;
         break;
     case 0x2D:                      /* CVTPD2PI Gm, Ex */
         nextop = F8;
@@ -207,22 +221,28 @@ uintptr_t Run660F(x64emu_t *emu, rex_t rex, uintptr_t addr)
         GETGM;
         switch(emu->mxcsr.f.MXCSR_RC) {
             case ROUND_Nearest:
-                GM->sd[0] = nearbyint(EX->d[0]);
-                GM->sd[1] = nearbyint(EX->d[1]);
+                i64[0] = nearbyint(EX->d[0]);
+                i64[1] = nearbyint(EX->d[1]);
                 break;
             case ROUND_Down:
-                GM->sd[0] = floor(EX->d[0]);
-                GM->sd[1] = floor(EX->d[1]);
+                i64[0] = floor(EX->d[0]);
+                i64[1] = floor(EX->d[1]);
                 break;
             case ROUND_Up:
-                GM->sd[0] = ceil(EX->d[0]);
-                GM->sd[1] = ceil(EX->d[1]);
+                i64[0] = ceil(EX->d[0]);
+                i64[1] = ceil(EX->d[1]);
                 break;
             case ROUND_Chop:
-                GM->sd[0] = EX->d[0];
-                GM->sd[1] = EX->d[1];
+                i64[0] = EX->d[0];
+                i64[1] = EX->d[1];
                 break;
         }
+        for(int i=0; i<2; ++i)
+            if (i64[i]==(int32_t)i64[i] && !isnan(EX->d[i]))
+                GM->sd[i] = (int32_t)i64[i];
+            else
+                GM->sd[i] = INT32_MIN;
+
         break;
     case 0x2E:                      /* UCOMISD Gx, Ex */
         // no special check...
@@ -1063,24 +1083,30 @@ uintptr_t Run660F(x64emu_t *emu, rex_t rex, uintptr_t addr)
         nextop = F8;
         GETEX(0);
         GETGX;
-        for(int i=0; i<4; ++i)
-            if(isnanf(EX->f[i]) || isinff(EX->f[i]) || EX->f[i]>(int32_t)0x7fffffff || EX->f[i]<(int32_t)0x80000000)
-                GX->sd[i] = 0x80000000;
+        for(int i=0; i<4; ++i) {
+            if(isnanf(EX->f[i]))
+                tmp64s = INT32_MIN;
             else
                 switch(emu->mxcsr.f.MXCSR_RC) {
                     case ROUND_Nearest:
-                        GX->sd[i] = nearbyintf(EX->f[i]);
+                        tmp64s = nearbyintf(EX->f[i]);
                         break;
                     case ROUND_Down:
-                        GX->sd[i] = floorf(EX->f[i]);
+                        tmp64s = floorf(EX->f[i]);
                         break;
                     case ROUND_Up:
-                        GX->sd[i] = ceilf(EX->f[i]);
+                        tmp64s = ceilf(EX->f[i]);
                         break;
                     case ROUND_Chop:
-                        GX->sd[i] = EX->f[i];
+                        tmp64s = EX->f[i];
                         break;
                 }
+            if (tmp64s==(int32_t)tmp64s) {
+                GX->sd[i] = (int32_t)tmp64s;
+            } else {
+                GX->sd[i] = INT32_MIN;
+            }
+        }
         break;
     case 0x5C:                      /* SUBPD Gx, Ex */
         nextop = F8;
@@ -1374,7 +1400,7 @@ uintptr_t Run660F(x64emu_t *emu, rex_t rex, uintptr_t addr)
                 tmp8u = F8;
                 if(tmp8u>15)
                     {EX->q[0] = EX->q[1] = 0;}
-                else {
+                else if (tmp8u!=0) {
                     tmp8u*=8;
                     if (tmp8u < 64) {
                         EX->q[0] = (EX->q[0] >> tmp8u) | (EX->q[1] << (64 - tmp8u));
@@ -1396,7 +1422,7 @@ uintptr_t Run660F(x64emu_t *emu, rex_t rex, uintptr_t addr)
                 tmp8u = F8;
                 if(tmp8u>15)
                     {EX->q[0] = EX->q[1] = 0;}
-                else {
+                else if (tmp8u!=0) {
                     tmp8u*=8;
                     if (tmp8u < 64) {
                         EX->q[1] = (EX->q[1] << tmp8u) | (EX->q[0] >> (64 - tmp8u));

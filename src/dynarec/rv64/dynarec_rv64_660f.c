@@ -49,7 +49,13 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
     MAYUSE(j64);
     
     switch(opcode) {
-
+        case 0x14:
+            INST_NAME("UNPCKLPD Gx, Ex");
+            nextop = F8;
+            GETEXSD(d0, 0);
+            GETGX(x3);
+            FSD(d0, x3, 8);
+            break;
         case 0x1F:
             INST_NAME("NOP (multibyte)");
             nextop = F8;
@@ -121,6 +127,49 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                 ORI(xFlags, xFlags, 1<<F_ZF);
             }
             break;
+        case 0x54:
+            INST_NAME("ANDPD Gx, Ex");
+            nextop = F8;
+            GETEX(x1, 0);
+            GETGX(x2);
+            SSE_LOOP_Q(x3, x4, AND(x3, x3, x4));
+            break;
+        case 0x55:
+            INST_NAME("ANDNPD Gx, Ex");
+            nextop = F8;
+            GETEX(x1, 0);
+            GETGX(x2);
+            SSE_LOOP_Q(x3, x4, NOT(x3, x3); AND(x3, x3, x4));
+            break;
+        case 0x56:
+            INST_NAME("ORPD Gx, Ex");
+            nextop = F8;
+            GETEX(x1, 0);
+            GETGX(x2);
+            SSE_LOOP_Q(x3, x4, OR(x3, x3, x4));
+            break;
+        case 0x57:
+            INST_NAME("XORPD Gx, Ex");
+            nextop = F8;
+            GETEX(x1, 0);
+            GETGX(x2);
+            SSE_LOOP_Q(x3, x4, XOR(x3, x3, x4));
+            break;
+        case 0x62:
+            INST_NAME("PUNPCKLDQ Gx,Ex");
+            nextop = F8;
+            GETEX(x1, 0);
+            GETGX(x2);
+            // GX->ud[3] = EX->ud[1];
+            LWU(x3, x1, fixedaddress+1*4);
+            SW(x3, x2, 3*4);
+            // GX->ud[2] = GX->ud[1];
+            LWU(x3, x2, 1*4);
+            SW(x3, x2, 2*4);
+            // GX->ud[1] = EX->ud[0];
+            LWU(x3, x1, fixedaddress+0*4);
+            SW(x3, x2, 1*4);
+            break;
         case 0x6C:
             INST_NAME("PUNPCKLQDQ Gx,Ex");
             nextop = F8;
@@ -133,6 +182,16 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                 LD(x3, ed, fixedaddress+0);
                 SD(x3, gback, 8);
             }
+            break;
+        case 0x6D:
+            INST_NAME("PUNPCKHQDQ Gx,Ex");
+            nextop = F8;
+            GETGX(x1);
+            GETEX(x2, 0);
+            LD(x3, gback, 8);
+            SD(x3, gback, 0);
+            LD(x3, wback, fixedaddress+8);
+            SD(x3, gback, 8);
             break;
         case 0x6E:
             INST_NAME("MOVD Gx, Ed");
@@ -156,10 +215,29 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             nextop = F8;
             GETGX(x1);
             GETEX(x2, 0);
-            LD(x3, wback, fixedaddress+0);
-            LD(x4, wback, fixedaddress+8);
-            SD(x3, gback, 0);
-            SD(x4, gback, 8);
+            SSE_LOOP_MV_Q(x3);
+            break;
+        case 0x70: // TODO: Optimize this!
+            INST_NAME("PSHUFD Gx,Ex,Ib");
+            nextop = F8;
+            GETGX(x1);
+            GETEX(x2, 1);
+            u8 = F8;
+            int32_t idx;
+
+            idx = (u8>>(0*2))&3;
+            LWU(x3, wback, fixedaddress+idx*4);
+            idx = (u8>>(1*2))&3;
+            LWU(x4, wback, fixedaddress+idx*4);
+            idx = (u8>>(2*2))&3;
+            LWU(x5, wback, fixedaddress+idx*4);
+            idx = (u8>>(3*2))&3;
+            LWU(x6, wback, fixedaddress+idx*4);
+
+            SW(x3, gback, 0*4);
+            SW(x4, gback, 1*4);
+            SW(x5, gback, 2*4);
+            SW(x6, gback, 3*4);
             break;
         case 0x72:
             nextop = F8;
@@ -178,6 +256,20 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                         }
                     }
                     break;
+                case 6:
+                    INST_NAME("PSLLD Ex, Ib");
+                    GETEX(x1, 1);
+                    u8 = F8;
+                    if(u8) {
+                        if (u8>31) {
+                            // just zero dest
+                            SD(xZR, x1, fixedaddress+0);
+                            SD(xZR, x1, fixedaddress+8);
+                        } else if(u8) {
+                            SSE_LOOP_DS(x3, SLLI(x3, x3, u8));
+                        }
+                    }
+                    break;
                 default:
                     DEFAULT;
             }
@@ -189,33 +281,74 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                     INST_NAME("PSRLDQ Ex, Ib");
                     GETEX(x1, 1);
                     u8 = F8;
-                    if(u8) {
-                        if(u8>15) {
-                            // just zero dest
-                            SD(xZR, x1, fixedaddress+0);
-                            SD(xZR, x1, fixedaddress+8);
+                    if(!u8) break;
+                    if(u8>15) {
+                        // just zero dest
+                        SD(xZR, x1, fixedaddress+0);
+                        SD(xZR, x1, fixedaddress+8);
+                    } else {
+                        u8*=8;
+                        if (u8 < 64) {
+                            LD(x3, x1, fixedaddress+0);
+                            LD(x4, x1, fixedaddress+8);
+                            SRLI(x3, x3, u8);
+                            SLLI(x5, x4, 64-u8);
+                            OR(x3, x3, x5);
+                            SD(x3, x1, fixedaddress+0);
+                            SRLI(x4, x4, u8);
+                            SD(x4, x1, fixedaddress+8);
                         } else {
-                            u8*=8;
-                            if (u8 < 64) {
-                                LD(x3, x1, fixedaddress+0);
-                                LD(x4, x1, fixedaddress+8);
-                                SRLI(x3, x3, u8);
-                                SLLI(x5, x4, 64-u8);
-                                OR(x3, x3, x5);
-                                SD(x3, x1, fixedaddress+0);
-                                SRLI(x4, x4, u8);
-                                SD(x4, x1, fixedaddress+8);
-                            } else {
-                                LD(x3, x1, fixedaddress+8);
-                                if (u8-64 > 0) { SRLI(x3, x3, u8-64); }
-                                SD(x3, x1, fixedaddress+0);
-                                SD(xZR, x1, fixedaddress+8);
-                            }
+                            LD(x3, x1, fixedaddress+8);
+                            if (u8-64 > 0) { SRLI(x3, x3, u8-64); }
+                            SD(x3, x1, fixedaddress+0);
+                            SD(xZR, x1, fixedaddress+8);
+                        }
+                    }
+                    break;
+                case 7:
+                    INST_NAME("PSLLDQ Ex, Ib");
+                    GETEX(x1, 1);
+                    u8 = F8;
+                    if(!u8) break;
+                    if(u8>15) {
+                        // just zero dest
+                        SD(xZR, x1, fixedaddress+0);
+                        SD(xZR, x1, fixedaddress+8);
+                    } else {
+                        u8*=8;
+                        if (u8 < 64) {
+                            LD(x3, x1, fixedaddress+0);
+                            LD(x4, x1, fixedaddress+8);
+                            SLLI(x4, x4, u8);
+                            SRLI(x5, x3, 64-u8);
+                            OR(x4, x4, x5);
+                            SD(x4, x1, fixedaddress+8);
+                            SLLI(x3, x3, u8);
+                            SD(x3, x1, fixedaddress+0);
+                        } else {
+                            LD(x3, x1, fixedaddress+0);
+                            if (u8-64 > 0) { SLLI(x3, x3, u8-64); }
+                            SD(x3, x1, fixedaddress+8);
+                            SD(xZR, x1, fixedaddress+0);
                         }
                     }
                     break;
                 default:
                     DEFAULT;
+            }
+            break;
+        case 0x74:
+            INST_NAME("PCMPEQB Gx,Ex");
+            nextop = F8;
+            GETGX(x1);
+            GETEX(x2, 0);
+            for (int i=0; i<16; ++i) {
+                LBU(x3, gback, i);
+                LBU(x4, wback, fixedaddress+i);
+                SUB(x3, x3, x4);
+                SEQZ(x3, x3);
+                NEG(x3, x3);
+                SB(x3, gback, i);
             }
             break;
         case 0x76:
@@ -250,6 +383,14 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                     SMWRITE2();
                 }
             }
+            break;
+        case 0x7F:
+            INST_NAME("MOVDQA Ex,Gx");
+            nextop = F8;
+            GETGX(x1);
+            GETEX(x2, 0);
+            SSE_LOOP_MV_Q2(x3);
+            if(!MODREG) SMWRITE2();
             break;
         case 0xAF:
             INST_NAME("IMUL Gw,Ew");
@@ -292,6 +433,25 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             AND(x1, x1, x5);
             OR(gd, gd, x1);
             break;
+        case 0xD4:
+            INST_NAME("PADDQ Gx,Ex");
+            nextop = F8;
+            GETGX(x1);
+            GETEX(x2, 0);
+            SSE_LOOP_Q(x3, x4, ADD(x3, x3, x4));
+            break;
+        case 0xD6:
+            INST_NAME("MOVQ Ex, Gx");
+            nextop = F8;
+            GETGXSD(d0);
+            GETEX(x2, 0);
+            FSD(d0, wback, fixedaddress+0);
+            if (MODREG) {
+                SD(xZR, wback, fixedaddress+8);
+            } else {
+                SMWRITE2();
+            }
+            break;
         case 0xDB:
             INST_NAME("PAND Gx,Ex");
             nextop = F8;
@@ -326,6 +486,20 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                 GETEX(x2, 0);
                 SSE_LOOP_Q(x3, x4, XOR(x3, x3, x4));
             }
+            break;
+        case 0xFA:
+            INST_NAME("PSUBD Gx,Ex");
+            nextop = F8;
+            GETGX(x1);
+            GETEX(x2, 0);
+            SSE_LOOP_D(x3, x4, SUBW(x3, x3, x4));
+            break;
+        case 0xFD:
+            INST_NAME("PADDW Gx,Ex");
+            nextop = F8;
+            GETGX(x1);
+            GETEX(x2, 0);
+            SSE_LOOP_W(x3, x4, ADDW(x3, x3, x4));
             break;
         case 0xFE:
             INST_NAME("PADDD Gx,Ex");

@@ -33,6 +33,7 @@ uintptr_t RunF30F(x64emu_t *emu, rex_t rex, uintptr_t addr)
     int8_t tmp8s;
     uint8_t tmp8u;
     uint32_t tmp32u;
+    int64_t tmp64s;
     uint64_t tmp64u;
     reg64_t *oped, *opgd;
     sse_regs_t *opex, *opgx, eax1;
@@ -96,12 +97,12 @@ uintptr_t RunF30F(x64emu_t *emu, rex_t rex, uintptr_t addr)
         nextop = F8;
         GETEX(0);
         GETGD;
-        if (rex.w)
-            if(isnanf(EX->f[0]) || isinff(EX->f[0]) || EX->f[0]>0x7fffffffffffffffLL)
+        if (rex.w) {
+            if(isnanf(EX->f[0]) || isinff(EX->f[0]) || EX->f[0]>(float)0x7fffffffffffffffLL)
                 GD->q[0] = 0x8000000000000000LL;
             else
                 GD->sq[0] = EX->f[0];
-        else {
+        } else {
             if(isnanf(EX->f[0]) || isinff(EX->f[0]) || EX->f[0]>0x7fffffff)
                 GD->dword[0] = 0x80000000;
             else
@@ -114,7 +115,7 @@ uintptr_t RunF30F(x64emu_t *emu, rex_t rex, uintptr_t addr)
         GETEX(0);
         GETGD;
         if(rex.w) {
-            if(isnanf(EX->f[0]) || isinff(EX->f[0]) || EX->f[0]>0x7fffffffffffffffLL)
+            if(isnanf(EX->f[0]) || isinff(EX->f[0]) || EX->f[0]>(float)0x7fffffffffffffffLL)
                 GD->q[0] = 0x8000000000000000LL;
             else
                 switch(emu->mxcsr.f.MXCSR_RC) {
@@ -132,23 +133,27 @@ uintptr_t RunF30F(x64emu_t *emu, rex_t rex, uintptr_t addr)
                         break;
                 }
         } else {
-            if(isnanf(EX->f[0]) || isinff(EX->f[0]) || EX->f[0]>0x7fffffff)
-                GD->dword[0] = 0x80000000;
+            if(isnanf(EX->f[0]))
+                tmp64s = INT32_MIN;
             else
                 switch(emu->mxcsr.f.MXCSR_RC) {
                     case ROUND_Nearest:
-                        GD->sdword[0] = nearbyintf(EX->f[0]);
+                        tmp64s = nearbyintf(EX->f[0]);
                         break;
                     case ROUND_Down:
-                        GD->sdword[0] = floorf(EX->f[0]);
+                        tmp64s = floorf(EX->f[0]);
                         break;
                     case ROUND_Up:
-                        GD->sdword[0] = ceilf(EX->f[0]);
+                        tmp64s = ceilf(EX->f[0]);
                         break;
                     case ROUND_Chop:
-                        GD->sdword[0] = EX->f[0];
+                        tmp64s = EX->f[0];
                         break;
                 }
+            if (tmp64s==(int32_t)tmp64s)
+                GD->sdword[0] = (int32_t)tmp64s;
+            else
+                GD->sdword[0] = INT32_MIN;
             GD->dword[1] = 0;
         }
         break;
@@ -194,10 +199,17 @@ uintptr_t RunF30F(x64emu_t *emu, rex_t rex, uintptr_t addr)
         nextop = F8;
         GETEX(0);
         GETGX;
-        GX->sd[0] = EX->f[0];
-        GX->sd[1] = EX->f[1];
-        GX->sd[2] = EX->f[2];
-        GX->sd[3] = EX->f[3];
+        for(int i=0; i<4; ++i) {
+            if(isnanf(EX->f[i]))
+                tmp64s = INT32_MIN;
+            else
+                tmp64s = EX->f[i];
+            if (tmp64s==(int32_t)tmp64s) {
+                GX->sd[i] = (int32_t)tmp64s;
+            } else {
+                GX->sd[i] = INT32_MIN;
+            }
+        }
         break;
     case 0x5C:  /* SUBSS Gx, Ex */
         nextop = F8;

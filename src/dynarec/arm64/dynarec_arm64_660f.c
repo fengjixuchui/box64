@@ -1073,9 +1073,9 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
             GETGX_empty(v0);
             if(box64_dynarec_fastround) {
                 u8 = sse_setround(dyn, ninst, x1, x2, x3);
-                VFRINTISQ(q0, v1);
+                VFRINTISQ(v0, v1);
                 x87_restoreround(dyn, ninst, u8);
-                VFCVTZSQS(q0, q0);
+                VFCVTZSQS(v0, v0);
             } else {
                 MRS_fpsr(x5);
                 BFCw(x5, FPSR_IOC, 1);   // reset IOC bit
@@ -1120,9 +1120,18 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
         case 0x5D:
             INST_NAME("MINPD Gx, Ex");
             nextop = F8;
-            GETEX(q0, 0, 0);
             GETGX(v0, 1);
-            VFMINQD(v0, v0, q0);
+            GETEX(v1, 0, 0);
+            // FMIN/FMAX wll not copy the value if v0[x] is NaN
+            // but x86 will copy if either v0[x] or v1[x] is NaN, so lets force a copy if source is NaN
+            if(!box64_dynarec_fastnan && v0!=v1) {
+                q0 = fpu_get_scratch(dyn);
+                VFCMEQQD(q0, v0, v0);   // 0 is NaN, 1 is not NaN, so MASK for NaN
+                VANDQ(v0, v0, q0);
+                VBICQ(q0, v1, q0);
+                VORRQ(v0, v0, q0);
+            }
+            VFMINQD(v0, v0, v1);
             break;
         case 0x5E:
             INST_NAME("DIVPD Gx, Ex");
@@ -1147,9 +1156,18 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
         case 0x5F:
             INST_NAME("MAXPD Gx, Ex");
             nextop = F8;
-            GETEX(q0, 0, 0);
             GETGX(v0, 1);
-            VFMAXQD(v0, v0, q0);
+            GETEX(v1, 0, 0);
+            // FMIN/FMAX wll not copy the value if v0[x] is NaN
+            // but x86 will copy if either v0[x] or v1[x] is NaN, so lets force a copy if source is NaN
+            if(!box64_dynarec_fastnan && v0!=v1) {
+                q0 = fpu_get_scratch(dyn);
+                VFCMEQQD(q0, v0, v0);   // 0 is NaN, 1 is not NaN, so MASK for NaN
+                VANDQ(v0, v0, q0);
+                VBICQ(q0, v1, q0);
+                VORRQ(v0, v0, q0);
+            }
+            VFMAXQD(v0, v0, v1);
             break;
         case 0x60:
             INST_NAME("PUNPCKLBW Gx,Ex");
@@ -1991,8 +2009,12 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
             GETGX(q0, 1);
             GETEX(q1, 0, 0);
             v0 = fpu_get_scratch(dyn);
-            VDUPQ_16(v0, q1, 0);
-            NEGQ_16(v0, v0);        // neg, because SHR
+            v1 = fpu_get_scratch(dyn);
+            UQXTN_32(v0, q1);
+            MOVI_32(v1, 16);
+            UMIN_32(v0, v0, v1);    // limit to 0 .. +16 values
+            NEG_32(v0, v0);         // neg to do shr
+            VDUPQ_16(v0, v0, 0);    // only the low 8bits will be used anyway
             USHLQ_16(q0, q0, v0);   // SHR x8
             break;
         case 0xD2:
@@ -2001,8 +2023,12 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
             GETGX(q0, 1);
             GETEX(q1, 0, 0);
             v0 = fpu_get_scratch(dyn);
-            VDUPQ_32(v0, q1, 0);
-            NEGQ_32(v0, v0);        // neg, because SHR
+            v1 = fpu_get_scratch(dyn);
+            UQXTN_32(v0, q1);
+            MOVI_32(v1, 32);
+            UMIN_32(v0, v0, v1);    // limit to 0 .. +32 values
+            NEG_32(v0, v0);         // neg to do shr
+            VDUPQ_16(v0, v0, 0);    // only the low 8bits will be used anyway
             USHLQ_32(q0, q0, v0);   // SHR x4
             break;
         case 0xD3:
@@ -2011,8 +2037,12 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
             GETGX(q0, 1);
             GETEX(q1, 0, 0);
             v0 = fpu_get_scratch(dyn);
-            NEG_64(v0, q1);
-            VMOVeD(v0, 1, v0, 0);
+            v1 = fpu_get_scratch(dyn);
+            UQXTN_32(v0, q1);
+            MOVI_32(v1, 64);
+            UMIN_32(v0, v0, v1);    // limit to 0 .. +64 values
+            NEG_32(v0, v0);         // neg to do shr
+            VDUPQ_16(v0, v0, 0);    // only the low 8bits will be used anyway
             USHLQ_64(q0, q0, v0);
             break;
         case 0xD4:
@@ -2136,13 +2166,12 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
             GETGX(q0, 1);
             GETEX(q1, 0, 0);
             v0 = fpu_get_scratch(dyn);
-            VMOVeD(v0, 0, q1, 0);
-            VMOVeD(v0, 1, q1, 0);
-            SQXTN_32(v0, v0);   // 2*q1 in 32bits now
-            NEG_32(v0, v0);   // because we want SHR and not SHL
-            VMOVeD(v0, 1, v0, 0);
-            SQXTN_16(v0, v0);   // 4*q1 in 32bits now
-            VMOVeD(v0, 1, v0, 0);
+            v1 = fpu_get_scratch(dyn);
+            UQXTN_32(v0, q1);
+            MOVI_32(v1, 15);
+            UMIN_32(v0, v0, v1);    // limit to -15 .. +15 values
+            NEG_32(v0, v0);
+            VDUPQ_16(v0, v0, 0);    // only the low 8bits will be used anyway
             SSHLQ_16(q0, q0, v0);
             break;
         case 0xE2:
@@ -2151,11 +2180,12 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
             GETGX(q0, 1);
             GETEX(q1, 0, 0);
             v0 = fpu_get_scratch(dyn);
-            VMOVeD(v0, 0, q1, 0);
-            VMOVeD(v0, 1, q1, 0);
-            SQXTN_32(v0, v0);   // 2*q1 in 32bits now
-            NEG_32(v0, v0);   // because we want SHR and not SHL
-            VMOVeD(v0, 1, v0, 0);
+            v1 = fpu_get_scratch(dyn);
+            UQXTN_32(v0, q1);
+            MOVI_32(v1, 31);
+            UMIN_32(v0, v0, v1);        // limit to 0 .. +31 values
+            NEG_32(v0, v0);
+            VDUPQ_32(v0, v0, 0);    // only the low 8bits will be used anyway
             SSHLQ_32(q0, q0, v0);
             break;
         case 0xE3:
@@ -2194,8 +2224,31 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
             nextop = F8;
             GETEX(v1, 0, 0);
             GETGX_empty(v0);
-            VFCVTZSQD(v0, v1);  // convert double -> int64
-            SQXTN_32(v0, v0);   // convert int64 -> int32 with saturation in lower part, RaZ high part
+            if(box64_dynarec_fastround) {
+                VFCVTZSQD(v0, v1);  // convert double -> int64
+                SQXTN_32(v0, v0);   // convert int64 -> int32 with saturation in lower part, RaZ high part
+            } else {
+                MRS_fpsr(x5);
+                BFCw(x5, FPSR_IOC, 1);   // reset IOC bit
+                MSR_fpsr(x5);
+                ORRw_mask(x4, xZR, 1, 0);    //0x80000000
+                d0 = fpu_get_scratch(dyn);
+                for(int i=0; i<2; ++i) {
+                    BFCw(x5, FPSR_IOC, 1);   // reset IOC bit
+                    MSR_fpsr(x5);
+                    if(i) {
+                        VMOVeD(d0, 0, v1, i);
+                        FCVTZSwD(x1, d0);
+                    } else {
+                        FCVTZSwD(x1, v1);
+                    }
+                    MRS_fpsr(x5);   // get back FPSR to check the IOC bit
+                    TBZ(x5, FPSR_IOC, 4+4);
+                    MOVw_REG(x1, x4);
+                    VMOVQSfrom(v0, i, x1);
+                }
+                VMOVQDfrom(v0, 1, xZR);
+            }
             break;
         case 0xE7:
             INST_NAME("MOVNTDQ Ex, Gx");
@@ -2273,17 +2326,31 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
             }
             break;
 
+        case 0xF1:
+            INST_NAME("PSLLW Gx,Ex");
+            nextop = F8;
+            GETGX(q0, 1);
+            GETEX(q1, 0, 0);
+            v0 = fpu_get_scratch(dyn);
+            v1 = fpu_get_scratch(dyn);
+            UQXTN_32(v0, q1);
+            MOVI_32(v1, 16);
+            UMIN_32(v0, v0, v1);    // limit to 0 .. +16 values
+            VDUPQ_16(v0, v0, 0);    // only the low 8bits will be used anyway
+            USHLQ_16(q0, q0, v0);
+            break;
         case 0xF2:
             INST_NAME("PSLLD Gx,Ex");
             nextop = F8;
             GETGX(q0, 1);
             GETEX(q1, 0, 0);
             v0 = fpu_get_scratch(dyn);
-            VMOVeD(v0, 0, q1, 0);
-            VMOVeD(v0, 1, q1, 0);
-            SQXTN_32(v0, v0); // 2*q1 in 32bits now
-            VMOVeD(v0, 1, v0, 0);
-            SSHLQ_32(q0, q0, v0);
+            v1 = fpu_get_scratch(dyn);
+            UQXTN_32(v0, q1);
+            MOVI_32(v1, 32);
+            UMIN_32(v0, v0, v1);    // limit to 0 .. +32 values
+            VDUPQ_32(v0, v0, 0);    // only the low 8bits will be used anyway
+            USHLQ_32(q0, q0, v0);
             break;
         case 0xF3:
             INST_NAME("PSLLQ Gx,Ex");
@@ -2291,8 +2358,12 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
             GETGX(q0, 1);
             GETEX(q1, 0, 0);
             v0 = fpu_get_scratch(dyn);
-            VMOVQ(v0, q1);
-            VMOVeD(v0, 1, v0, 0);
+            v0 = fpu_get_scratch(dyn);
+            v1 = fpu_get_scratch(dyn);
+            UQXTN_32(v0, q1);
+            MOVI_32(v1, 64);
+            UMIN_32(v0, v0, v1);    // limit to 0 .. +64 values
+            VDUPQ_64(v0, v0, 0);    // only the low 8bits will be used anyway
             USHLQ_64(q0, q0, v0);
             break;
         case 0xF4:

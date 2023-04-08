@@ -456,6 +456,10 @@ f28–31  ft8–11  FP temporaries                  Caller
 #define FCVTSD(frd, frs1)           EMIT(R_type(0b0100000, 0b00001, frs1, 0b000, frd, 0b1010011))
 // Convert Single frs1 to Double frd
 #define FCVTDS(frd, frs1)           EMIT(R_type(0b0100001, 0b00000, frs1, 0b000, frd, 0b1010011))
+// Convert from Double to signed 32bits
+#define FCVTWD(rd, frs1, rm)        EMIT(R_type(0b1100001, 0b00000, frs1, rm, rd, 0b1010011))
+// Convert from Double to unsigned 32bits
+#define FCVTWUD(rd, frs1, rm)       EMIT(R_type(0b1100001, 0b00001, frs1, rm, rd, 0b1010011))
 // store rs1 with rs2 sign bit to rd
 #define FSGNJD(rd, rs1, rs2)        EMIT(R_type(0b0010001, rs2, rs1, 0b000, rd, 0b1010011))
 // move rs1 to rd
@@ -469,7 +473,7 @@ f28–31  ft8–11  FP temporaries                  Caller
 // |rs1| => rd
 #define FABSD(rd, rs1)              FSGNJXD(rd, rs1, rs1)
 // Convert from signed 32bits to Double
-#define FCVTDW(frd, rs1)             EMIT(R_type(0b1101001, 0b00000, rs1, 0b000, frd, 0b1010011))
+#define FCVTDW(frd, rs1, rm)        EMIT(R_type(0b1101001, 0b00000, rs1, rm, frd, 0b1010011))
 
 #define FEQD(rd, frs1, frs2)        EMIT(R_type(0b1010001, frs2, frs1, 0b010, rd, 0b1010011))
 #define FLTD(rd, frs1, frs2)        EMIT(R_type(0b1010001, frs2, frs1, 0b001, rd, 0b1010011))
@@ -496,5 +500,10 @@ f28–31  ft8–11  FP temporaries                  Caller
 #define FCVTLD(rd, frs1, rm)        EMIT(R_type(0b1100001, 0b00010, frs1, rm, rd, 0b1010011))
 // Convert from Double to unsigned 64bits
 #define FCVTLUD(rd, frs1, rm)       EMIT(R_type(0b1100001, 0b00011, frs1, rm, rd, 0b1010011))
+
+// Convert from Double to signed integer
+#define FCVTLDxw(rd, frs1, rm)      EMIT(R_type(0b1100001, 0b00000+(rex.w?0b10:0b00), frs1, rm, rd, 0b1010011))
+// Convert from Double to unsigned integer
+#define FCVTLUDxw(rd, frs1, rm)     EMIT(R_type(0b1100001, 0b00001+(rex.w?0b10:0b00), frs1, rm, rd, 0b1010011))
 
 #endif //__RV64_EMITTER_H__

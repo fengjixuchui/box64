@@ -66,7 +66,6 @@
 #define GETED(D)  if(MODREG) {                          \
                     ed = xRAX+(nextop&7)+(rex.b<<3);    \
                     wback = 0;                          \
-                    if (!rex.w) ZEROUP(ed);              \
                 } else {                                \
                     SMREAD()                            \
                     addr = geted(dyn, addr, ninst, nextop, &wback, x2, x1, &fixedaddress, rex, NULL, 1, D); \
@@ -336,12 +335,29 @@
     F;                                  \
     SW(GX1, gback, i*4);
 
+#define SSE_LOOP_W_ITEM(GX1, EX1, F, i) \
+    LHU(GX1, gback, i*2);               \
+    LHU(EX1, wback, fixedaddress+i*2);  \
+    F;                                  \
+    SH(GX1, gback, i*2);
+
 // Loop for SSE opcode that use 32bits value and write to GX.
 #define SSE_LOOP_D(GX1, EX1, F)     \
     SSE_LOOP_D_ITEM(GX1, EX1, F, 0) \
     SSE_LOOP_D_ITEM(GX1, EX1, F, 1) \
     SSE_LOOP_D_ITEM(GX1, EX1, F, 2) \
-    SSE_LOOP_D_ITEM(GX1, EX1, F, 3) \
+    SSE_LOOP_D_ITEM(GX1, EX1, F, 3)
+
+#define SSE_LOOP_W(GX1, EX1, F)    \
+    SSE_LOOP_W_ITEM(GX1, EX1, F, 0) \
+    SSE_LOOP_W_ITEM(GX1, EX1, F, 1) \
+    SSE_LOOP_W_ITEM(GX1, EX1, F, 2) \
+    SSE_LOOP_W_ITEM(GX1, EX1, F, 3) \
+    SSE_LOOP_W_ITEM(GX1, EX1, F, 4) \
+    SSE_LOOP_W_ITEM(GX1, EX1, F, 5) \
+    SSE_LOOP_W_ITEM(GX1, EX1, F, 6) \
+    SSE_LOOP_W_ITEM(GX1, EX1, F, 7)
+
 
 #define SSE_LOOP_DS_ITEM(EX1, F, i)     \
     LWU(EX1, wback, fixedaddress+i*4);  \
@@ -374,6 +390,15 @@
 #define SSE_LOOP_MV_Q(s)     \
     SSE_LOOP_MV_Q_ITEM(s, 0) \
     SSE_LOOP_MV_Q_ITEM(s, 1)
+
+#define SSE_LOOP_MV_Q_ITEM2(s, i)     \
+    LD(s, gback, i*8);                \
+    SD(s, wback, fixedaddress+i*8);
+
+// Loop for SSE opcode that moves 64bits value from gback to wback, use s as scratch.
+#define SSE_LOOP_MV_Q2(s)     \
+    SSE_LOOP_MV_Q_ITEM2(s, 0) \
+    SSE_LOOP_MV_Q_ITEM2(s, 1)
 
 // CALL will use x6 for the call address. Return value can be put in ret (unless ret is -1)
 // R0 will not be pushed/popd if ret is -2
