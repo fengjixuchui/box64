@@ -18,16 +18,12 @@ typedef struct elfheader_s     elfheader_t;
 library_t *NewLibrary(const char* path, box64context_t* box64);
 int AddSymbolsLibrary(lib_t* maplib, library_t* lib, x64emu_t* emu);
 int FinalizeLibrary(library_t* lib, lib_t* local_maplib, int bindnow, x64emu_t* emu);
-int ReloadLibrary(library_t* lib, x64emu_t* emu);
-int FiniLibrary(library_t* lib, x64emu_t* emu);
-void InactiveLibrary(library_t* lib);
-void Free1Library(library_t **lib, x64emu_t* emu);
 
 char* GetNameLib(library_t *lib);
 int IsSameLib(library_t* lib, const char* path);    // check if lib is same (path -> name)
-int GetLibGlobalSymbolStartEnd(library_t* lib, const char* name, uintptr_t* start, uintptr_t* end, size_t size, int* weak, int version, const char* vername, int local);
-int GetLibWeakSymbolStartEnd(library_t* lib, const char* name, uintptr_t* start, uintptr_t* end, size_t size, int* weak, int version, const char* vername, int local);
-int GetLibLocalSymbolStartEnd(library_t* lib, const char* name, uintptr_t* start, uintptr_t* end, size_t size, int* weak, int version, const char* vername, int local);
+int GetLibGlobalSymbolStartEnd(library_t* lib, const char* name, uintptr_t* start, uintptr_t* end, size_t size, int* weak, int version, const char* vername, int local, const char* defver);
+int GetLibWeakSymbolStartEnd(library_t* lib, const char* name, uintptr_t* start, uintptr_t* end, size_t size, int* weak, int version, const char* vername, int local, const char* defver);
+int GetLibLocalSymbolStartEnd(library_t* lib, const char* name, uintptr_t* start, uintptr_t* end, size_t size, int* weak, int version, const char* vername, int local, const char* defver);
 char** GetNeededLibsNames(library_t* lib);
 int GetNeededLibsN(library_t* lib);
 library_t* GetNeededLib(library_t* lib, int idx);
@@ -37,5 +33,7 @@ int GetElfIndex(library_t* lib);    // -1 if no elf (i.e. wrapped)
 elfheader_t* GetElf(library_t* lib);    // NULL if no elf (i.e. wrapped)
 void* GetHandle(library_t* lib);    // NULL if not wrapped
 void IncRefCount(library_t* lib, x64emu_t* emu);
+int DecRefCount(library_t** lib, x64emu_t* emu);   // might unload the lib!
+int GetRefCount(library_t* lib);
 
 #endif //__LIBRARY_H_

@@ -118,8 +118,6 @@ typedef struct box64context_s {
     kh_symbolmap_t      *almymap;       // link to the mysymbolmap if libOpenAL
     kh_symbolmap_t      *vkwrappers;    // the map of wrapper for VulkanProcs (TODO: check SDL2)
     kh_symbolmap_t      *vkmymap;       // link to the mysymbolmap of libGL
-    kh_defaultversion_t *globaldefver;  // the global default version for symbols (the XXX@@vvvv of symbols)
-    kh_defaultversion_t *weakdefver;    // the weak default version for symbols (the XXX@@vvvv of symbols)
     vkprocaddess_t      vkprocaddress;
 
     #ifndef DYNAREC
@@ -215,6 +213,8 @@ void print_cycle_log(int loglevel);
 
 // return the index of the added header
 int AddElfHeader(box64context_t* ctx, elfheader_t* head);
+// remove an elf from list (but list is never reduced, so there can be holes)
+void RemoveElfHeader(box64context_t* ctx, elfheader_t* head);
 
 // return the tlsbase (negative) for the new TLS partition created (no partition index is stored in the context)
 int AddTLSPartition(box64context_t* context, int tlssize);

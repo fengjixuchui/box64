@@ -335,12 +335,6 @@
     F;                                  \
     SW(GX1, gback, i*4);
 
-#define SSE_LOOP_W_ITEM(GX1, EX1, F, i) \
-    LHU(GX1, gback, i*2);               \
-    LHU(EX1, wback, fixedaddress+i*2);  \
-    F;                                  \
-    SH(GX1, gback, i*2);
-
 // Loop for SSE opcode that use 32bits value and write to GX.
 #define SSE_LOOP_D(GX1, EX1, F)     \
     SSE_LOOP_D_ITEM(GX1, EX1, F, 0) \
@@ -348,28 +342,46 @@
     SSE_LOOP_D_ITEM(GX1, EX1, F, 2) \
     SSE_LOOP_D_ITEM(GX1, EX1, F, 3)
 
-#define SSE_LOOP_W(GX1, EX1, F)    \
-    SSE_LOOP_W_ITEM(GX1, EX1, F, 0) \
-    SSE_LOOP_W_ITEM(GX1, EX1, F, 1) \
-    SSE_LOOP_W_ITEM(GX1, EX1, F, 2) \
-    SSE_LOOP_W_ITEM(GX1, EX1, F, 3) \
-    SSE_LOOP_W_ITEM(GX1, EX1, F, 4) \
-    SSE_LOOP_W_ITEM(GX1, EX1, F, 5) \
-    SSE_LOOP_W_ITEM(GX1, EX1, F, 6) \
-    SSE_LOOP_W_ITEM(GX1, EX1, F, 7)
+#define SSE_LOOP_DS_ITEM(GX1, EX1, F, i) \
+    LW(GX1, gback, i*4);                 \
+    LW(EX1, wback, fixedaddress+i*4);    \
+    F;                                   \
+    SW(GX1, gback, i*4);
 
+// Loop for SSE opcode that use 32bits value and write to GX.
+#define SSE_LOOP_DS(GX1, EX1, F)     \
+    SSE_LOOP_DS_ITEM(GX1, EX1, F, 0) \
+    SSE_LOOP_DS_ITEM(GX1, EX1, F, 1) \
+    SSE_LOOP_DS_ITEM(GX1, EX1, F, 2) \
+    SSE_LOOP_DS_ITEM(GX1, EX1, F, 3)
 
-#define SSE_LOOP_DS_ITEM(EX1, F, i)     \
+#define SSE_LOOP_W(GX1, EX1, F)            \
+    for (int i=0; i<8; ++i) {              \
+        LHU(GX1, gback, i*2);              \
+        LHU(EX1, wback, fixedaddress+i*2); \
+        F;                                 \
+        SH(GX1, gback, i*2);               \
+    }
+
+#define SSE_LOOP_WS(GX1, EX1, F)          \
+    for (int i=0; i<8; ++i) {             \
+        LH(GX1, gback, i*2);              \
+        LH(EX1, wback, fixedaddress+i*2); \
+        F;                                \
+        SH(GX1, gback, i*2);              \
+    }
+
+#define SSE_LOOP_D_S_ITEM(EX1, F, i)    \
     LWU(EX1, wback, fixedaddress+i*4);  \
     F;                                  \
     SW(EX1, wback, fixedaddress+i*4);
 
 // Loop for SSE opcode that use 32bits value and write to EX.
-#define SSE_LOOP_DS(EX1, F)     \
-    SSE_LOOP_DS_ITEM(EX1, F, 0) \
-    SSE_LOOP_DS_ITEM(EX1, F, 1) \
-    SSE_LOOP_DS_ITEM(EX1, F, 2) \
-    SSE_LOOP_DS_ITEM(EX1, F, 3)
+#define SSE_LOOP_D_S(EX1, F)     \
+    SSE_LOOP_D_S_ITEM(EX1, F, 0) \
+    SSE_LOOP_D_S_ITEM(EX1, F, 1) \
+    SSE_LOOP_D_S_ITEM(EX1, F, 2) \
+    SSE_LOOP_D_S_ITEM(EX1, F, 3)
 
 #define SSE_LOOP_Q_ITEM(GX1, EX1, F, i) \
     LD(GX1, gback, i*8);                \
@@ -381,6 +393,20 @@
 #define SSE_LOOP_Q(GX1, EX1, F)     \
     SSE_LOOP_Q_ITEM(GX1, EX1, F, 0) \
     SSE_LOOP_Q_ITEM(GX1, EX1, F, 1)
+
+
+#define SSE_LOOP_FQ_ITEM(GX1, EX1, F, i)            \
+    v0 = sse_get_reg_empty(dyn, ninst, x5, GX1, 0); \
+    FLD(v0, gback, i*8);                            \
+    v1 = sse_get_reg_empty(dyn, ninst, x5, EX1, 0); \
+    FLD(v1, wback, fixedaddress+i*8);               \
+    F;                                              \
+    FSD(v0, gback, i*8);
+
+#define SSE_LOOP_FQ(GX1, EX1, F)     \
+    SSE_LOOP_FQ_ITEM(GX1, EX1, F, 0) \
+    SSE_LOOP_FQ_ITEM(GX1, EX1, F, 1)
+
 
 #define SSE_LOOP_MV_Q_ITEM(s, i)      \
     LD(s, wback, fixedaddress+i*8);   \
@@ -928,9 +954,9 @@ void emit_shl32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, 
 void emit_shr32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4);
 void emit_shr32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4);
 void emit_sar32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4);
-//void emit_rol32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4);
+void emit_rol32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4);
 //void emit_ror32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4);
-//void emit_shrd32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, uint32_t c, int s3, int s4);
+void emit_shrd32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, uint32_t c, int s3, int s4);
 //void emit_shld32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, uint32_t c, int s3, int s4);
 
 void emit_pf(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);

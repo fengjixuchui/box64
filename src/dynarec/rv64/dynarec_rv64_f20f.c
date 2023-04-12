@@ -29,7 +29,7 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
     uint8_t opcode = F8;
     uint8_t nextop;
     uint8_t gd, ed;
-    uint8_t wback;
+    uint8_t wback, gback;
     uint8_t u8;
     uint64_t u64, j64;
     int v0, v1;
@@ -161,12 +161,12 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             INST_NAME("MINSD Gx, Ex");
             nextop = F8;
             GETGXSD(v0);
-            GETEXSD(v1, 0);        
+            GETEXSD(v1, 0);
             FEQD(x2, v0, v0);
             FEQD(x3, v1, v1);
             AND(x2, x2, x3);
             BEQ_MARK(x2, xZR);
-            FLTD(x2, v1, v0);
+            FLED(x2, v1, v0);
             BEQ_MARK2(x2, xZR);
             MARK;
             FMVD(v0, v1);
@@ -188,6 +188,33 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                 FEQD(x3, v0, v0);
                 CBNZ_NEXT(x3);
                 FNEGD(v0, v0);
+            }
+            break;
+        case 0x70: // TODO: Optimize this!
+            INST_NAME("PSHUFLW Gx, Ex, Ib");
+            nextop = F8;
+            GETGX(x1);
+            GETEX(x2, 1);
+            u8 = F8;
+            int32_t idx;
+
+            idx = (u8>>(0*2))&3;
+            LHU(x3, wback, fixedaddress+idx*2);
+            idx = (u8>>(1*2))&3;
+            LHU(x4, wback, fixedaddress+idx*2);
+            idx = (u8>>(2*2))&3;
+            LHU(x5, wback, fixedaddress+idx*2);
+            idx = (u8>>(3*2))&3;
+            LHU(x6, wback, fixedaddress+idx*2);
+
+            SW(x3, gback, 0*2);
+            SW(x4, gback, 1*2);
+            SW(x5, gback, 2*2);
+            SW(x6, gback, 3*2);
+
+            if (!(MODREG && (gd==ed))) {
+                LD(x3, wback, fixedaddress+8);
+                SD(x3, gback, 8);
             }
             break;
         case 0xC2:
