@@ -79,6 +79,15 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                 SMWRITE2();
             }
             break;
+        case 0x12:
+            INST_NAME("MOVDDUP Gx, Ex");
+            nextop = F8;
+            GETGX(x1);
+            GETEX(x2, 0);
+            LD(x3, wback, fixedaddress+0);
+            SD(x3, gback, 0);
+            SD(x3, gback, 8);
+            break;
         case 0x2A:
             INST_NAME("CVTSI2SD Gx, Ed");
             nextop = F8;
@@ -149,6 +158,13 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             GETEXSD(v1, 0);
             FMULD(v0, v0, v1);
             break;
+        case 0x5A:
+            INST_NAME("CVTSD2SS Gx, Ex");
+            nextop = F8;
+            GETEXSD(v1, 0);
+            GETGXSS_empty(v0);
+            FCVTSD(v0, v1);
+            break;
         case 0x5C:
             INST_NAME("SUBSD Gx, Ex");
             nextop = F8;
@@ -190,6 +206,21 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                 FNEGD(v0, v0);
             }
             break;
+        case 0x5F:
+            INST_NAME("MAXSD Gx, Ex");
+            nextop = F8;
+            GETGXSD(v0);
+            GETEXSD(v1, 0);
+            FEQD(x2, v0, v0);
+            FEQD(x3, v1, v1);
+            AND(x2, x2, x3);
+            BEQ_MARK(x2, xZR);
+            FLED(x2, v0, v1);
+            BEQ_MARK2(x2, xZR);
+            MARK;
+            FMVD(v0, v1);
+            MARK2;
+            break;
         case 0x70: // TODO: Optimize this!
             INST_NAME("PSHUFLW Gx, Ex, Ib");
             nextop = F8;
@@ -207,10 +238,10 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             idx = (u8>>(3*2))&3;
             LHU(x6, wback, fixedaddress+idx*2);
 
-            SW(x3, gback, 0*2);
-            SW(x4, gback, 1*2);
-            SW(x5, gback, 2*2);
-            SW(x6, gback, 3*2);
+            SH(x3, gback, 0*2);
+            SH(x4, gback, 1*2);
+            SH(x5, gback, 2*2);
+            SH(x6, gback, 3*2);
 
             if (!(MODREG && (gd==ed))) {
                 LD(x3, wback, fixedaddress+8);

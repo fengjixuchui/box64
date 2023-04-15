@@ -39,7 +39,7 @@ uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
     int v0, v1;
     int q0, q1;
     int d0, d1;
-    int s0;
+    int s0, s1;
     uint64_t tmp64u;
     int64_t j64;
     int64_t fixedaddress;
@@ -344,6 +344,21 @@ uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             }
             break;
 
+        case 0x5A:
+            INST_NAME("CVTPS2PD Gx, Ex");
+            nextop = F8;
+            GETGX(x1);
+            GETEX(x2, 0);
+            s0 = fpu_get_scratch(dyn);
+            s1 = fpu_get_scratch(dyn);
+            FLW(s0, wback, fixedaddress);
+            FLW(s1, wback, fixedaddress+4);
+            FCVTDS(s0, s0);
+            FCVTDS(s1, s1);
+            FSD(s0, gback, 0);
+            FSD(s1, gback, 8);
+            break;
+
         case 0x77:
             INST_NAME("EMMS");
             // empty MMX, FPU now usable
@@ -444,6 +459,16 @@ uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             ANDI(xFlags, xFlags, ~1);   //F_CF is 1
             OR(xFlags, xFlags, x4);
             break;
+        case 0xA4:
+            nextop = F8;
+            INST_NAME("SHLD Ed, Gd, Ib");
+            SETFLAGS(X_ALL, SF_SET_PENDING);
+            GETED(1);
+            GETGD;
+            u8 = F8;
+            emit_shld32c(dyn, ninst, rex, ed, gd, u8, x3, x4, x5);
+            WBACK;
+            break;
         case 0xAB:
             INST_NAME("BTS Ed, Gd");
             SETFLAGS(X_CF, SF_SUBSET);
@@ -506,7 +531,31 @@ uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                 SMDMB();
             } else {
                 switch((nextop>>3)&7) {
-                    case 2:                 
+                    case 0:
+                        INST_NAME("FXSAVE Ed");
+                        MESSAGE(LOG_DUMP, "Need Optimization\n");
+                        fpu_purgecache(dyn, ninst, 0, x1, x2, x3);
+                        if(MODREG) {
+                            DEFAULT;
+                        } else {
+                            addr = geted(dyn, addr, ninst, nextop, &ed, x1, x3, &fixedaddress, rex, NULL, 0, 0);
+                            if(ed!=x1) {MV(x1, ed);}
+                            CALL(rex.w?((void*)fpu_fxsave64):((void*)fpu_fxsave32), -1);
+                        }
+                        break;
+                    case 1:
+                        INST_NAME("FXRSTOR Ed");
+                        MESSAGE(LOG_DUMP, "Need Optimization\n");
+                        fpu_purgecache(dyn, ninst, 0, x1, x2, x3);
+                        if(MODREG) {
+                            DEFAULT;
+                        } else {
+                            addr = geted(dyn, addr, ninst, nextop, &ed, x1, x3, &fixedaddress, rex, NULL, 0, 0);
+                            if(ed!=x1) {MV(x1, ed);}
+                            CALL(rex.w?((void*)fpu_fxrstor64):((void*)fpu_fxrstor32), -1);
+                        }
+                        break;
+                    case 2:
                         INST_NAME("LDMXCSR Md");
                         GETED(0);
                         SW(ed, xEmu, offsetof(x64emu_t, mxcsr));
@@ -566,7 +615,43 @@ uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                 SRLI(gd, gd, 32);
             }
             break;
-
+        case 0xB3:
+            INST_NAME("BTR Ed, Gd");
+            SETFLAGS(X_CF, SF_SUBSET);
+            SET_DFNONE();
+            nextop = F8;
+            GETGD;
+            if(MODREG) {
+                ed = xRAX+(nextop&7)+(rex.b<<3);
+                wback = 0;
+            } else {
+                SMREAD();
+                addr = geted(dyn, addr, ninst, nextop, &ed, x2, x1, &fixedaddress, rex, NULL, 1, 0);
+                SRAI(x1, gd, 5+rex.w);
+                SLLI(x1, x1, 2+rex.w);
+                ADD(x3, wback, x1);
+                LDxw(x1, x3, fixedaddress);
+                ed = x1;
+                wback = x3;
+            }
+            if (rex.w) {
+                ANDI(x2, gd, 0x3f);
+            } else {
+                ANDI(x2, gd, 0x1f);
+            }
+            SRL(x4, ed, x2);
+            ANDI(x4, x4, 1); // F_CF is 1
+            ANDI(xFlags, xFlags, ~1);
+            OR(xFlags, xFlags, x4);
+            ADDI(x3, xZR, 1);
+            SLL(x3, x3, x2);
+            NOT(x3, x3);
+            AND(ed, ed, x3);
+            if(wback) {
+                SDxw(ed, wback, fixedaddress);
+                SMWRITE();
+            }
+            break;
         case 0xB6:
             INST_NAME("MOVZX Gd, Eb");
             nextop = F8;

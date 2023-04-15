@@ -675,6 +675,7 @@
 #() vFuuuf
 #() vFuuud
 #() vFuuup
+#() vFuuff
 #() vFuulp
 #() vFuupi
 #() vFuupp
@@ -2330,6 +2331,7 @@
 #() iFddddpppddpppp
 #() iFpippuuuiipppp
 #() iFpupiiiipppppp
+#() uFlppuuuullLlpp
 #() uFppppuuupppppp
 #() pFpCuuwwWWWWuup
 #() pFpuupppwwwwWWC
@@ -2370,6 +2372,7 @@
 #() pFpippppppppppppppppp
 #() pFpppWWCCpCpCpCWpCpCpC
 #() iFpppppppppppppppppppppp
+#() uFlppuuuuiiiiuiiiillllpp
 #() vFpppppppppppppppppppppppp
 #() iFpppppppppppppppppppppppppppppppppp
 #defined(HAVE_LD80BITS) IFD
@@ -3142,7 +3145,9 @@ wrappedgtkx112:
   - gtk_toolbar_prepend_element
 - pFpipppppppi:
   - gtk_toolbar_insert_element
+wrappedicui18n67:
 wrappedicui18n72:
+wrappedicuuc67:
 wrappedicuuc72:
 wrappedkrb5:
 - iFppppppipp:
