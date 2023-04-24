@@ -108,6 +108,9 @@ uintptr_t dynarec64_00_1(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
         case 0x64:
             addr = dynarec64_64(dyn, addr, ip, ninst, rex, rep, _FS, ok, need_epilog);
             break;
+        case 0x65:
+            addr = dynarec64_64(dyn, addr, ip, ninst, rex, rep, _GS, ok, need_epilog);
+            break;
         case 0x66:
             addr = dynarec64_66(dyn, addr, ip, ninst, rex, rep, ok, need_epilog);
             break;
@@ -137,7 +140,7 @@ uintptr_t dynarec64_00_1(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                 // 64bits imul
                 UFLAG_IF {
                     MULH(x3, ed, x4);
-                    MULW(gd, ed, x4);
+                    MUL(gd, ed, x4);
                     UFLAG_OP1(x3);
                     UFLAG_RES(gd);
                     UFLAG_DF(x3, d_imul64);

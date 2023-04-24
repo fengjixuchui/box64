@@ -193,8 +193,13 @@ uintptr_t dynarec64_00_2(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                     if(i64) {
                         MOV64xw(x2, i64);
                         emit_cmp32(dyn, ninst, rex, ed, x2, x3, x4, x5, x6);
-                    } else
+                    } else {
+                        if(!rex.w && MODREG) {
+                            AND(x1, ed, xMASK);
+                            ed = x1;
+                        }
                         emit_cmp32_0(dyn, ninst, rex, ed, x3, x4);
+                    }
                     break;
             }
             break;
@@ -370,7 +375,18 @@ uintptr_t dynarec64_00_2(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                 LDxw(gd, ed, fixedaddress);
             }
             break;
-
+        case 0x8C:
+            INST_NAME("MOV Ed, Seg");
+            nextop=F8;
+            if((nextop&0xC0)==0xC0) {   // reg <= seg
+                LHU(xRAX+(nextop&7)+(rex.b<<3), xEmu, offsetof(x64emu_t, segs[(nextop&0x38)>>3]));
+            } else {                    // mem <= seg
+                addr = geted(dyn, addr, ninst, nextop, &ed, x2, x1, &fixedaddress, rex, NULL, 1, 0);
+                LHU(x3, xEmu, offsetof(x64emu_t, segs[(nextop&0x38)>>3]));
+                SH(x3, ed, fixedaddress);
+                SMWRITE2();
+            }
+            break;
         case 0x8D:
             INST_NAME("LEA Gd, Ed");
             nextop=F8;
@@ -387,7 +403,38 @@ uintptr_t dynarec64_00_2(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                 }
             }
             break;
-
+        case 0x8E:
+            INST_NAME("MOV Seg,Ew");
+            nextop = F8;
+            if((nextop&0xC0)==0xC0) {
+                ed = xRAX+(nextop&7)+(rex.b<<3);
+            } else {
+                SMREAD();
+                addr = geted(dyn, addr, ninst, nextop, &ed, x2, x1, &fixedaddress, rex, &lock, 1, 0);
+                LHU(x1, ed, fixedaddress);
+                ed = x1;
+            }
+            SW(ed, xEmu, offsetof(x64emu_t, segs[(nextop&0x38)>>3]));
+            SW(xZR, xEmu, offsetof(x64emu_t, segs_serial[(nextop&0x38)>>3]));
+            break;
+        case 0x8F:
+            INST_NAME("POP Ed");
+            nextop = F8;
+            if(MODREG) {
+                POP1(xRAX+(nextop&7)+(rex.b<<3));
+            } else {
+                POP1(x2); // so this can handle POP [ESP] and maybe some variant too
+                addr = geted(dyn, addr, ninst, nextop, &ed, x2, x1, &fixedaddress, rex, &lock, 1, 0);
+                if(ed==xRSP) {
+                    SD(x2, ed, fixedaddress);
+                } else {
+                    // complicated to just allow a segfault that can be recovered correctly
+                    SUB(xRSP, xRSP, 8);
+                    SD(x2, ed, fixedaddress);
+                    ADD(xRSP, xRSP, 8);
+                }
+            }
+            break;
         case 0x90:
         case 0x91:
         case 0x92:
@@ -429,8 +476,8 @@ uintptr_t dynarec64_00_2(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
         case 0x9C:
             INST_NAME("PUSHF");
             READFLAGS(X_ALL);
-            FLAGS_ADJUST_TO11(xFlags, x2);
-            PUSH1(xFlags);
+            FLAGS_ADJUST_TO11(x3, xFlags, x2);
+            PUSH1(x3);
             break;
         case 0x9D:
             INST_NAME("POPF");
@@ -441,6 +488,26 @@ uintptr_t dynarec64_00_2(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             AND(xFlags, xFlags, x1);
             ORI(xFlags, xFlags, 0x2);
             SET_DFNONE();
+            break;
+        case 0xA1:
+            INST_NAME("MOV EAX,Od");
+            u64 = F64;
+            MOV64x(x1, u64);
+            LDxw(xRAX, x1, 0);
+            break;
+        case 0xA2:
+            INST_NAME("MOV Ob,AL");
+            u64 = F64;
+            MOV64x(x1, u64);
+            SB(xRAX, x1, 0);
+            SMWRITE();
+            break;
+        case 0xA3:
+            INST_NAME("MOV Od,EAX");
+            u64 = F64;
+            MOV64x(x1, u64);
+            SDxw(xRAX, x1, 0);
+            SMWRITE();
             break;
         case 0xA4:
             if(rep) {

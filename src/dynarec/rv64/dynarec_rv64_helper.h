@@ -154,9 +154,9 @@
                     wback = 0;                          \
                 } else {                                \
                     SMREAD();                           \
-                    addr = geted(dyn, addr, ninst, nextop, &wback, x2, S, &fixedaddress, rex, NULL, 0, D); \
+                    addr = geted(dyn, addr, ninst, nextop, &wback, x2, S, &fixedaddress, rex, NULL, 1, D); \
                     ADD(S, wback, O);                   \
-                    LDxw(x1, S, 0);                     \
+                    LDxw(x1, S, fixedaddress);          \
                     ed = x1;                            \
                 }
 
@@ -266,25 +266,25 @@
 // Generic get GD, but reg value in gd (R_RAX is not added)
 #define GETG        gd = ((nextop&0x38)>>3)+(rex.r<<3)
 
-// Get GX as a Single (might use x1)
+// Get GX as a Single (might use x2)
 #define GETGXSS(a)                      \
     gd = ((nextop&0x38)>>3)+(rex.r<<3); \
-    a = sse_get_reg(dyn, ninst, x1, gd, 1)
+    a = sse_get_reg(dyn, ninst, x2, gd, 1)
 
-// Get GX as a Single (might use x1), no fetching old value
+// Get GX as a Single (might use x2), no fetching old value
 #define GETGXSS_empty(a)                \
     gd = ((nextop&0x38)>>3)+(rex.r<<3); \
-    a = sse_get_reg_empty(dyn, ninst, x1, gd, 1)
+    a = sse_get_reg_empty(dyn, ninst, x2, gd, 1)
 
-// Get GX as a Double (might use x1)
+// Get GX as a Double (might use x2)
 #define GETGXSD(a)                      \
     gd = ((nextop&0x38)>>3)+(rex.r<<3); \
-    a = sse_get_reg(dyn, ninst, x1, gd, 0)
+    a = sse_get_reg(dyn, ninst, x2, gd, 0)
 
-// Get GX as a Double (might use x1), no fetching old value
+// Get GX as a Double (might use x2), no fetching old value
 #define GETGXSD_empty(a)                \
     gd = ((nextop&0x38)>>3)+(rex.r<<3); \
-    a = sse_get_reg_empty(dyn, ninst, x1, gd, 0)
+    a = sse_get_reg_empty(dyn, ninst, x2, gd, 0)
 
 // Get Ex as a single, not a quad (warning, x1 get used, x2 might too)
 #define GETEXSS(a, D)                                                                                   \
@@ -396,14 +396,14 @@
 
 
 #define SSE_LOOP_FQ_ITEM(GX1, EX1, F, i)            \
-    v0 = sse_get_reg_empty(dyn, ninst, x5, GX1, 0); \
     FLD(v0, gback, i*8);                            \
-    v1 = sse_get_reg_empty(dyn, ninst, x5, EX1, 0); \
     FLD(v1, wback, fixedaddress+i*8);               \
     F;                                              \
     FSD(v0, gback, i*8);
 
 #define SSE_LOOP_FQ(GX1, EX1, F)     \
+    v0 = fpu_get_scratch(dyn);       \
+    v1 = fpu_get_scratch(dyn);       \
     SSE_LOOP_FQ_ITEM(GX1, EX1, F, 0) \
     SSE_LOOP_FQ_ITEM(GX1, EX1, F, 1)
 
@@ -604,13 +604,14 @@
     ANDI(s1, s1, 1<<5);             \
     OR(reg, reg, s1)
 
-// Adjust the xFlags bit 5 -> bit 11, source in reg (can be xFlags, but not s1)
-#define FLAGS_ADJUST_TO11(reg, s1)  \
-    MOV64x(s1, ~(1<<11));           \
-    AND(xFlags, reg, s1);           \
-    ANDI(s1, xFlags, 1<<5);         \
-    SLLI(s1, s1, 11-5);             \
-    OR(xFlags, xFlags, s1)
+// Adjust the xFlags bit 5 -> bit 11, src and dst can be the same (and can be xFlags, but not s1)
+#define FLAGS_ADJUST_TO11(dst, src, s1) \
+    MOV64x(s1, ~(1<<11));               \
+    AND(dst, src, s1);                  \
+    ANDI(s1, dst, 1<<5);                \
+    SLLI(s1, s1, 11-5);                 \
+    ANDI(dst, dst, ~(1<<5));            \
+    OR(dst, dst, s1)
 
 #ifndef MAYSETFLAGS
 #define MAYSETFLAGS()
@@ -835,7 +836,8 @@ void* rv64_next(x64emu_t* emu, uintptr_t addr);
 #define emit_shr32      STEPNAME(emit_shr32)
 #define emit_shr32c     STEPNAME(emit_shr32c)
 #define emit_sar32c     STEPNAME(emit_sar32c)
-#define emit_rol32     STEPNAME(emit_rol32)
+#define emit_rol32      STEPNAME(emit_rol32)
+#define emit_ror32      STEPNAME(emit_ror32)
 #define emit_rol32c     STEPNAME(emit_rol32c)
 #define emit_ror32c     STEPNAME(emit_ror32c)
 #define emit_shrd32c    STEPNAME(emit_shrd32c)
@@ -898,7 +900,7 @@ void jump_to_epilog_fast(dynarec_rv64_t* dyn, uintptr_t ip, int reg, int ninst);
 void jump_to_next(dynarec_rv64_t* dyn, uintptr_t ip, int reg, int ninst);
 void ret_to_epilog(dynarec_rv64_t* dyn, int ninst);
 void retn_to_epilog(dynarec_rv64_t* dyn, int ninst, int n);
-//void iret_to_epilog(dynarec_rv64_t* dyn, int ninst, int is64bits);
+void iret_to_epilog(dynarec_rv64_t* dyn, int ninst, int is64bits);
 void call_c(dynarec_rv64_t* dyn, int ninst, void* fnc, int reg, int ret, int saveflags, int save_reg);
 void call_n(dynarec_rv64_t* dyn, int ninst, void* fnc, int w);
 void grab_segdata(dynarec_rv64_t* dyn, uintptr_t addr, int ninst, int reg, int segment);
@@ -932,7 +934,7 @@ void emit_xor8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
 void emit_xor8c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
 void emit_and8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
 void emit_and8c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
-void emit_add16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
+void emit_add16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, int s5);
 //void emit_add16c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
 void emit_sub16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, int s5);
 //void emit_sub16c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
@@ -943,11 +945,11 @@ void emit_xor16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, 
 void emit_and16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
 //void emit_and16c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
 void emit_inc32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4, int s5);
-//void emit_inc16(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);
-//void emit_inc8(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);
+void emit_inc16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
+void emit_inc8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
 void emit_dec32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4, int s5);
 //void emit_dec16(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);
-//void emit_dec8(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);
+void emit_dec8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
 void emit_adc32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4, int s5);
 //void emit_adc32c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
 //void emit_adc8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
@@ -958,10 +960,10 @@ void emit_sbb32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s
 //void emit_sbb32c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
 void emit_sbb8(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, int s5);
 void emit_sbb8c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4, int s5, int s6);
-//void emit_sbb16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4);
+void emit_sbb16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, int s5);
 //void emit_sbb16c(dynarec_rv64_t* dyn, int ninst, int s1, int32_t c, int s3, int s4);
 void emit_neg32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3);
-//void emit_neg16(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);
+void emit_neg16(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);
 void emit_neg8(dynarec_rv64_t* dyn, int ninst, int s1, int s3, int s4);
 void emit_shl32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4, int s5);
 void emit_shl32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4, int s5);
@@ -969,6 +971,7 @@ void emit_shr32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s
 void emit_shr32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4);
 void emit_sar32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4);
 void emit_rol32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4);
+void emit_ror32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4);
 void emit_rol32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4);
 void emit_ror32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4);
 void emit_shrd32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, uint32_t c, int s3, int s4);
@@ -1004,11 +1007,11 @@ void x87_reget_st(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int st);
 // swap 2 x87 regs
 void x87_swapreg(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int a, int b);
 // Set rounding according to cw flags, return reg to restore flags
-int x87_setround(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3);
+int x87_setround(dynarec_rv64_t* dyn, int ninst, int s1, int s2);
 // Restore round flag
 void x87_restoreround(dynarec_rv64_t* dyn, int ninst, int s1);
 // Set rounding according to mxcsr flags, return reg to restore flags
-int sse_setround(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3);
+int sse_setround(dynarec_rv64_t* dyn, int ninst, int s1, int s2);
 
 void CacheTransform(dynarec_rv64_t* dyn, int ninst, int cacheupd, int s1, int s2, int s3);
 

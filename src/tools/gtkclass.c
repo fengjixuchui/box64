@@ -221,6 +221,133 @@ static void bridgeGInitiallyUnownedClass(my_GInitiallyUnownedClass_t* class)
 }
 #undef SUPERGO
 
+// ----- GamesScoresImporterClass ------
+// wrapper x86 -> natives of callbacks
+WRAPPER(GamesScoresImporter, importOldScores, void, (void *self, void* context, void* new_scores_dir, void *error), 4, self, context, new_scores_dir, error);
+
+#define SUPERGO() \
+    GO(importOldScores, vFpppp);
+
+// wrap (so bridge all calls, just in case)
+static void wrapGamesScoresImporterClass(my_GamesScoresImporterClass_t* class)
+{
+    wrapGObjectClass(&class->parent_class);
+    #define GO(A, W) class->A = reverse_##A##_GamesScoresImporter (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+// unwrap (and use callback if not a native call anymore)
+static void unwrapGamesScoresImporterClass(my_GamesScoresImporterClass_t* class)
+{
+    unwrapGObjectClass(&class->parent_class);
+    #define GO(A, W)   class->A = find_##A##_GamesScoresImporter (class->A)
+    SUPERGO()
+    #undef GO
+}
+// autobridge
+static void bridgeGamesScoresImporterClass(my_GamesScoresImporterClass_t* class)
+{
+    bridgeGObjectClass(&class->parent_class);
+    #define GO(A, W) autobridge_##A##_GamesScoresImporter (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+#undef SUPERGO
+
+// ----- GApplicationClass ------
+// wrapper x86 -> natives of callbacks
+WRAPPER(GApplication, startup, void, (void* application), 1, application);
+WRAPPER(GApplication, activate, void, (void* application), 1, application);
+WRAPPER(GApplication, open, void, (void* application, void* files, int n_files, void* hint), 4, application, files, n_files, hint);
+WRAPPER(GApplication, command_line, void, (void* application, void* command_line), 2, application, command_line);
+WRAPPER(GApplication, local_command_line, void, (void* application, void* arguments, void* exit_status), 3, application, arguments, exit_status);
+WRAPPER(GApplication, before_emit, void*, (void* application, void* platform_data), 2, application, platform_data);
+WRAPPER(GApplication, after_emit, void, (void* application, void* platform_data), 2, application, platform_data);
+WRAPPER(GApplication, add_platform_data, void, (void* application, void* builder), 2, application, builder);
+WRAPPER(GApplication, quit_mainloop, void, (void* application), 1, application);
+WRAPPER(GApplication, run_mainloop, void, (void* application), 1, application);
+WRAPPER(GApplication, shutdown, void, (void* application), 1, application);
+WRAPPER(GApplication, dbus_register, void, (void* application, void* connection, void* object_path, void* error), 4, application, connection, object_path, error);
+WRAPPER(GApplication, dbus_unregister, void, (void* application, void* connection, void* object_path), 3, application, connection, object_path);
+WRAPPER(GApplication, handle_local_options, void, (void* application, void* options), 2, application, options);
+WRAPPER(GApplication, name_lost, void, (void* application), 1, application);
+
+#define SUPERGO()                     \
+    GO(startup, vFp);                 \
+    GO(activate, vFp);                \
+    GO(open, vFppip);                 \
+    GO(command_line, vFpp);           \
+    GO(local_command_line, vFppp);    \
+    GO(before_emit, vFpp);            \
+    GO(after_emit, vFpp);             \
+    GO(add_platform_data, vFpp);      \
+    GO(quit_mainloop, vFp);           \
+    GO(run_mainloop, vFp);            \
+    GO(shutdown, vFp);                \
+    GO(dbus_register, vFpppp);        \
+    GO(dbus_unregister, vFppp);       \
+    GO(handle_local_options, vFpp);   \
+    GO(name_lost, vFp);
+
+// wrap (so bridge all calls, just in case)
+static void wrapGApplicationClass(my_GApplicationClass_t* class)
+{
+    #define GO(A, W) class->A = reverse_##A##_GApplication (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+// unwrap (and use callback if not a native call anymore)
+static void unwrapGApplicationClass(my_GApplicationClass_t* class)
+{
+    #define GO(A, W)   class->A = find_##A##_GApplication (class->A)   //SUPERGO() defined but not used
+    SUPERGO()
+    #undef GO
+}
+// autobridge
+static void bridgeGApplicationClass(my_GApplicationClass_t* class)
+{
+    #define GO(A, W) autobridge_##A##_GApplication (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+
+#undef SUPERGO
+
+// ----- GtkApplicationClass ------
+// wrapper x86 -> natives of callbacks
+WRAPPER(GtkApplication, window_added, void, (void* application, void* window), 2, application, window);
+WRAPPER(GtkApplication, window_removed, void, (void* application, void* window), 2, application, window);
+
+#define SUPERGO() \
+    GO(window_added, pFpp);   \
+    GO(window_removed, vFpp);
+
+static void wrapGtkApplicationClass(my_GtkApplicationClass_t* class)
+{
+    wrapGApplicationClass(&class->parent_class);
+    #define GO(A, W) class->A = reverse_##A##_GtkApplication (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+
+static void unwrapGtkApplicationClass(my_GtkApplicationClass_t* class)
+{
+    unwrapGApplicationClass(&class->parent_class);
+    #define GO(A, W)   class->A = find_##A##_GtkApplication (class->A)
+    SUPERGO()
+    #undef GO
+}
+
+static void bridgeGtkApplicationClass(my_GtkApplicationClass_t* class)
+{
+    bridgeGApplicationClass(&class->parent_class);
+    #define GO(A, W) autobridge_##A##_GtkApplication (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+
+#undef SUPERGO
+
 // ----- GtkObjectClass ------
 // wrapper x64 -> natives of callbacks
 WRAPPER(GtkObject, set_arg, void, (void* object, void* arg, uint32_t arg_id), 3, object, arg, arg_id);
@@ -782,13 +909,77 @@ static void bridgeGtkMisc2Class(my_GtkMisc2Class_t* class)
     bridgeGtkWidget2Class(&class->parent_class);
 }
 
+// ----- GtkMisc3Class ------
+// no wrapper x86 -> natives of callbacks
+
+#define SUPERGO()           \
+
+// wrap (so bridge all calls, just in case)
+static void wrapGtkMisc3Class(my_GtkMisc3Class_t* class)
+{
+    wrapGtkWidget3Class(&class->parent_class);
+    #define GO(A, W) class->A = reverse_##A##_GtkMisc3 (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+// unwrap (and use callback if not a native call anymore)
+static void unwrapGtkMisc3Class(my_GtkMisc3Class_t* class)
+{
+    unwrapGtkWidget3Class(&class->parent_class);
+    #define GO(A, W)   class->A = find_##A##_GtkMisc3 (class->A)
+    SUPERGO()
+    #undef GO
+}
+// autobridge
+static void bridgeGtkMisc3Class(my_GtkMisc3Class_t* class)
+{
+    bridgeGtkWidget3Class(&class->parent_class);
+    #define GO(A, W) autobridge_##A##_GtkMisc3 (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+
+#undef SUPERGO
+
+// ----- GtkGtkMenuButtonClass ------
+// wrapper x86 -> natives of callbacks
+WRAPPER(GtkMenuButton, activate, void, (void* self), 1, self);
+
+#define SUPERGO() \
+    GO(activate, vFp);
+
+// wrap (so bridge all calls, just in case)
+static void wrapGtkMenuButtonClass(my_GtkMenuButtonClass_t* class)
+{
+    wrapGtkWidget3Class(&class->parent_class);
+    #define GO(A, W) class->A = reverse_##A##_GtkMenuButton (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+// unwrap (and use callback if not a native call anymore)
+static void unwrapGtkMenuButtonClass(my_GtkMenuButtonClass_t* class)
+{
+    unwrapGtkWidget3Class(&class->parent_class);
+    #define GO(A, W)   class->A = find_##A##_GtkMenuButton (class->A)
+    SUPERGO()
+    #undef GO
+}
+// autobridge
+static void bridgeGtkMenuButtonClass(my_GtkMenuButtonClass_t* class)
+{
+    bridgeGtkWidget3Class(&class->parent_class);
+    #define GO(A, W) autobridge_##A##_GtkMenuButton (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+#undef SUPERGO
 
 // ----- GtkLabel2Class ------
 // wrapper x86 -> natives of callbacks
-WRAPPER(GtkMisc2, move_cursor, void, (void* label, int step, int count, int extend_selection), 4, label, step, count, extend_selection);
-WRAPPER(GtkMisc2, copy_clipboard, void, (void* label), 1, label);
-WRAPPER(GtkMisc2, populate_popup, void, (void* label, void* menu), 2, label, menu);
-WRAPPER(GtkMisc2, activate_link, int, (void* label, void* uri), 2, label, uri);
+WRAPPER(GtkLabel2, move_cursor, void, (void* label, int step, int count, int extend_selection), 4, label, step, count, extend_selection);
+WRAPPER(GtkLabel2, copy_clipboard, void, (void* label), 1, label);
+WRAPPER(GtkLabel2, populate_popup, void, (void* label, void* menu), 2, label, menu);
+WRAPPER(GtkLabel2, activate_link, int, (void* label, void* uri), 2, label, uri);
 
 #define SUPERGO() \
     GO(move_cursor, vFpiii);    \
@@ -800,7 +991,7 @@ WRAPPER(GtkMisc2, activate_link, int, (void* label, void* uri), 2, label, uri);
 static void wrapGtkLabel2Class(my_GtkLabel2Class_t* class)
 {
     wrapGtkMisc2Class(&class->parent_class);
-    #define GO(A, W) class->A = reverse_##A##_GtkMisc2 (W, class->A)
+    #define GO(A, W) class->A = reverse_##A##_GtkLabel2 (W, class->A)
     SUPERGO()
     #undef GO
 }
@@ -808,7 +999,7 @@ static void wrapGtkLabel2Class(my_GtkLabel2Class_t* class)
 static void unwrapGtkLabel2Class(my_GtkLabel2Class_t* class)
 {   
     unwrapGtkMisc2Class(&class->parent_class);
-    #define GO(A, W)   class->A = find_##A##_GtkMisc2 (class->A)
+    #define GO(A, W)   class->A = find_##A##_GtkLabel2 (class->A)
     SUPERGO()
     #undef GO
 }
@@ -816,10 +1007,50 @@ static void unwrapGtkLabel2Class(my_GtkLabel2Class_t* class)
 static void bridgeGtkLabel2Class(my_GtkLabel2Class_t* class)
 {
     bridgeGtkMisc2Class(&class->parent_class);
-    #define GO(A, W) autobridge_##A##_GtkMisc2 (W, class->A)
+    #define GO(A, W) autobridge_##A##_GtkLabel2 (W, class->A)
     SUPERGO()
     #undef GO
 }
+#undef SUPERGO
+
+// ----- GtkLabel3Class ------
+// wrapper x86 -> natives of callbacks
+WRAPPER(GtkLabel3, move_cursor, void, (void* label, int step, int count, int extend_selection), 4, label, step, count, extend_selection);
+WRAPPER(GtkLabel3, copy_clipboard, void, (void* label), 1, label);
+WRAPPER(GtkLabel3, populate_popup, void, (void* label, void* menu), 2, label, menu);
+WRAPPER(GtkLabel3, activate_link, int, (void* label, void* uri), 2, label, uri);
+
+#define SUPERGO() \
+    GO(move_cursor, vFpiii);    \
+    GO(copy_clipboard, vFp);    \
+    GO(populate_popup, vFpp);   \
+    GO(activate_link, iFpp);    \
+
+// wrap (so bridge all calls, just in case)
+static void wrapGtkLabel3Class(my_GtkLabel3Class_t* class)
+{
+    wrapGtkMisc3Class(&class->parent_class);
+    #define GO(A, W) class->A = reverse_##A##_GtkLabel3 (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+// unwrap (and use callback if not a native call anymore)
+static void unwrapGtkLabel3Class(my_GtkLabel3Class_t* class)
+{
+    unwrapGtkMisc3Class(&class->parent_class);
+    #define GO(A, W)   class->A = find_##A##_GtkLabel3 (class->A)
+    SUPERGO()
+    #undef GO
+}
+// autobridge
+static void bridgeGtkLabel3Class(my_GtkLabel3Class_t* class)
+{
+    bridgeGtkMisc3Class(&class->parent_class);
+    #define GO(A, W) autobridge_##A##_GtkLabel3 (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+
 #undef SUPERGO
 
 // ----- GtkTreeView2Class ------
@@ -904,6 +1135,22 @@ static void bridgeGtkBin2Class(my_GtkBin2Class_t* class)
     bridgeGtkContainer2Class(&class->parent_class);
 }
 
+// ----- GtkBin3Class ------
+static void wrapGtkBin3Class(my_GtkBin3Class_t* class)
+{
+    wrapGtkContainer3Class(&class->parent_class);
+}
+// unwrap (and use callback if not a native call anymore)
+static void unwrapGtkBin3Class(my_GtkBin3Class_t* class)
+{
+    unwrapGtkContainer3Class(&class->parent_class);
+}
+// autobridge
+static void bridgeGtkBin3Class(my_GtkBin3Class_t* class)
+{
+    bridgeGtkContainer3Class(&class->parent_class);
+}
+
 // ----- GtkWindow2Class ------
 // wrapper x86 -> natives of callbacks
 WRAPPER(GtkWindow2, set_focus, void, (void* window, void* focus), 2, window, focus);
@@ -943,6 +1190,148 @@ static void bridgeGtkWindow2Class(my_GtkWindow2Class_t* class)
 {
     bridgeGtkBin2Class(&class->parent_class);
     #define GO(A, W) autobridge_##A##_GtkWindow2 (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+
+#undef SUPERGO
+
+// ----- GtkWindow3Class ------
+// wrapper x86 -> natives of callbacks
+WRAPPER(GtkWindow3, set_focus, void, (void* window, void* focus), 2, window, focus);
+WRAPPER(GtkWindow3, activate_focus, void, (void* window), 1, window);
+WRAPPER(GtkWindow3, activate_default, void, (void* window), 1, window);
+WRAPPER(GtkWindow3, keys_changed, void, (void* window), 1, window);
+WRAPPER(GtkWindow3, enable_debugging, int, (void* window, int toggle), 2, window, toggle);
+
+#define SUPERGO()               \
+    GO(set_focus, vFpp);        \
+    GO(activate_focus, vFp);    \
+    GO(activate_default, vFp);  \
+    GO(keys_changed, vFp);      \
+    GO(enable_debugging, iFpi);
+
+
+// wrap (so bridge all calls, just in case)
+static void wrapGtkWindow3Class(my_GtkWindow3Class_t* class)
+{
+    wrapGtkBin3Class(&class->parent_class);
+    #define GO(A, W) class->A = reverse_##A##_GtkWindow3 (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+// unwrap (and use callback if not a native call anymore)
+static void unwrapGtkWindow3Class(my_GtkWindow3Class_t* class)
+{
+    unwrapGtkBin3Class(&class->parent_class);
+    #define GO(A, W)   class->A = find_##A##_GtkWindow3 (class->A)
+    SUPERGO()
+    #undef GO
+}
+// autobridge
+static void bridgeGtkWindow3Class(my_GtkWindow3Class_t* class)
+{
+    bridgeGtkBin3Class(&class->parent_class);
+    #define GO(A, W) autobridge_##A##_GtkWindow3 (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+
+#undef SUPERGO
+
+// ----- GtkApplicationWindowClass ------
+// wrap (so bridge all calls, just in case)
+static void wrapGtkApplicationWindowClass(my_GtkApplicationWindowClass_t* class)
+{
+    wrapGtkWindow3Class(&class->parent_class);
+}
+// unwrap (and use callback if not a native call anymore)
+static void unwrapGtkApplicationWindowClass(my_GtkApplicationWindowClass_t* class)
+{
+    unwrapGtkWindow3Class(&class->parent_class);
+}
+// autobridge
+static void bridgeGtkApplicationWindowClass(my_GtkApplicationWindowClass_t* class)
+{
+    bridgeGtkWindow3Class(&class->parent_class);
+}
+
+// ----- GtkListBoxClass ------
+// wrapper x86 -> natives of callbacks
+WRAPPER(GtkListBoxClass,row_selected, void, (void *box, void *row), 2, box, row);
+WRAPPER(GtkListBoxClass,row_activated, void, (void *box, void *row), 2, box, row);
+WRAPPER(GtkListBoxClass,activate_cursor_row, void, (void *box), 1, box);
+WRAPPER(GtkListBoxClass,toggle_cursor_row, void, (void *box), 1, box);
+WRAPPER(GtkListBoxClass,move_cursor, void, (void *box, int step, int count), 3, box, step, count);
+WRAPPER(GtkListBoxClass,selected_rows_changed, void, (void *box), 1, box);
+WRAPPER(GtkListBoxClass,select_all, void, (void *box), 1, box);
+WRAPPER(GtkListBoxClass,unselect_all, void, (void *box), 1, box);
+
+#define SUPERGO()                  \
+    GO(row_selected, vFpp);        \
+    GO(row_activated, vFpp);    \
+    GO(activate_cursor_row, vFp);    \
+    GO(toggle_cursor_row, vFp);    \
+    GO(move_cursor, vFpii);    \
+    GO(selected_rows_changed, vFp);    \
+    GO(select_all, vFp);    \
+    GO(unselect_all, vFp);
+
+// wrap (so bridge all calls, just in case)
+static void wrapGtkListBoxClass(my_GtkListBoxClass_t* class)
+{
+    wrapGtkContainer3Class(&class->parent_class);
+    #define GO(A, W) class->A = reverse_##A##_GtkListBoxClass (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+// unwrap (and use callback if not a native call anymore)
+static void unwrapGtkListBoxClass(my_GtkListBoxClass_t* class)
+{
+    unwrapGtkContainer3Class(&class->parent_class);
+    #define GO(A, W)   class->A = find_##A##_GtkListBoxClass (class->A)
+    SUPERGO()
+    #undef GO
+}
+// autobridge
+static void bridgeGtkListBoxClass(my_GtkListBoxClass_t* class)
+{
+    bridgeGtkContainer3Class(&class->parent_class);
+    #define GO(A, W) autobridge_##A##_GtkListBoxClass (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+
+#undef SUPERGO
+
+// ----- GtkListBoxRowClass ------
+// wrapper x86 -> natives of callbacks
+WRAPPER(GtkListBoxRowClass, activate, void, (void *row), 1, row);
+
+#define SUPERGO()       \
+    GO(activate, vFpp);
+
+// wrap (so bridge all calls, just in case)
+static void wrapGtkListBoxRowClass(my_GtkListBoxRowClass_t* class)
+{
+    wrapGtkBin3Class(&class->parent_class);
+    #define GO(A, W) class->A = reverse_##A##_GtkListBoxRowClass (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+// unwrap (and use callback if not a native call anymore)
+static void unwrapGtkListBoxRowClass(my_GtkListBoxRowClass_t* class)
+{
+    unwrapGtkBin3Class(&class->parent_class);
+    #define GO(A, W)   class->A = find_##A##_GtkListBoxRowClass (class->A)
+    SUPERGO()
+    #undef GO
+}
+// autobridge
+static void bridgeGtkListBoxRowClass(my_GtkListBoxRowClass_t* class)
+{
+    bridgeGtkBin3Class(&class->parent_class);
+    #define GO(A, W) autobridge_##A##_GtkListBoxRowClass (W, class->A)
     SUPERGO()
     #undef GO
 }
@@ -1078,6 +1467,51 @@ static void bridgeGtkButton2Class(my_GtkButton2Class_t* class)
 {
     bridgeGtkBin2Class(&class->parent_class);
     #define GO(A, W) autobridge_##A##_GtkButton2 (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+
+#undef SUPERGO
+
+// ----- GtkButton3Class ------
+// wrapper x86 -> natives of callbacks
+WRAPPER(GtkButton3, pressed, void,  (void* button), 1, button);
+WRAPPER(GtkButton3, released, void, (void* button), 1, button);
+WRAPPER(GtkButton3, clicked, void,  (void* button), 1, button);
+WRAPPER(GtkButton3, enter, void,    (void* button), 1, button);
+WRAPPER(GtkButton3, leave, void,    (void* button), 1, button);
+WRAPPER(GtkButton3, activate, void, (void* button), 1, button);
+
+#define SUPERGO()               \
+    GO(pressed, vFp);           \
+    GO(released, vFp);          \
+    GO(clicked, vFp);           \
+    GO(enter, vFp);             \
+    GO(leave, vFp);             \
+    GO(activate, vFp);          \
+
+
+// wrap (so bridge all calls, just in case)
+static void wrapGtkButton3Class(my_GtkButton3Class_t* class)
+{
+    wrapGtkBin3Class(&class->parent_class);
+    #define GO(A, W) class->A = reverse_##A##_GtkButton3 (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+// unwrap (and use callback if not a native call anymore)
+static void unwrapGtkButton3Class(my_GtkButton3Class_t* class)
+{
+    unwrapGtkBin3Class(&class->parent_class);
+    #define GO(A, W)   class->A = find_##A##_GtkButton3 (class->A)
+    SUPERGO()
+    #undef GO
+}
+// autobridge
+static void bridgeGtkButton3Class(my_GtkButton3Class_t* class)
+{
+    bridgeGtkBin3Class(&class->parent_class);
+    #define GO(A, W) autobridge_##A##_GtkButton3 (W, class->A)
     SUPERGO()
     #undef GO
 }
@@ -1585,6 +2019,179 @@ static void bridgeGtkTextView3Class(my_GtkTextView3Class_t* class)
 {
     bridgeGtkContainer3Class(&class->parent_class);
     #define GO(A, W) autobridge_##A##_GtkTextView3 (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+
+#undef SUPERGO
+
+// ----- GtkGrid3Class ------
+// no wrapper x86 -> natives of callbacks
+
+#define SUPERGO()           \
+
+// wrap (so bridge all calls, just in case)
+static void wrapGtkGrid3Class(my_GtkGrid3Class_t* class)
+{
+    wrapGtkContainer3Class(&class->parent_class);
+    #define GO(A, W) class->A = reverse_##A##_GtkGrid3 (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+// unwrap (and use callback if not a native call anymore)
+static void unwrapGtkGrid3Class(my_GtkGrid3Class_t* class)
+{
+    unwrapGtkContainer3Class(&class->parent_class);
+    #define GO(A, W)   class->A = find_##A##_GtkGrid3 (class->A)
+    SUPERGO()
+    #undef GO
+}
+// autobridge
+static void bridgeGtkGrid3Class(my_GtkGrid3Class_t* class)
+{
+    bridgeGtkContainer3Class(&class->parent_class);
+    #define GO(A, W) autobridge_##A##_GtkGrid3 (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+
+#undef SUPERGO
+
+// ----- GtkEventControllerClass ------
+// wrapper x86 -> natives of callbacks
+WRAPPER(GtkEventController, set_widget, void, (void* controller, void* widget), 2, controller, widget);
+WRAPPER(GtkEventController, unset_widget, void, (void* controller), 1, controller);
+WRAPPER(GtkEventController, handle_event, int, (void *controller, void *event, double x, double y), 4, controller, event, x, y);
+WRAPPER(GtkEventController, reset, void, (void* controller), 1, controller);
+WRAPPER(GtkEventController, handle_crossing, void, (void *controller, void *crossing, double x, double y), 4, controller, crossing, x, y);
+WRAPPER(GtkEventController, filter_event, void, (void *controller, void *event), 2, controller, event);
+
+#define SUPERGO()               \
+    GO(set_widget, vFpp);       \
+    GO(unset_widget, vFp);      \
+    GO(handle_event, iFppdd);   \
+    GO(reset, vFp);             \
+    GO(handle_crossing, vFppdd);\
+    GO(filter_event, vFpp);
+
+// wrap (so bridge all calls, just in case)
+static void wrapGtkEventControllerClass(my_GtkEventControllerClass_t* class)
+{
+    wrapGObjectClass(&class->parent_class);
+    #define GO(A, W) class->A = reverse_##A##_GtkEventController(W, class->A)
+    SUPERGO()
+    #undef GO
+}
+// unwrap (and use callback if not a native call anymore)
+static void unwrapGtkEventControllerClass(my_GtkEventControllerClass_t* class)
+{
+    unwrapGObjectClass(&class->parent_class);
+    #define GO(A, W)   class->A = find_##A##_GtkEventController (class->A)
+    SUPERGO()
+    #undef GO
+}
+// autobridge
+static void bridgeGtkEventControllerClass(my_GtkEventControllerClass_t* class)
+{
+    bridgeGObjectClass(&class->parent_class);
+    #define GO(A, W) autobridge_##A##_GtkEventController (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+
+#undef SUPERGO
+
+// ----- GtkGestureClass ------
+// wrapper x86 -> natives of callbacks
+WRAPPER(GtkGesture, check, void, (void* gesture), 1, gesture);
+WRAPPER(GtkGesture, begin, void, (void *gesture, void *sequence), 2, gesture, sequence);
+WRAPPER(GtkGesture, update, void, (void *gesture, void *sequence), 2, gesture, sequence);
+WRAPPER(GtkGesture, end, void, (void *gesture, void *sequence), 2, gesture, sequence);
+WRAPPER(GtkGesture, cancel, void, (void *gesture, void *sequence), 2, gesture, sequence);
+WRAPPER(GtkGesture, sequence_state_changed, void, (void *gesture, void *sequence, int state), 3, gesture, sequence, state);
+
+#define SUPERGO()              \
+    GO(check, vFp);            \
+    GO(begin, vFpp);           \
+    GO(update, vFpp);          \
+    GO(end, vFpp);             \
+    GO(cancel, vFpp);          \
+    GO(sequence_state_changed, vFppi);
+
+// wrap (so bridge all calls, just in case)
+static void wrapGtkGestureClass(my_GtkGestureClass_t* class)
+{
+    wrapGtkEventControllerClass(&class->parent_class);
+    #define GO(A, W) class->A = reverse_##A##_GtkGesture(W, class->A)
+    SUPERGO()
+    #undef GO
+}
+// unwrap (and use callback if not a native call anymore)
+static void unwrapGtkGestureClass(my_GtkGestureClass_t* class)
+{
+    unwrapGtkEventControllerClass(&class->parent_class);
+    #define GO(A, W)   class->A = find_##A##_GtkGesture (class->A)
+    SUPERGO()
+    #undef GO
+}
+// autobridge
+static void bridgeGtkGestureClass(my_GtkGestureClass_t* class)
+{
+    bridgeGtkEventControllerClass(&class->parent_class);
+    #define GO(A, W) autobridge_##A##_GtkGesture (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+
+#undef SUPERGO
+
+// ----- GtkGestureSingleClass ------
+// wrap (so bridge all calls, just in case)
+static void wrapGtkGestureSingleClass(my_GtkGestureSingleClass_t* class)
+{
+    wrapGtkGestureClass(&class->parent_class);
+}
+// unwrap (and use callback if not a native call anymore)
+static void unwrapGtkGestureSingleClass(my_GtkGestureSingleClass_t* class)
+{
+    unwrapGtkGestureClass(&class->parent_class);
+}
+// autobridge
+static void bridgeGtkGestureSingleClass(my_GtkGestureSingleClass_t* class)
+{
+    bridgeGtkGestureClass(&class->parent_class);
+}
+
+// ----- GtkGestureClass ------
+// wrapper x86 -> natives of callbacks
+WRAPPER(GtkGestureLongPress, pressed, void, (void *gesture, double x, double y), 3, gesture, x, y);
+WRAPPER(GtkGestureLongPress, cancelled, void, (void *cancelled), 1, cancelled);
+
+#define SUPERGO()              \
+    GO(pressed, vFpdd);          \
+    GO(cancelled, vFp);
+
+// wrap (so bridge all calls, just in case)
+static void wrapGtkGestureLongPressClass(my_GtkGestureLongPressClass_t* class)
+{
+    wrapGtkGestureSingleClass(&class->parent_class);
+    #define GO(A, W) class->A = reverse_##A##_GtkGestureLongPress(W, class->A)
+    SUPERGO()
+    #undef GO
+}
+// unwrap (and use callback if not a native call anymore)
+static void unwrapGtkGestureLongPressClass(my_GtkGestureLongPressClass_t* class)
+{
+    unwrapGtkGestureSingleClass(&class->parent_class);
+    #define GO(A, W)   class->A = find_##A##_GtkGestureLongPress (class->A)
+    SUPERGO()
+    #undef GO
+}
+// autobridge
+static void bridgeGtkGestureLongPressClass(my_GtkGestureLongPressClass_t* class)
+{
+    bridgeGtkGestureSingleClass(&class->parent_class);
+    #define GO(A, W) autobridge_##A##_GtkGestureLongPress (W, class->A)
     SUPERGO()
     #undef GO
 }

@@ -104,8 +104,44 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             nextop = F8;
             GETGD;
             GETEXSD(v0, 0);
-            // TODO: fastnan handling
+            if(!box64_dynarec_fastround) {
+                FSFLAGSI(xZR);  // // reset all bits
+            }
             FCVTLDxw(gd, v0, RD_RTZ);
+            if(!rex.w)
+                ZEROUP(gd);
+            if(!box64_dynarec_fastround) {
+                FRFLAGS(x5);   // get back FPSR to check the IOC bit
+                ANDI(x5, x5, (1<<FR_NV)|(1<<FR_OF));
+                CBZ_NEXT(x5);
+                if(rex.w) {
+                    MOV64x(gd, 0x8000000000000000LL);
+                } else {
+                    MOV32w(gd, 0x80000000);
+                }
+            }
+            break;
+        case 0x2D:
+            INST_NAME("CVTSD2SI Gd, Ex");
+            nextop = F8;
+            GETGD;
+            GETEXSD(v0, 0);
+            if(!box64_dynarec_fastround) {
+                FSFLAGSI(xZR);  // // reset all bits
+            }
+            u8 = sse_setround(dyn, ninst, x2, x3);
+            FCVTLDxw(gd, v0, RD_DYN);
+            x87_restoreround(dyn, ninst, u8);
+            if(!box64_dynarec_fastround) {
+                FRFLAGS(x5);   // get back FPSR to check the IOC bit
+                ANDI(x5, x5, (1<<FR_NV)|(1<<FR_OF));
+                CBZ_NEXT(x5);
+                if(rex.w) {
+                    MOV64x(gd, 0x8000000000000000LL);
+                } else {
+                    MOV32w(gd, 0x80000000);
+                }
+            }
             break;
         case 0x38:  // these are some more SSSE4.2+ opcodes
             opcode = F8;
@@ -140,6 +176,21 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
 
                 default:
                     DEFAULT;
+            }
+            break;
+        case 0x51:
+            INST_NAME("SQRTSD Gx, Ex");
+            nextop = F8;
+            GETEXSD(d0, 0);
+            GETGXSD_empty(d1);
+            if(!box64_dynarec_fastnan) {
+                FMVDX(d1, xZR);
+                FLTD(x3, d0, d1);
+            }
+            FSQRTD(d1, d0);
+            if(!box64_dynarec_fastnan) {
+                BEQ(x3, xZR, 8);
+                FNEGD(d1, d1);
             }
             break;
         case 0x58:
@@ -292,6 +343,25 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             }
             NEG(x2, x2);
             FMVDX(d0, x2);
+            break;
+        case 0xE6:
+            INST_NAME("CVTPD2DQ Gx, Ex");
+            nextop = F8;
+            GETGX(x1);
+            GETEX(x2, 0);
+            d0 = fpu_get_scratch(dyn);
+            u8 = sse_setround(dyn, ninst, x6, x4);
+            for (int i=0; i<2 ; ++i) {
+                FLD(d0, wback, fixedaddress+8*i);
+                FCVTLD(x3, d0, RD_DYN);
+                SEXT_W(x5, x3);
+                SUB(x5, x5, x3);
+                BEQZ(x5, 8);
+                LUI(x3, 0x80000); // INT32_MIN
+                SW(x3, gback, 4*i);
+            }
+            x87_restoreround(dyn, ninst, u8);
+            SD(xZR, gback, 8);
             break;
         default:
             DEFAULT;

@@ -383,13 +383,47 @@ void retn_to_epilog(dynarec_rv64_t* dyn, int ninst, int n)
     CLEARIP();
 }
 
+void iret_to_epilog(dynarec_rv64_t* dyn, int ninst, int is64bits)
+{
+    //#warning TODO: is64bits
+    MAYUSE(ninst);
+    MESSAGE(LOG_DUMP, "IRet to epilog\n");
+    // POP IP
+    NOTEST(x2);
+    POP1(xRIP);
+    // POP CS
+    POP1(x2);
+    SH(x2, xEmu, offsetof(x64emu_t, segs[_CS]));
+    MV(x1, xZR);
+    SD(x1, xEmu, offsetof(x64emu_t, segs_serial[_CS]));
+    SD(x1, xEmu, offsetof(x64emu_t, segs_serial[_SS]));
+    // POP EFLAGS
+    POP1(xFlags);
+    MOV32w(x1, 0x3F7FD7);
+    AND(xFlags, xFlags, x1);
+    ORI(xFlags, xFlags, 0x2);
+    SET_DFNONE();
+    // POP RSP
+    POP1(x3);
+    // POP SS
+    POP1(x2);
+    SH(x2, xEmu, offsetof(x64emu_t, segs[_SS]));
+    // set new RSP
+    MV(xRSP, x3);
+    // Ret....
+    MOV64x(x2, (uintptr_t)rv64_epilog);  // epilog on purpose, CS might have changed!
+    SMEND();
+    BR(x2);
+    CLEARIP();
+}
+
 void call_c(dynarec_rv64_t* dyn, int ninst, void* fnc, int reg, int ret, int saveflags, int savereg)
 {
     MAYUSE(fnc);
     if(savereg==0)
         savereg = x6;
     if(saveflags) {
-        FLAGS_ADJUST_TO11(xFlags, reg);
+        FLAGS_ADJUST_TO11(xFlags, xFlags, reg);
         SD(xFlags, xEmu, offsetof(x64emu_t, eflags));
     }
     fpu_pushcache(dyn, ninst, reg, 0);
@@ -442,7 +476,7 @@ void call_c(dynarec_rv64_t* dyn, int ninst, void* fnc, int reg, int ret, int sav
 void call_n(dynarec_rv64_t* dyn, int ninst, void* fnc, int w)
 {
     MAYUSE(fnc);
-    FLAGS_ADJUST_TO11(xFlags, x3);
+    FLAGS_ADJUST_TO11(xFlags, xFlags, x3);
     SD(xFlags, xEmu, offsetof(x64emu_t, eflags));
     fpu_pushcache(dyn, ninst, x3, 1);
     // x5..x8, x10..x17, x28..x31 those needs to be saved by caller
@@ -984,7 +1018,7 @@ void x87_swapreg(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int a, int b)
 }
 
 // Set rounding according to cw flags, return reg to restore flags
-int x87_setround(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3)
+int x87_setround(dynarec_rv64_t* dyn, int ninst, int s1, int s2)
 {
     MAYUSE(dyn); MAYUSE(ninst);
     MAYUSE(s1); MAYUSE(s2);
@@ -994,18 +1028,19 @@ int x87_setround(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3)
     // MMX/x87 Round mode: 0..3: Nearest, Down, Up, Chop
     // RV64: 0..7: Nearest, Toward Zero (Chop), Down, Up, Nearest tie to Max, invalid, invalid, dynamic (invalid here)
     // 0->0, 1->2, 2->3, 3->1
-    SLLI(s1, s1, 1);
+    BEQ(s1, xZR, 24);
     ADDI(s2, xZR, 3);
-    BGE(s1, s2, 4+8);
-    SUBI(s1, s1, 4);
-    XORI(s3, s1, 0b11);
+    BEQ(s1, s2, 12);
+    ADDI(s1, s1, 1);
+    J(8);
+    ADDI(s1, xZR, 1);
     // transform done (is there a faster way?)
-    FSRM(s3);               // exange RM with current
-    return s3;
+    FSRM(s1, s1);               // exange RM with current
+    return s1;
 }
 
 // Set rounding according to mxcsr flags, return reg to restore flags
-int sse_setround(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3)
+int sse_setround(dynarec_rv64_t* dyn, int ninst, int s1, int s2)
 {
     MAYUSE(dyn); MAYUSE(ninst);
     MAYUSE(s1); MAYUSE(s2);
@@ -1015,14 +1050,15 @@ int sse_setround(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3)
     // MMX/x87 Round mode: 0..3: Nearest, Down, Up, Chop
     // RV64: 0..7: Nearest, Toward Zero (Chop), Down, Up, Nearest tie to Max, invalid, invalid, dynamic (invalid here)
     // 0->0, 1->2, 2->3, 3->1
-    SLLI(s1, s1, 1);
+    BEQ(s1, xZR, 24);
     ADDI(s2, xZR, 3);
-    BGE(s1, s2, 4+8);
-    SUBI(s1, s1, 4);
-    XORI(s3, s1, 0b11);
+    BEQ(s1, s2, 12);
+    ADDI(s1, s1, 1);
+    J(8);
+    ADDI(s1, xZR, 1);
     // transform done (is there a faster way?)
-    FSRM(s3);               // exange RM with current
-    return s3;
+    FSRM(s1, s1);               // exange RM with current
+    return s1;
 }
 
 // Restore round flag, destroy s1 doing so
@@ -1030,7 +1066,7 @@ void x87_restoreround(dynarec_rv64_t* dyn, int ninst, int s1)
 {
     MAYUSE(dyn); MAYUSE(ninst);
     MAYUSE(s1);
-    FSRM(s1);               // put back fpscr
+    FSRM(s1, s1);               // put back fpscr
 }
 
 // MMX helpers

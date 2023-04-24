@@ -447,8 +447,7 @@ void EXPORT my___gmon_start__(x64emu_t *emu)
 
 int EXPORT my___cxa_atexit(x64emu_t* emu, void* p, void* a, void* dso_handle)
 {
-    (void)dso_handle;
-    AddCleanup1Arg(emu, p, a);
+    AddCleanup1Arg(emu, p, a, dso_handle);
     return 0;
 }
 void EXPORT my___cxa_finalize(x64emu_t* emu, void* p)
@@ -462,7 +461,7 @@ void EXPORT my___cxa_finalize(x64emu_t* emu, void* p)
 }
 int EXPORT my_atexit(x64emu_t* emu, void *p)
 {
-    AddCleanup(emu, p);
+    AddCleanup(emu, p, NULL);   // should grab current dso_handle?
     return 0;
 }
 
@@ -922,7 +921,17 @@ EXPORT int my_vsnprintf(x64emu_t* emu, void* buff, size_t s, void * fmt, x64_va_
     return r;
 }
 EXPORT int my___vsnprintf(x64emu_t* emu, void* buff, size_t s, void * fmt, x64_va_list_t b) __attribute__((alias("my_vsnprintf")));
-EXPORT int my___vsnprintf_chk(x64emu_t* emu, void* buff, size_t s, void * fmt, x64_va_list_t b) __attribute__((alias("my_vsnprintf")));
+EXPORT int my___vsnprintf_chk(x64emu_t* emu, void* buff, size_t s, int flags, size_t slen, void * fmt, x64_va_list_t b) {
+    (void)emu;
+    #ifdef CONVERT_VALIST
+    CONVERT_VALIST(b);
+    #else
+    myStackAlignValist(emu, (const char*)fmt, emu->scratch, b);
+    PREPARE_VALIST;
+    #endif
+    int r = vsnprintf(buff, s, fmt, VARARGS);
+    return r;
+}
 #if 0
 EXPORT int my_vasprintf(x64emu_t* emu, void* strp, void* fmt, void* b, va_list V)
 {
@@ -1282,7 +1291,17 @@ EXPORT void* my_tsearch(x64emu_t* emu, void* key, void* root, void* fnc)
 EXPORT void my_tdestroy(x64emu_t* emu, void* root, void* fnc)
 {
     (void)emu;
-    return tdestroy(root, findfreeFct(fnc));
+    tdestroy(root, findfreeFct(fnc));
+}
+EXPORT void* my_tdelete(x64emu_t* emu, void* key, void** root, void* fnc)
+{
+    (void)emu;
+    return tdelete(key, root, findcompareFct(fnc));
+}
+EXPORT void* my_tfind(x64emu_t* emu, void* key, void** root, void* fnc)
+{
+    (void)emu;
+    return tfind(key, root, findcompareFct(fnc));
 }
 EXPORT void* my_lfind(x64emu_t* emu, void* key, void* base, size_t* nmemb, size_t size, void* fnc)
 {
@@ -2187,7 +2206,10 @@ EXPORT void my__Jv_RegisterClasses() {}
 EXPORT int32_t my___cxa_thread_atexit_impl(x64emu_t* emu, void* dtor, void* obj, void* dso)
 {
     (void)emu;
-    printf_log(LOG_INFO, "Warning, call to __cxa_thread_atexit_impl(%p, %p, %p) ignored\n", dtor, obj, dso);
+    //printf_log(LOG_INFO, "Warning, call to __cxa_thread_atexit_impl(%p, %p, %p) ignored\n", dtor, obj, dso);
+    AddCleanup1Arg(emu, dtor, obj, dso);
+    return 0;
+
     return 0;
 }
 

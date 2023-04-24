@@ -38,12 +38,15 @@ typedef void          (*vFpipV_t)(void*, int, void*, ...);
 #define ADDED_FUNCTIONS()                   \
 GO(g_type_class_ref, pFL_t)                 \
 GO(g_type_class_unref, vFp_t)               \
+GO(gtk_application_window_get_type, LFv_t)  \
 GO(gtk_bin_get_type, LFv_t)                 \
 GO(gtk_widget_get_type, LFv_t)              \
 GO(gtk_button_get_type, LFv_t)              \
 GO(gtk_container_get_type, LFv_t)           \
 GO(gtk_misc_get_type, LFv_t)                \
 GO(gtk_label_get_type, LFv_t)               \
+GO(gtk_list_box_get_type, LFv_t)            \
+GO(gtk_list_box_row_get_type, LFv_t)        \
 GO(gtk_tree_view_get_type, LFv_t)           \
 GO(gtk_window_get_type, LFv_t)              \
 GO(gtk_table_get_type, LFv_t)               \
@@ -60,6 +63,12 @@ GO(gtk_progress_bar_get_type, LFv_t)        \
 GO(gtk_menu_shell_get_type, LFv_t)          \
 GO(gtk_menu_bar_get_type, LFv_t)            \
 GO(gtk_action_get_type, LFv_t)              \
+GO(gtk_application_get_type, LFv_t)         \
+GO(gtk_grid_get_type, LFv_t)                \
+GO(gtk_event_controller_get_type, LFv_t)    \
+GO(gtk_gesture_get_type, LFv_t)             \
+GO(gtk_gesture_single_get_type, LFv_t)      \
+GO(gtk_gesture_long_press_get_type, LFv_t)  \
 GO(gtk_dialog_add_button, pFppi_t)          \
 GO(gtk_spin_button_get_value, dFp_t)        \
 GO(gtk_builder_lookup_callback_symbol, pFpp_t)  \
@@ -722,11 +731,25 @@ EXPORT void my3_gtk_container_foreach(x64emu_t* emu, void* container, void* cb, 
     libname = lib->name;                                        \
     getMy(lib);                                                 \
     SETALT(my3_);                                               \
+    SetGtkApplicationID(my->gtk_application_get_type());        \
     SetGtkWidget3ID(my->gtk_widget_get_type());                 \
     SetGtkContainer3ID(my->gtk_container_get_type());           \
+    SetGtkBin3ID(my->gtk_bin_get_type());                       \
+    SetGtkButton3ID(my->gtk_button_get_type());                 \
+    SetGtkWindow3ID(my->gtk_window_get_type());                 \
+    SetGtkApplicationWindowID(my->gtk_application_window_get_type());\
+    SetGtkListBoxID(my->gtk_list_box_get_type());               \
+    SetGtkListBoxRowID(my->gtk_list_box_row_get_type());        \
     SetGtkTextView3ID(my->gtk_text_view_get_type());            \
+    SetGtkGrid3ID(my->gtk_grid_get_type());                     \
+    SetGtkMisc3ID(my->gtk_misc_get_type());                     \
+    SetGtkLabel3ID(my->gtk_label_get_type());                   \
+    SetGtkEventControllerID(my->gtk_event_controller_get_type());\
+    SetGtkGestureID(my->gtk_gesture_get_type());                \
+    SetGtkGestureSingleID(my->gtk_gesture_single_get_type());   \
+    SetGtkGestureLongPressID(my->gtk_gesture_long_press_get_type());\
     SetGtkActionID(my->gtk_action_get_type());                  \
-    setNeededLibs(lib, 2, "libgdk-3.so.0", "libpangocairo-1.0.so.0");
+    setNeededLibs(lib, 3, "libgdk-3.so.0", "libpangocairo-1.0.so.0", "libgio-2.0.so.0");
 
 #define CUSTOM_FINI \
     freeMy();

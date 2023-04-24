@@ -80,8 +80,6 @@ void FreeElfHeader(elfheader_t** head)
     if(my_context)
         RemoveElfHeader(my_context, h);
 
-    box_free(h->name);
-    box_free(h->path);
     box_free(h->PHEntries);
     box_free(h->SHEntries);
     box_free(h->SHStrTab);
@@ -98,6 +96,9 @@ void FreeElfHeader(elfheader_t** head)
     FreeDefaultVersion(&h->weakdefver);
     
     FreeElfMemory(h);
+
+    box_free(h->name);
+    box_free(h->path);
     box_free(h);
 
     *head = NULL;
@@ -310,6 +311,7 @@ void FreeElfMemory(elfheader_t* head)
 #ifdef DYNAREC
             dynarec_log(LOG_INFO, "Free DynaBlocks for %s\n", head->path);
             cleanDBFromAddressRange((uintptr_t)head->multiblock[i], head->multiblock_size[i], 1);
+            freeProtection((uintptr_t)head->multiblock[i], head->multiblock_size[i]);
 #endif
             munmap(head->multiblock[i], head->multiblock_size[i]);
         }

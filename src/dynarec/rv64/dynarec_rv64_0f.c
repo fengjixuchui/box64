@@ -151,6 +151,16 @@ uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                 FMVD(v1, v0);
             }
             break;
+        case 0x13:
+            INST_NAME("MOVLPS Ex,Gx");
+            nextop = F8;
+            GETGX(x1);
+            GETEX(x2, 0);
+            LD(x3, gback, 0);
+            SD(x3, wback, fixedaddress+0);
+            if(!MODREG)
+                SMWRITE2();
+            break;
         case 0x14:
             INST_NAME("UNPCKLPS Gx,Ex");
             nextop = F8;
@@ -189,6 +199,16 @@ uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             GETEX(x2, 0);
             LD(x4, wback, fixedaddress+0);
             SD(x4, gback, 8);
+            break;
+        case 0x17:
+            INST_NAME("MOVHPS Ex,Gx");
+            nextop = F8;
+            GETGX(x1);
+            GETEX(x2, 0);
+            LD(x4, gback, 8);
+            SD(x4, wback, fixedaddress+0);
+            if(!MODREG)
+                SMWRITE2();
             break;
         case 0x18:
             nextop = F8;
@@ -332,6 +352,13 @@ uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                 SSE_LOOP_Q(x3, x4, AND(x3, x3, x4));
             }
             break;
+        case 0x55:
+            INST_NAME("ANDNPS Gx, Ex");
+            nextop = F8;
+            GETGX(x1);
+            GETEX(x2, 0);
+            SSE_LOOP_Q(x3, x4, NOT(x3, x3); AND(x3, x3, x4));
+            break;
         case 0x56:
             INST_NAME("ORPS Gx, Ex");
             nextop = F8;
@@ -372,6 +399,21 @@ uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                 FSW(s1, gback, i*4);
             }
             break;
+        case 0x59:
+            INST_NAME("MULPS Gx, Ex");
+            nextop = F8;
+            GETGX(x1);
+            GETEX(x2, 0);
+            s0 = fpu_get_scratch(dyn);
+            s1 = fpu_get_scratch(dyn);
+            for(int i=0; i<4; ++i) {
+                // GX->f[i] *= EX->f[i];
+                FLW(s0, wback, fixedaddress+i*4);
+                FLW(s1, gback, i*4);
+                FMULS(s1, s1, s0);
+                FSW(s1, gback, i*4);
+            }
+            break;
         case 0x5A:
             INST_NAME("CVTPS2PD Gx, Ex");
             nextop = F8;
@@ -396,6 +438,36 @@ uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                 LW(x3, wback, fixedaddress+i*4);
                 FCVTSW(s0, x3, RD_RNE);
                 FSW(s0, gback, i*4);
+            }
+            break;
+        case 0x5C:
+            INST_NAME("SUBPS Gx, Ex");
+            nextop = F8;
+            GETGX(x1);
+            GETEX(x2, 0);
+            s0 = fpu_get_scratch(dyn);
+            s1 = fpu_get_scratch(dyn);
+            for(int i=0; i<4; ++i) {
+                // GX->f[i] -= EX->f[i];
+                FLW(s0, wback, fixedaddress+i*4);
+                FLW(s1, gback, i*4);
+                FSUBS(s1, s1, s0);
+                FSW(s1, gback, i*4);
+            }
+            break;
+        case 0x5E:
+            INST_NAME("DIVPS Gx, Ex");
+            nextop = F8;
+            GETGX(x1);
+            GETEX(x2, 0);
+            s0 = fpu_get_scratch(dyn);
+            s1 = fpu_get_scratch(dyn);
+            for(int i=0; i<4; ++i) {
+                // GX->f[i] /= EX->f[i];
+                FLW(s0, wback, fixedaddress+i*4);
+                FLW(s1, gback, i*4);
+                FDIVS(s1, s1, s0);
+                FSW(s1, gback, i*4);
             }
             break;
         case 0x77:
@@ -573,6 +645,7 @@ uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                     case 0:
                         INST_NAME("FXSAVE Ed");
                         MESSAGE(LOG_DUMP, "Need Optimization\n");
+                        SKIPTEST(x1);
                         fpu_purgecache(dyn, ninst, 0, x1, x2, x3);
                         if(MODREG) {
                             DEFAULT;
@@ -585,6 +658,7 @@ uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                     case 1:
                         INST_NAME("FXRSTOR Ed");
                         MESSAGE(LOG_DUMP, "Need Optimization\n");
+                        SKIPTEST(x1);
                         fpu_purgecache(dyn, ninst, 0, x1, x2, x3);
                         if(MODREG) {
                             DEFAULT;
@@ -744,6 +818,60 @@ uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                     ANDI(x3, x3, 1); // F_CF is 1
                     ANDI(xFlags, xFlags, ~1);
                     OR(xFlags, xFlags, x3);
+                    break;
+                case 5:
+                    INST_NAME("BTS Ed, Ib");
+                    SETFLAGS(X_CF, SF_SUBSET);
+                    SET_DFNONE();
+                    GETED(1);
+                    u8 = F8;
+                    u8&=(rex.w?0x3f:0x1f);
+                    ORI(xFlags, xFlags, 1<<F_CF);
+                    if (u8 <= 10) {
+                        ANDI(x6, ed, 1<<u8);
+                        BNE_MARK(x6, xZR);
+                        ANDI(xFlags, xFlags, ~(1<<F_CF));
+                        XORI(ed, ed, 1<<u8);
+                    } else {
+                        ORI(x6, xZR, 1);
+                        SLLI(x6, x6, u8);
+                        AND(x4, ed, x6);
+                        BNE_MARK(x4, xZR);
+                        ANDI(xFlags, xFlags, ~(1<<F_CF));
+                        XOR(ed, ed, x6);
+                    }
+                    if (wback) {
+                        SDxw(ed, wback, fixedaddress);
+                        SMWRITE();
+                    }
+                    MARK;
+                    break;
+                case 6:
+                    INST_NAME("BTR Ed, Ib");
+                    SETFLAGS(X_CF, SF_SUBSET);
+                    SET_DFNONE();
+                    GETED(1);
+                    u8 = F8;
+                    u8&=(rex.w?0x3f:0x1f);
+                    ANDI(xFlags, xFlags, ~(1<<F_CF));
+                    if (u8 <= 10) {
+                        ANDI(x6, ed, 1<<u8);
+                        BEQ_MARK(x6, xZR);
+                        ORI(xFlags, xFlags, 1<<F_CF);
+                        XORI(ed, ed, 1<<u8);
+                    } else {
+                        ORI(x6, xZR, 1);
+                        SLLI(x6, x6, u8);
+                        AND(x6, ed, x6);
+                        BEQ_MARK(x6, xZR);
+                        ORI(xFlags, xFlags, 1<<F_CF);
+                        XOR(ed, ed, x6);
+                    }
+                    if (wback) {
+                        SDxw(ed, wback, fixedaddress);
+                        SMWRITE();
+                    }
+                    MARK;
                     break;
                 case 7:
                     INST_NAME("BTC Ed, Ib");
@@ -919,6 +1047,68 @@ uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             if(!rex.w)
                 ZEROUP(gd);
             break;
+        case 0xC2:
+            INST_NAME("CMPPS Gx, Ex, Ib");
+            nextop = F8;
+            GETGX(x1);
+            GETEX(x2, 1);
+            u8 = F8;
+            d0 = fpu_get_scratch(dyn);
+            d1 = fpu_get_scratch(dyn);
+            for(int i=0; i<4; ++i) {
+                FLW(d0, gback, i*4);
+                FLW(d1, wback, fixedaddress+i*4);
+                if ((u8&7) == 0) {                                      // Equal
+                    FEQS(x3, d0, d1);
+                } else if ((u8&7) == 4) {                               // Not Equal or unordered
+                    FEQS(x3, d0, d1);
+                    XORI(x3, x3, 1);
+                } else {
+                    // x4 = !(isnan(d0) || isnan(d1))
+                    FEQS(x4, d0, d0);
+                    FEQS(x3, d1, d1);
+                    AND(x3, x3, x4);
+
+                    switch(u8&7) {
+                    case 1: BEQ_MARK(x3, xZR); FLTS(x3, d0, d1); break; // Less than
+                    case 2: BEQ_MARK(x3, xZR); FLES(x3, d0, d1); break; // Less or equal
+                    case 3: XORI(x3, x3, 1); break;                     // NaN
+                    case 5: {                                           // Greater or equal or unordered
+                        BEQ(x3, xZR, 12); // MARK2
+                        FLES(x3, d1, d0);
+                        J(8); // MARK;
+                        break;
+                    }
+                    case 6: {                                           // Greater or unordered, test inverted, N!=V so unordered or less than (inverted)
+                        BEQ(x3, xZR, 12); // MARK2
+                        FLTS(x3, d1, d0);
+                        J(8); // MARK;
+                        break;
+                    }
+                    case 7: break;                                      // Not NaN
+                    }
+                    
+                    // MARK2;
+                    if ((u8&7) == 5 || (u8&7) == 6) {
+                        MOV32w(x3, 1);
+                    }
+                    // MARK;
+                }
+                NEG(x3, x3);
+                SW(x3, gback, i*4);
+            }
+            break;
+        case 0xC3:
+            INST_NAME("MOVNTI Ed, Gd");
+            nextop = F8;
+            GETGD;
+            if(MODREG) {
+                MVxw(xRAX+(nextop&7)+(rex.b<<3), gd);
+            } else {
+                addr = geted(dyn, addr, ninst, nextop, &ed, x2, x1, &fixedaddress, rex, NULL, 1, 0);
+                SDxw(gd, ed, fixedaddress);
+            }
+            break;
         case 0xC6: // TODO: Optimize this!
             INST_NAME("SHUFPS Gx, Ex, Ib");
             nextop = F8;
@@ -941,6 +1131,101 @@ uintptr_t dynarec64_0F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             SW(x5, gback, 2*4);
             SW(x6, gback, 3*4);
             break;
+
+        case 0xC8:
+        case 0xC9:
+        case 0xCA:
+        case 0xCB:
+        case 0xCC:
+        case 0xCD:
+        case 0xCE:
+        case 0xCF:                  /* BSWAP reg */
+            INST_NAME("BSWAP Reg");
+            gd = xRAX+(opcode&7)+(rex.b<<3);
+            #if 1
+            ANDI(x1, gd, 0xff);
+            SLLI(x1, x1, (rex.w?64:32)-8);
+            SRLI(x2, gd, 8);
+            ANDI(x3, x2, 0xff);
+            SLLI(x3, x3, (rex.w?64:32)-16);
+            OR(x1, x1, x3);
+            SRLI(x2, gd, 16);
+            ANDI(x3, x2, 0xff);
+            SLLI(x3, x3, (rex.w?64:32)-24);
+            OR(x1, x1, x3);
+            SRLI(x2, gd, 24);
+            if(rex.w) {
+                ANDI(x3, x2, 0xff);
+                SLLI(x3, x3, (rex.w?64:32)-32);
+                OR(x1, x1, x3);
+                SRLI(x2, gd, 32);
+                ANDI(x3, x2, 0xff);
+                SLLI(x3, x3, 64-40);
+                OR(x1, x1, x3);
+                SRLI(x2, gd, 40);
+                ANDI(x3, x2, 0xff);
+                SLLI(x3, x3, 64-48);
+                OR(x1, x1, x3);
+                SRLI(x2, gd, 48);
+                ANDI(x3, x2, 0xff);
+                SLLI(x3, x3, 64-56);
+                OR(x1, x1, x3);
+                SRLI(x2, gd, 56);
+            }
+            OR(gd, x1, x2);
+            #else
+            MOV_U12(x1, 0xff);
+            SLLI(x4, x1, 8); // mask 0xff00
+            if (rex.w) {
+                SLLI(x5, x1, 16); // mask 0xff0000
+                SLLI(x6, x1, 24); // mask 0xff000000
+
+                SRLI(x2, gd, 56);
+
+                SRLI(x3, gd, 40);
+                AND(x3, x3, x4);
+                OR(x2, x2, x3);
+
+                SRLI(x3, gd, 24);
+                AND(x3, x3, x5);
+                OR(x2, x2, x3);
+
+                SRLI(x3, gd, 8);
+                AND(x3, x3, x6);
+                OR(x2, x2, x3);
+
+                AND(x3, gd, x6);
+                SLLI(x3, x3, 8);
+                OR(x2, x2, x3);
+
+                AND(x3, gd, x5);
+                SLLI(x3, x3, 24);
+                OR(x2, x2, x3);
+
+                AND(x3, gd, x4);
+                SLLI(x3, x3, 40);
+                OR(x2, x2, x3);
+
+                SLLI(x3, x3, 56);
+                OR(gd, x2, x3);
+            } else {
+                SRLIW(x2, gd, 24);
+
+                SRLIW(x3, gd, 8);
+                AND(x3, x3, x4);
+                OR(x2, x2, x3);
+
+                AND(x3, gd, x4);
+                SLLI(x3, x3, 8);
+                OR(x2, x2, x3);
+
+                AND(x3, gd, x1);
+                SLLI(x3, x3, 24);
+                OR(gd, x2, x3);
+            }
+            #endif
+            break;
+
         default:
             DEFAULT;
     }
