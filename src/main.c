@@ -35,6 +35,7 @@
 #include "x64run.h"
 #include "symbols.h"
 #include "rcfile.h"
+#include "emu/x64run_private.h"
 
 box64context_t *my_context = NULL;
 int box64_quit = 0;
@@ -45,7 +46,9 @@ int box64_dynarec_log = LOG_NONE;
 uintptr_t box64_pagesize;
 uintptr_t box64_load_addr = 0;
 int box64_nosandbox = 0;
+int box64_inprocessgpu = 0;
 int box64_malloc_hack = 0;
+int box64_dynarec_test = 0;
 #ifdef DYNAREC
 int box64_dynarec = 1;
 int box64_dynarec_dump = 0;
@@ -58,11 +61,14 @@ int box64_dynarec_fastnan = 1;
 int box64_dynarec_fastround = 1;
 int box64_dynarec_safeflags = 1;
 int box64_dynarec_callret = 0;
-int box64_dynarec_hotpage = 4;
+int box64_dynarec_hotpage = 0;
 int box64_dynarec_fastpage = 0;
 int box64_dynarec_bleeding_edge = 1;
+int box64_dynarec_jvm = 1;
+int box64_dynarec_tbb = 1;
 int box64_dynarec_wait = 1;
-int box64_dynarec_test = 0;
+int box64_dynarec_missing = 0;
+int box64_dynarec_aligned_atomics = 0;
 uintptr_t box64_nodynarec_start = 0;
 uintptr_t box64_nodynarec_end = 0;
 #ifdef ARM64
@@ -71,11 +77,33 @@ int arm64_aes = 0;
 int arm64_pmull = 0;
 int arm64_crc32 = 0;
 int arm64_atomics = 0;
+int arm64_sha1 = 0;
+int arm64_sha2 = 0;
+int arm64_uscat = 0;
+int arm64_flagm = 0;
+int arm64_flagm2 = 0;
+int arm64_frintts = 0;
+int arm64_afp = 0;
+#elif defined(RV64)
+int rv64_zba = 0;
+int rv64_zbb = 0;
+int rv64_zbc = 0;
+int rv64_zbs = 0;
+int rv64_xtheadba = 0;
+int rv64_xtheadbb = 0;
+int rv64_xtheadbs = 0;
+int rv64_xtheadcondmov = 0;
+int rv64_xtheadmemidx = 0;
+int rv64_xtheadmempair = 0;
+int rv64_xtheadfmemidx = 0;
+int rv64_xtheadmac = 0;
+int rv64_xtheadfmv = 0;
 #endif
 #else   //DYNAREC
 int box64_dynarec = 0;
 #endif
 int box64_libcef = 1;
+int box64_sdl2_jguid = 0;
 int dlsym_error = 0;
 int cycle_log = 0;
 #ifdef HAVE_TRACE
@@ -98,6 +126,7 @@ int box64_prefer_emulated = 0;
 int box64_prefer_wrapped = 0;
 int box64_sse_flushto0 = 0;
 int box64_x87_no80bits = 0;
+int box64_sync_rounding = 0;
 int fix_64bit_inodes = 0;
 int box64_dummy_crashhandler = 1;
 int box64_mapclean = 0;
@@ -111,10 +140,16 @@ int box64_novulkan = 0;
 int box64_showsegv = 0;
 int box64_showbt = 0;
 int box64_isglibc234 = 0;
+#ifdef BAD_SIGNAL
+int box64_futex_waitv = 0;
+#else
+int box64_futex_waitv = 1;
+#endif
 char* box64_libGL = NULL;
+char* box64_custom_gstreamer = NULL;
 uintptr_t fmod_smc_start = 0;
 uintptr_t fmod_smc_end = 0;
-uint32_t default_gs = 0xa<<3;
+uint32_t default_gs = 0x53;
 int jit_gdb = 0;
 int box64_tcmalloc_minimal = 0;
 
@@ -125,19 +160,22 @@ int ftrace_has_pid = 0;
 void openFTrace(const char* newtrace)
 {
     const char* t = newtrace?newtrace:getenv("BOX64_TRACE_FILE");
-    char tmp[500];
-    char tmp2[500];
+    #ifndef MAX_PATH
+    #define MAX_PATH 4096
+    #endif
+    char tmp[MAX_PATH];
+    char tmp2[MAX_PATH];
     const char* p = t;
     int append=0;
     if(p && strlen(p) && p[strlen(p)-1]=='+') {
-        strncat(tmp2, t, 499);
+        strncpy(tmp2, p, sizeof(tmp2));
         tmp2[strlen(p)-1]='\0';
         p = tmp2;
         append=1;
     }
-    if(p && strstr(t, "%pid")) {
+    if(p && strstr(p, "%pid")) {
         int next = 0;
-        if(!append) do {
+        do {
             strcpy(tmp, p);
             char* c = strstr(tmp, "%pid");
             *c = 0; // cut
@@ -150,7 +188,7 @@ void openFTrace(const char* newtrace)
             c = strstr(p, "%pid") + strlen("%pid");
             strcat(tmp, c);
             ++next;
-        } while (FileExist(tmp, IS_FILE));
+        } while (FileExist(tmp, IS_FILE) && !append);
         p = tmp;
         ftrace_has_pid = 1;
     }
@@ -200,7 +238,7 @@ void my_child_fork()
 {
     if(ftrace_has_pid) {
         // open a new ftrace...
-        if(!ftrace_name) 
+        if(!ftrace_name)
             fclose(ftrace);
         openFTrace(NULL);
     }
@@ -223,17 +261,17 @@ HWCAP_EVTSTRM
     The generic timer is configured to generate events at a frequency of
     approximately 10KHz.
 HWCAP_AES
-    Functionality implied by ID_AA64ISAR0_EL1.AES == 0b0001.
+    Functionality implied by ID_AA64ISAR0_EL1.AES == 0b0001. => AESE, AESD, AESMC, and AESIMC instructions are implemented
 HWCAP_PMULL
-    Functionality implied by ID_AA64ISAR0_EL1.AES == 0b0010.
+    Functionality implied by ID_AA64ISAR0_EL1.AES == 0b0010. => AESE, AESD, AESMC, and AESIMC instructions are implemented plus PMULL/PMULL2 instructions operating on 64-bit data quantities.
 HWCAP_SHA1
-    Functionality implied by ID_AA64ISAR0_EL1.SHA1 == 0b0001.
+    Functionality implied by ID_AA64ISAR0_EL1.SHA1 == 0b0001. => SHA1C, SHA1P, SHA1M, SHA1H, SHA1SU0, and SHA1SU1 instructions implemented.
 HWCAP_SHA2
-    Functionality implied by ID_AA64ISAR0_EL1.SHA2 == 0b0001.
+    Functionality implied by ID_AA64ISAR0_EL1.SHA2 == 0b0001. => SHA256H, SHA256H2, SHA256SU0 and SHA256SU1 instructions implemented.
 HWCAP_CRC32
-    Functionality implied by ID_AA64ISAR0_EL1.CRC32 == 0b0001.
+    Functionality implied by ID_AA64ISAR0_EL1.CRC32 == 0b0001. => CRC32B, CRC32H, CRC32W, CRC32X, CRC32CB, CRC32CH, CRC32CW, and CRC32CX instructions implemented.
 HWCAP_ATOMICS
-    Functionality implied by ID_AA64ISAR0_EL1.Atomic == 0b0010.
+    Functionality implied by ID_AA64ISAR0_EL1.Atomic == 0b0010. => LDADD, LDCLR, LDEOR, LDSET, LDSMAX, LDSMIN, LDUMAX, LDUMIN, CAS, CASP, and SWP instructions implemented.
 HWCAP_FPHP
     Functionality implied by ID_AA64PFR0_EL1.FP == 0b0001.
 HWCAP_ASIMDHP
@@ -242,49 +280,49 @@ HWCAP_CPUID
     EL0 access to certain ID registers is available.
     These ID registers may imply the availability of features.
 HWCAP_ASIMDRDM
-    Functionality implied by ID_AA64ISAR0_EL1.RDM == 0b0001.
+    Functionality implied by ID_AA64ISAR0_EL1.RDM == 0b0001. => SQRDMLAH and SQRDMLSH instructions implemented.
 HWCAP_JSCVT
-    Functionality implied by ID_AA64ISAR1_EL1.JSCVT == 0b0001.
+    Functionality implied by ID_AA64ISAR1_EL1.JSCVT == 0b0001. => The FJCVTZS instruction is implemented.
 HWCAP_FCMA
-    Functionality implied by ID_AA64ISAR1_EL1.FCMA == 0b0001.
+    Functionality implied by ID_AA64ISAR1_EL1.FCMA == 0b0001. => The FCMLA and FCADD instructions are implemented.
 HWCAP_LRCPC
-    Functionality implied by ID_AA64ISAR1_EL1.LRCPC == 0b0001.
+    Functionality implied by ID_AA64ISAR1_EL1.LRCPC == 0b0001. => LDAPR and variants
 HWCAP_DCPOP
     Functionality implied by ID_AA64ISAR1_EL1.DPB == 0b0001.
 HWCAP_SHA3
-    Functionality implied by ID_AA64ISAR0_EL1.SHA3 == 0b0001.
+    Functionality implied by ID_AA64ISAR0_EL1.SHA3 == 0b0001. => EOR3, RAX1, XAR, and BCAX instructions implemented.
 HWCAP_SM3
-    Functionality implied by ID_AA64ISAR0_EL1.SM3 == 0b0001.
+    Functionality implied by ID_AA64ISAR0_EL1.SM3 == 0b0001. => SM3SS1, SM3TT1A, SM3TT1B, SM3TT2A, SM3TT2B, SM3PARTW1, and SM3PARTW2 instructions implemented.
 HWCAP_SM4
-    Functionality implied by ID_AA64ISAR0_EL1.SM4 == 0b0001.
+    Functionality implied by ID_AA64ISAR0_EL1.SM4 == 0b0001. => SM4E and SM4EKEY instructions implemented.
 HWCAP_ASIMDDP
-    Functionality implied by ID_AA64ISAR0_EL1.DP == 0b0001.
+    Functionality implied by ID_AA64ISAR0_EL1.DP == 0b0001. => UDOT and SDOT instructions implemented.
 HWCAP_SHA512
-    Functionality implied by ID_AA64ISAR0_EL1.SHA2 == 0b0010.
+    Functionality implied by ID_AA64ISAR0_EL1.SHA2 == 0b0010. => SHA512H, SHA512H2, SHA512SU0, and SHA512SU1 instructions implemented.
 HWCAP_SVE
     Functionality implied by ID_AA64PFR0_EL1.SVE == 0b0001.
 HWCAP_ASIMDFHM
-   Functionality implied by ID_AA64ISAR0_EL1.FHM == 0b0001.
+   Functionality implied by ID_AA64ISAR0_EL1.FHM == 0b0001. => FMLAL and FMLSL instructions are implemented.
 HWCAP_DIT
     Functionality implied by ID_AA64PFR0_EL1.DIT == 0b0001.
 HWCAP_USCAT
     Functionality implied by ID_AA64MMFR2_EL1.AT == 0b0001.
 HWCAP_ILRCPC
-    Functionality implied by ID_AA64ISAR1_EL1.LRCPC == 0b0010.
+    Functionality implied by ID_AA64ISAR1_EL1.LRCPC == 0b0010. => The LDAPUR*, STLUR*, and LDAPR* instructions are implemented.
 HWCAP_FLAGM
     Functionality implied by ID_AA64ISAR0_EL1.TS == 0b0001.
 HWCAP_SSBS
-    Functionality implied by ID_AA64PFR1_EL1.SSBS == 0b0010.
+    Functionality implied by ID_AA64PFR1_EL1.SSBS == 0b0010. => AArch64 provides the PSTATE.SSBS mechanism to mark regions that are Speculative Store Bypassing Safe, and the MSR and MRS instructions to directly read and write the PSTATE.SSBS field.
 HWCAP_SB
-    Functionality implied by ID_AA64ISAR1_EL1.SB == 0b0001.
+    Functionality implied by ID_AA64ISAR1_EL1.SB == 0b0001. => SB instruction is implemented.
 HWCAP_PACA
     Functionality implied by ID_AA64ISAR1_EL1.APA == 0b0001 or
     ID_AA64ISAR1_EL1.API == 0b0001.
 HWCAP_PACG
-    Functionality implied by ID_AA64ISAR1_EL1.GPA == 0b0001 or
+    Functionality implied by ID_AA64ISAR1_EL1.GPA == 0b0001 or => Generic Authentication using the QARMA algorithm is implemented. This includes the PACGA instruction.
     ID_AA64ISAR1_EL1.GPI == 0b0001.
 HWCAP2_DCPODP
-    Functionality implied by ID_AA64ISAR1_EL1.DPB == 0b0010.
+    Functionality implied by ID_AA64ISAR1_EL1.DPB == 0b0010. => DC CVAP and DC CVADP supported
 HWCAP2_SVE2
     Functionality implied by ID_AA64ZFR0_EL1.SVEVer == 0b0001.
 HWCAP2_SVEAES
@@ -298,9 +336,9 @@ HWCAP2_SVESHA3
 HWCAP2_SVESM4
     Functionality implied by ID_AA64ZFR0_EL1.SM4 == 0b0001.
 HWCAP2_FLAGM2
-    Functionality implied by ID_AA64ISAR0_EL1.TS == 0b0010.
+    Functionality implied by ID_AA64ISAR0_EL1.TS == 0b0010. => CFINV, RMIF, SETF16, SETF8, AXFLAG, and XAFLAG instructions are implemented.
 HWCAP2_FRINT
-    Functionality implied by ID_AA64ISAR1_EL1.FRINTTS == 0b0001.
+    Functionality implied by ID_AA64ISAR1_EL1.FRINTTS == 0b0001. => FRINT32Z, FRINT32X, FRINT64Z, and FRINT64X instructions are implemented.
 HWCAP2_SVEI8MM
     Functionality implied by ID_AA64ZFR0_EL1.I8MM == 0b0001.
 HWCAP2_SVEF32MM
@@ -308,19 +346,19 @@ HWCAP2_SVEF32MM
 HWCAP2_SVEF64MM
     Functionality implied by ID_AA64ZFR0_EL1.F64MM == 0b0001.
 HWCAP2_SVEBF16
-    Functionality implied by ID_AA64ZFR0_EL1.BF16 == 0b0001.
+    Functionality implied by ID_AA64ZFR0_EL1.BF16 == 0b0001
 HWCAP2_I8MM
-    Functionality implied by ID_AA64ISAR1_EL1.I8MM == 0b0001.
+    Functionality implied by ID_AA64ISAR1_EL1.I8MM == 0b0001. => SMMLA, SUDOT, UMMLA, USMMLA, and USDOT instructions are implemented
 HWCAP2_BF16
-    Functionality implied by ID_AA64ISAR1_EL1.BF16 == 0b0001.
+    Functionality implied by ID_AA64ISAR1_EL1.BF16 == 0b0001. => BFDOT, BFMLAL, BFMLAL2, BFMMLA, BFCVT, and BFCVT2 instructions are implemented.
 HWCAP2_DGH
-    Functionality implied by ID_AA64ISAR1_EL1.DGH == 0b0001.
+    Functionality implied by ID_AA64ISAR1_EL1.DGH == 0b0001. => Data Gathering Hint is implemented.
 HWCAP2_RNG
     Functionality implied by ID_AA64ISAR0_EL1.RNDR == 0b0001.
 HWCAP2_BTI
     Functionality implied by ID_AA64PFR0_EL1.BT == 0b0001.
 HWCAP2_MTE
-    Functionality implied by ID_AA64PFR1_EL1.MTE == 0b0010.
+    Functionality implied by ID_AA64PFR1_EL1.MTE == 0b0010. => Full Memory Tagging Extension is implemented.
 HWCAP2_ECV
     Functionality implied by ID_AA64MMFR0_EL1.ECV == 0b0001.
 */
@@ -339,8 +377,38 @@ HWCAP2_ECV
         arm64_pmull = 1;
     if(hwcap&HWCAP_AES)
         arm64_aes = 1;
-    if(hwcap&HWCAP_ATOMICS)
-        arm64_atomics = 1;
+    // ATOMIC use are disable for now. They crashes Batman Arkham Knight, bossibly other (also seems to make steamwebhelper unstable)
+    /*if(hwcap&HWCAP_ATOMICS)
+        arm64_atomics = 1;*/
+    #ifdef HWCAP_SHA1
+    if(hwcap&HWCAP_SHA1)
+        arm64_sha1 = 1;
+    #endif
+    #ifdef HWCAP_SHA2
+    if(hwcap&HWCAP_SHA2)
+        arm64_sha2 = 1;
+    #endif
+    #ifdef HWCAP_USCAT
+    if(hwcap&HWCAP_USCAT)
+        arm64_uscat = 1;
+    #endif
+    #ifdef HWCAP_FLAGM
+    if(hwcap&HWCAP_FLAGM)
+        arm64_flagm = 1;
+    #endif
+    unsigned long hwcap2 = real_getauxval(AT_HWCAP2);
+    #ifdef HWCAP2_FLAGM2
+    if(hwcap2&HWCAP2_FLAGM2)
+        arm64_flagm2 = 1;
+    #endif
+    #ifdef HWCAP2_FRINT
+    if(hwcap2&HWCAP2_FRINT)
+        arm64_frintts = 1;
+    #endif
+    #ifdef HWCAP2_AFP
+    if(hwcap2&HWCAP2_AFP)
+        arm64_afp = 1;
+    #endif
     printf_log(LOG_INFO, "Dynarec for ARM64, with extension: ASIMD");
     if(arm64_aes)
         printf_log(LOG_INFO, " AES");
@@ -350,12 +418,44 @@ HWCAP2_ECV
         printf_log(LOG_INFO, " PMULL");
     if(arm64_atomics)
         printf_log(LOG_INFO, " ATOMICS");
+    if(arm64_sha1)
+        printf_log(LOG_INFO, " SHA1");
+    if(arm64_sha2)
+        printf_log(LOG_INFO, " SHA2");
+    if(arm64_uscat)
+        printf_log(LOG_INFO, " USCAT");
+    if(arm64_flagm)
+        printf_log(LOG_INFO, " FLAGM");
+    if(arm64_flagm2)
+        printf_log(LOG_INFO, " FLAGM2");
+    if(arm64_frintts)
+        printf_log(LOG_INFO, " FRINT");
+    if(arm64_afp)
+        printf_log(LOG_INFO, " AFP");
     printf_log(LOG_INFO, " PageSize:%zd ", box64_pagesize);
 #elif defined(LA464)
     printf_log(LOG_INFO, "Dynarec for LoongArch");
     printf_log(LOG_INFO, " PageSize:%zd ", box64_pagesize);
 #elif defined(RV64)
-    printf_log(LOG_INFO, "Dynarec for RISC-V");
+    void RV64_Detect_Function();
+    if(!getenv("BOX64_DYNAREC_RV64NOEXT"))
+        RV64_Detect_Function();
+    printf_log(LOG_INFO, "Dynarec for RISC-V ");
+    printf_log(LOG_INFO, "With extension: I M A F D C");
+    if(rv64_zba) printf_log(LOG_INFO, " Zba");
+    if(rv64_zbb) printf_log(LOG_INFO, " Zbb");
+    if(rv64_zbc) printf_log(LOG_INFO, " Zbc");
+    if(rv64_zbs) printf_log(LOG_INFO, " Zbs");
+    if(rv64_xtheadba) printf_log(LOG_INFO, " XTheadBa");
+    if(rv64_xtheadbb) printf_log(LOG_INFO, " XTheadBb");
+    if(rv64_xtheadbs) printf_log(LOG_INFO, " XTheadBs");
+    if(rv64_xtheadcondmov) printf_log(LOG_INFO, " XTheadCondMov");
+    if(rv64_xtheadmemidx) printf_log(LOG_INFO, " XTheadMemIdx");
+    if(rv64_xtheadmempair) printf_log(LOG_INFO, " XTheadMemPair");
+    if(rv64_xtheadfmemidx) printf_log(LOG_INFO, " XTheadFMemIdx");
+    if(rv64_xtheadmac) printf_log(LOG_INFO, " XTheadMac");
+    if(rv64_xtheadfmv) printf_log(LOG_INFO, " XTheadFmv");
+
     printf_log(LOG_INFO, " PageSize:%zd ", box64_pagesize);
 #else
 #error Unsupported architecture
@@ -378,7 +478,7 @@ void LoadLogEnv()
     }
     // grab BOX64_TRACE_FILE envvar, and change %pid to actual pid is present in the name
     openFTrace(NULL);
-    box64_log = ftrace_name?LOG_INFO:(isatty(fileno(ftrace))?LOG_INFO:LOG_NONE); //default LOG value different if stdout is redirected or not
+    box64_log = ftrace_name?LOG_INFO:(isatty(fileno(stdout))?LOG_INFO:LOG_NONE); //default LOG value different if stdout is redirected or not
     p = getenv("BOX64_LOG");
     if(p) {
         if(strlen(p)==1) {
@@ -430,6 +530,11 @@ void LoadLogEnv()
     if(!box64_nobanner && box64_dump)
         printf_log(LOG_INFO, "Elf Dump if ON\n");
 #ifdef DYNAREC
+    #ifdef ARM64
+    // unaligned atomic (with restriction) is supported in hardware
+    /*if(arm64_uscat)
+        box64_dynarec_aligned_atomics = 1;*/ // the unaligned support is not good enough for x86 emulation, so diabling
+    #endif
     p = getenv("BOX64_DYNAREC_DUMP");
     if(p) {
         if(strlen(p)==1) {
@@ -499,11 +604,11 @@ void LoadLogEnv()
     p = getenv("BOX64_DYNAREC_STRONGMEM");
     if(p) {
         if(strlen(p)==1) {
-            if(p[0]>='0' && p[0]<='2')
+            if(p[0]>='0' && p[0]<='3')
                 box64_dynarec_strongmem = p[0]-'0';
         }
         if(box64_dynarec_strongmem)
-            printf_log(LOG_INFO, "Dynarec will try to emulate a strong memory model%s\n", (box64_dynarec_strongmem==1)?" with limited performance loss":"");
+            printf_log(LOG_INFO, "Dynarec will try to emulate a strong memory model%s\n", (box64_dynarec_strongmem==1)?" with limited performance loss":((box64_dynarec_strongmem==3)?" with more performance loss":""));
     }
     p = getenv("BOX64_DYNAREC_X87DOUBLE");
     if(p) {
@@ -561,6 +666,24 @@ void LoadLogEnv()
         if(!box64_dynarec_bleeding_edge)
             printf_log(LOG_INFO, "Dynarec will not detect MonoBleedingEdge\n");
     }
+    p = getenv("BOX64_DYNAREC_JVM");
+    if(p) {
+        if(strlen(p)==1) {
+            if(p[0]>='0' && p[0]<='1')
+                box64_dynarec_jvm = p[0]-'0';
+        }
+        if(!box64_dynarec_jvm)
+            printf_log(LOG_INFO, "Dynarec will not detect libjvm\n");
+    }
+    p = getenv("BOX64_DYNAREC_TBB");
+    if(p) {
+        if(strlen(p)==1) {
+            if(p[0]>='0' && p[0]<='1')
+                box64_dynarec_tbb = p[0]-'0';
+        }
+        if(!box64_dynarec_tbb)
+            printf_log(LOG_INFO, "Dynarec will not detect libtbb\n");
+    }
     p = getenv("BOX64_DYNAREC_WAIT");
     if(p) {
         if(strlen(p)==1) {
@@ -590,6 +713,24 @@ void LoadLogEnv()
         }
         if(box64_dynarec_fastpage)
             printf_log(LOG_INFO, "Dynarec will use Fast HotPage\n");
+    }
+    p = getenv("BOX64_DYNAREC_ALIGNED_ATOMICS");
+    if(p) {
+        if(strlen(p)==1) {
+            if(p[0]>='0' && p[0]<='1')
+                box64_dynarec_aligned_atomics = p[0]-'0';
+        }
+        if(box64_dynarec_aligned_atomics)
+            printf_log(LOG_INFO, "Dynarec will generate only aligned atomics code\n");
+    }
+    p = getenv("BOX64_DYNAREC_MISSING");
+    if(p) {
+        if(strlen(p)==1) {
+            if(p[0]>='0' && p[0]<='1')
+                box64_dynarec_missing = p[0]-'0';
+        }
+        if(box64_dynarec_missing)
+            printf_log(LOG_INFO, "Dynarec will print missing opcodes\n");
     }
     p = getenv("BOX64_NODYNAREC");
     if(p) {
@@ -664,7 +805,16 @@ void LoadLogEnv()
                 box64_libcef = p[0]-'0';
         }
         if(!box64_libcef)
-            printf_log(LOG_INFO, "Dynarec will not detect libcef\n");
+            printf_log(LOG_INFO, "BOX64 will not detect libcef\n");
+    }
+    p = getenv("BOX64_SDL2_JGUID");
+    if(p) {
+        if(strlen(p)==1) {
+            if(p[0]>='0' && p[0]<='1')
+                box64_sdl2_jguid = p[0]-'0';
+        }
+        if(!box64_sdl2_jguid)
+            printf_log(LOG_INFO, "BOX64 will workaround the use of  SDL_GetJoystickGUIDInfo with 4 args instead of 5\n");
     }
     p = getenv("BOX64_LOAD_ADDR");
     if(p) {
@@ -769,6 +919,20 @@ void LoadLogEnv()
         if(box64_novulkan)
             printf_log(LOG_INFO, "Disable the use of wrapped vulkan libs\n");
     }
+    p = getenv("BOX64_FUTEX_WAITV");
+    if(p) {
+        if(strlen(p)==1) {
+            if(p[0]>='0' && p[0]<='0'+1)
+                box64_futex_waitv = p[0]-'0';
+        }
+        #ifdef BAD_SIGNAL
+        if(box64_futex_waitv)
+            printf_log(LOG_INFO, "Enable the use of futex waitv syscall (if available on the system\n");
+        #else
+        if(!box64_futex_waitv)
+            printf_log(LOG_INFO, "Disable the use of futex waitv syscall\n");
+        #endif
+    }
     p = getenv("BOX64_FIX_64BIT_INODES");
     if(p) {
         if(strlen(p)==1) {
@@ -821,13 +985,16 @@ void LoadEnvPath(path_collection_t *col, const char* defpath, const char* env)
 {
     const char* p = getenv(env);
     if(p) {
-        printf_log(LOG_INFO, "%s: ", env);
         ParseList(p, col, 1);
     } else {
-        printf_log(LOG_INFO, "Using default %s: ", env);
         ParseList(defpath, col, 1);
     }
+}
+
+void PrintCollection(path_collection_t* col, const char* env)
+{
     if(LOG_INFO<=box64_log) {
+        printf_log(LOG_INFO, "%s: ", env);
         for(int i=0; i<col->size; i++)
             printf_log(LOG_INFO, "%s%s", col->paths[i], (i==col->size-1)?"\n":":");
     }
@@ -854,7 +1021,7 @@ int GatherEnv(char*** dest, char** env, char* prog)
 {
     // Add all but BOX64_* environnement
     // but add 2 for default BOX64_PATH and BOX64_LD_LIBRARY_PATH
-    char** p = env;    
+    char** p = env;
     int idx = 0;
     int path = 0;
     int ld_path = 0;
@@ -883,7 +1050,7 @@ int GatherEnv(char*** dest, char** env, char* prog)
         (*dest)[idx++] = box_strdup("BOX64_PATH=.:bin");
     }
     if(!ld_path) {
-        (*dest)[idx++] = box_strdup("BOX64_LD_LIBRARY_PATH=.:lib:lib64");
+        (*dest)[idx++] = box_strdup("BOX64_LD_LIBRARY_PATH=.:lib:lib64:x86_64:bin64:libs64");
     }
     // add "_=prog" at the end...
     if(prog) {
@@ -898,15 +1065,8 @@ int GatherEnv(char*** dest, char** env, char* prog)
     return 0;
 }
 
-
-void PrintHelp() {
-    printf("\n\nThis is Box64, the Linux x86_64 emulator with a twist\n");
-    printf("\nUsage is box64 [options] path/to/software [args]\n");
-    printf("to launch x86_64 software\n");
-    printf(" options can be :\n");
-    printf("    '-v'|'--version' to print box64 version and quit\n");
-    printf("    '-h'|'--help'    to print box64 help and quit\n");
-    printf("You can also set some environment variables:\n");
+void PrintFlags() {
+	printf("Environment Variables:\n");
     printf(" BOX64_PATH is the box64 version of PATH (default is '.:bin')\n");
     printf(" BOX64_LD_LIBRARY_PATH is the box64 version LD_LIBRARY_PATH (default is '.:lib:lib64')\n");
     printf(" BOX64_LOG with 0/1/2/3 or NONE/INFO/DEBUG/DUMP to set the printed debug info (level 3 is level 2 + BOX64_DUMP)\n");
@@ -921,7 +1081,7 @@ void PrintHelp() {
     printf(" BOX64_TRACE with 1 to enable x86_64 execution trace\n");
     printf("    or with XXXXXX-YYYYYY to enable x86_64 execution trace only between address\n");
     printf("    or with FunctionName to enable x86_64 execution trace only in one specific function\n");
-    printf("  use BOX64_TRACE_INIT instead of BOX_TRACE to start trace before init of Libs and main program\n\t (function name will probably not work then)\n");
+    printf("  use BOX64_TRACE_INIT instead of BOX64_TRACE to start trace before init of Libs and main program\n\t (function name will probably not work then)\n");
     printf(" BOX64_TRACE_EMM with 1 to enable dump of MMX registers along with regular registers\n");
     printf(" BOX64_TRACE_XMM with 1 to enable dump of SSE registers along with regular registers\n");
     printf(" BOX64_TRACE_COLOR with 1 to enable detection of changed general register values\n");
@@ -930,17 +1090,17 @@ void PrintHelp() {
     printf(" BOX64_DYNAREC_TRACE with 0/1 to disable or enable Trace on generated code too\n");
 #endif
 #endif
-    printf(" BOX64_TRACE_FILE with FileName to redirect logs in a file (or stderr to use stderr instead of stdout)");
+    printf(" BOX64_TRACE_FILE with FileName to redirect logs in a file (or stderr to use stderr instead of stdout)\n");
     printf(" BOX64_DLSYM_ERROR with 1 to log dlsym errors\n");
     printf(" BOX64_LOAD_ADDR=0xXXXXXX try to load at 0xXXXXXX main binary (if binary is a PIE)\n");
     printf(" BOX64_NOSIGSEGV=1 to disable handling of SigSEGV\n");
-    printf(" BOX64_NOSIGILL=1  to disable handling of SigILL\n");
+    printf(" BOX64_NOSIGILL=1 to disable handling of SigILL\n");
     printf(" BOX64_SHOWSEGV=1 to show Segfault signal even if a signal handler is present\n");
-    printf(" BOX64_X11THREADS=1 to call XInitThreads when loading X11 (for old Loki games with Loki_Compat lib)");
+    printf(" BOX64_X11THREADS=1 to call XInitThreads when loading X11 (for old Loki games with Loki_Compat lib)\n");
     printf(" BOX64_LIBGL=libXXXX set the name (and optionnally full path) for libGL.so.1\n");
     printf(" BOX64_LD_PRELOAD=XXXX[:YYYYY] force loading XXXX (and YYYY...) libraries with the binary\n");
-    printf(" BOX64_ALLOWMISSINGLIBS with 1 to allow one to continue even if a lib is missing (unadvised, will probably  crash later)\n");
-    printf(" BOX64_PREFER_EMULATED=1 to prefer emulated libs first (execpt for glibc, alsa, pulse, GL, vulkan and X11\n");
+    printf(" BOX64_ALLOWMISSINGLIBS with 1 to allow one to continue even if a lib is missing (unadvised, will probably crash later)\n");
+    printf(" BOX64_PREFER_EMULATED=1 to prefer emulated libs first (execpt for glibc, alsa, pulse, GL, vulkan and X11)\n");
     printf(" BOX64_PREFER_WRAPPED if box64 will use wrapped libs even if the lib is specified with absolute path\n");
     printf(" BOX64_CRASHHANDLER=0 to not use a dummy crashhandler lib\n");
     printf(" BOX64_NOPULSE=1 to disable the loading of pulseaudio libs\n");
@@ -949,6 +1109,15 @@ void PrintHelp() {
     printf(" BOX64_ENV='XXX=yyyy' will add XXX=yyyy env. var.\n");
     printf(" BOX64_ENV1='XXX=yyyy' will add XXX=yyyy env. var. and continue with BOX86_ENV2 ... until var doesn't exist\n");
     printf(" BOX64_JITGDB with 1 to launch \"gdb\" when a segfault is trapped, attached to the offending process\n");
+}
+
+void PrintHelp() {
+    printf("This is Box64, The Linux x86_64 emulator with a twist\n");
+    printf("\nUsage is 'box64 [options] path/to/software [args]' to launch x86_64 software.\n");
+    printf(" options are:\n");
+    printf("    '-v'|'--version' to print box64 version and quit\n");
+    printf("    '-h'|'--help' to print this and quit\n");
+    printf("    '-f'|'--flags' to print box64 flags and quit\n");
 }
 
 void addNewEnvVar(const char* s)
@@ -989,10 +1158,18 @@ void LoadEnvVars(box64context_t *context)
     }
     // check BOX64_LD_LIBRARY_PATH and load it
     LoadEnvPath(&context->box64_ld_lib, ".:lib:lib64:x86_64:bin64:libs64", "BOX64_LD_LIBRARY_PATH");
+    #ifndef TERMUX
     if(FileExist("/lib/x86_64-linux-gnu", 0))
         AddPath("/lib/x86_64-linux-gnu", &context->box64_ld_lib, 1);
     if(FileExist("/usr/lib/x86_64-linux-gnu", 0))
         AddPath("/usr/lib/x86_64-linux-gnu", &context->box64_ld_lib, 1);
+    if(FileExist("/usr/x86_64-linux-gnu/lib", 0))
+        AddPath("/usr/x86_64-linux-gnu/lib", &context->box64_ld_lib, 1);
+    #else
+    //TODO: Add Termux Library Path - Lily
+    if(FileExist("/data/data/com.termux/files/usr/lib/x86_64-linux-gnu", 0))
+        AddPath("/data/data/com.termux/files/usr/lib/x86_64-linux-gnu", &context->box64_ld_lib, 1);
+    #endif
     if(getenv("LD_LIBRARY_PATH"))
         PrependList(&context->box64_ld_lib, getenv("LD_LIBRARY_PATH"), 1);   // in case some of the path are for x86 world
     if(getenv("BOX64_EMULATED_LIBS")) {
@@ -1011,6 +1188,7 @@ void LoadEnvVars(box64context_t *context)
     AddPath("libcrypto.so.1", &context->box64_emulated_libs, 0);
     AddPath("libcrypto.so.1.0.0", &context->box64_emulated_libs, 0);
     AddPath("libunwind.so.8", &context->box64_emulated_libs, 0);
+    AddPath("libpng12.so.0", &context->box64_emulated_libs, 0);
 
     if(getenv("BOX64_SSE_FLUSHTO0")) {
         if (strcmp(getenv("BOX64_SSE_FLUSHTO0"), "1")==0) {
@@ -1021,19 +1199,25 @@ void LoadEnvVars(box64context_t *context)
     if(getenv("BOX64_X87_NO80BITS")) {
         if (strcmp(getenv("BOX64_X87_NO80BITS"), "1")==0) {
             box64_x87_no80bits = 1;
-            printf_log(LOG_INFO, "BOX64: all 80bits x87 long double will be handle as double\n");
+            printf_log(LOG_INFO, "BOX64: All 80bits x87 long double will be handle as double\n");
+    	}
+    }
+    if(getenv("BOX64_SYNC_ROUNDING")) {
+        if (strcmp(getenv("BOX64_SYNC_ROUNDING"), "1")==0) {
+            box64_sync_rounding = 1;
+            printf_log(LOG_INFO, "BOX64: Rouding mode with be synced with fesetround/fegetround\n");
     	}
     }
     if(getenv("BOX64_PREFER_WRAPPED")) {
         if (strcmp(getenv("BOX64_PREFER_WRAPPED"), "1")==0) {
             box64_prefer_wrapped = 1;
-            printf_log(LOG_INFO, "BOX64: Prefer Wrapped libs\n");
+            printf_log(LOG_INFO, "BOX64: Prefering Wrapped libs\n");
     	}
     }
     if(getenv("BOX64_PREFER_EMULATED")) {
         if (strcmp(getenv("BOX64_PREFER_EMULATED"), "1")==0) {
             box64_prefer_emulated = 1;
-            printf_log(LOG_INFO, "BOX64: Prefer Emulated libs\n");
+            printf_log(LOG_INFO, "BOX64: Prefering Emulated libs\n");
     	}
     }
 
@@ -1071,7 +1255,7 @@ void LoadEnvVars(box64context_t *context)
     if(my_context->x64trace) {
         printf_log(LOG_INFO, "Initializing Zydis lib\n");
         if(InitX64Trace(my_context)) {
-            printf_log(LOG_INFO, "Zydis init failed, no x86 trace activated\n");
+            printf_log(LOG_INFO, "Zydis init failed. No x86 trace activated\n");
             context->x64trace = 0;
         }
     }
@@ -1103,7 +1287,7 @@ void setupTraceInit()
                 SetTraceEmu(s_trace_start, s_trace_end);
                 printf_log(LOG_INFO, "TRACE on %s only (%p-%p)\n", p, (void*)s_trace_start, (void*)s_trace_end);
             } else {
-                printf_log(LOG_NONE, "Warning, symbol to trace (\"%s\") not found, disabling trace\n", p);
+                printf_log(LOG_NONE, "Warning, Symbol to trace (\"%s\") not found, Disabling trace\n", p);
                 SetTraceEmu(0, 100);  // disabling trace, mostly
             }
         }
@@ -1140,14 +1324,14 @@ void setupTrace()
                 }
             }
         } else {
-            if (GetGlobalSymbolStartEnd(my_context->maplib, p, &s_trace_start, &s_trace_end, NULL, -1, NULL, NULL, NULL)) {
+            if (my_context->elfs && GetGlobalSymbolStartEnd(my_context->maplib, p, &s_trace_start, &s_trace_end, NULL, -1, NULL, NULL, NULL)) {
                 SetTraceEmu(s_trace_start, s_trace_end);
                 printf_log(LOG_INFO, "TRACE on %s only (%p-%p)\n", p, (void*)s_trace_start, (void*)s_trace_end);
-            } else if(GetLocalSymbolStartEnd(my_context->maplib, p, &s_trace_start, &s_trace_end, NULL, -1, NULL, NULL, NULL)) {
+            } else if(my_context->elfs && GetLocalSymbolStartEnd(my_context->maplib, p, &s_trace_start, &s_trace_end, NULL, -1, NULL, NULL, NULL)) {
                 SetTraceEmu(s_trace_start, s_trace_end);
                 printf_log(LOG_INFO, "TRACE on %s only (%p-%p)\n", p, (void*)s_trace_start, (void*)s_trace_end);
             } else {
-                printf_log(LOG_NONE, "Warning, symbol to trace (\"%s\") not found, trying to set trace later\n", p);
+                printf_log(LOG_NONE, "Warning, Symbol to trace (\"%s\") not found. Trying to set trace later\n", p);
                 SetTraceEmu(0, 1);  // disabling trace, mostly
                 if(trace_func)
                     box_free(trace_func);
@@ -1157,24 +1341,22 @@ void setupTrace()
     }
 #endif
 }
+void endMallocHook();
 
 void endBox64()
 {
     if(!my_context || box64_quit)
         return;
 
+    // then call all the fini
+    box64_quit = 1;
+    endMallocHook();
     x64emu_t* emu = thread_get_emu();
     // atexit first
     printf_log(LOG_DEBUG, "Calling atexit registered functions (exiting box64)\n");
     CallAllCleanup(emu);
-    // then call all the fini
-    box64_quit = 1;
     printf_log(LOG_DEBUG, "Calling fini for all loaded elfs and unload native libs\n");
     RunElfFini(my_context->elfs[0], emu);
-    #ifdef DYNAREC
-    // disable dynarec now
-    box64_dynarec = 0;
-    #endif
     FreeLibrarian(&my_context->local_maplib, emu);    // unload all libs
     FreeLibrarian(&my_context->maplib, emu);    // unload all libs
     #if 0
@@ -1218,9 +1400,17 @@ void endBox64()
     #endif
     // all done, free context
     FreeBox64Context(&my_context);
+    #ifdef DYNAREC
+    // disable dynarec now
+    box64_dynarec = 0;
+    #endif
     if(box64_libGL) {
         box_free(box64_libGL);
         box64_libGL = NULL;
+    }
+    if(box64_custom_gstreamer) {
+        box_free(box64_custom_gstreamer);
+        box64_custom_gstreamer = NULL;
     }
 }
 
@@ -1233,8 +1423,14 @@ static void free_contextargv()
 
 static void load_rcfiles()
 {
+    #ifndef TERMUX
     if(FileExist("/etc/box64.box64rc", IS_FILE))
         LoadRCFile("/etc/box64.box64rc");
+    #else
+    if(FileExist("/data/data/com.termux/files/usr/etc/box64.box64rc", IS_FILE))
+        LoadRCFile("/data/data/com.termux/files/usr/etc/box64.box64rc");
+    #endif
+    
     else
         LoadRCFile(NULL);   // load default rcfile
     char* p = getenv("HOME");
@@ -1247,16 +1443,19 @@ static void load_rcfiles()
     }
 }
 
-void pressure_vessel(int argc, const char** argv, int nextarg);
+void pressure_vessel(int argc, const char** argv, int nextarg, const char* prog);
 extern char** environ;
 int main(int argc, const char **argv, char **env) {
     init_malloc_hook();
     init_auxval(argc, argv, environ?environ:env);
     // trying to open and load 1st arg
     if(argc==1) {
-        PrintBox64Version();
+        /*PrintBox64Version();
         PrintHelp();
-        return 1;
+        return 1;*/
+        printf("BOX64: Missing operand after 'box64'\n");
+        printf("See 'box64 --help' for more information.\n");
+        exit(0);
     }
     if(argc>1 && !strcmp(argv[1], "/usr/bin/gdb") && getenv("BOX64_TRACE_FILE"))
         exit(0);
@@ -1280,11 +1479,11 @@ int main(int argc, const char **argv, char **env) {
                 bashpath = p;
                 printf_log(LOG_INFO, "Using bash \"%s\"\n", bashpath);
             } else {
-                printf_log(LOG_INFO, "the x86_64 bash \"%s\" is not an x86_64 binary\n", p);
+                printf_log(LOG_INFO, "The x86_64 bash \"%s\" is not an x86_64 binary.\n", p);
             }
         }
     }
-    
+
     const char* prog = argv[1];
     int nextarg = 1;
     // check if some options are passed
@@ -1297,22 +1496,26 @@ int main(int argc, const char **argv, char **env) {
             PrintHelp();
             exit(0);
         }
+        if(!strcmp(prog, "-f") || !strcmp(prog, "--flags")) {
+            PrintFlags();
+            exit(0);
+        }
         // other options?
         if(!strcmp(prog, "--")) {
             prog = argv[++nextarg];
             break;
         }
-        printf("Warning, unrecognized option '%s'\n", prog);
+        printf("Warning, Unrecognized option '%s'\n", prog);
         prog = argv[++nextarg];
     }
     if(!prog || nextarg==argc) {
-        printf("Box64: nothing to run\n");
+        printf("BOX64: Nothing to run\n");
         exit(0);
     }
     if(!box64_nobanner)
         PrintBox64Version();
     // precheck, for win-preload
-    if(strstr(prog, "wine-preloader")==(prog+strlen(prog)-strlen("wine-preloader")) 
+    if(strstr(prog, "wine-preloader")==(prog+strlen(prog)-strlen("wine-preloader"))
      || strstr(prog, "wine64-preloader")==(prog+strlen(prog)-strlen("wine64-preloader"))) {
         // wine-preloader detecter, skipping it if next arg exist and is an x86 binary
         int x64 = (nextarg<argc)?FileIsX64ELF(argv[nextarg]):0;
@@ -1325,32 +1528,51 @@ int main(int argc, const char **argv, char **env) {
     #if 1
     // pre-check for pressure-vessel-wrap
     if(strstr(prog, "pressure-vessel-wrap")==(prog+strlen(prog)-strlen("pressure-vessel-wrap"))) {
-        // pressure-vessel-wrap detecter, skipping it and all -- args until "--" if needed
         printf_log(LOG_INFO, "BOX64: pressure-vessel-wrap detected\n");
-        pressure_vessel(argc, argv, nextarg+1);
+        pressure_vessel(argc, argv, nextarg+1, prog);
     }
     #endif
     int ld_libs_args = -1;
+    int is_custom_gstreamer = 0;
     // check if this is wine
     if(!strcmp(prog, "wine64")
      || !strcmp(prog, "wine64-development") 
      || !strcmp(prog, "wine") 
-     || (strlen(prog)>5 && !strcmp(prog+strlen(prog)-strlen("/wine"), "/wine"))
-     || (strlen(prog)>7 && !strcmp(prog+strlen(prog)-strlen("/wine64"), "/wine64"))) {
+     || (strrchr(prog, '/') && !strcmp(strrchr(prog,'/'), "/wine"))
+     || (strrchr(prog, '/') && !strcmp(strrchr(prog,'/'), "/wine64"))) {
         const char* prereserve = getenv("WINEPRELOADRESERVE");
         printf_log(LOG_INFO, "BOX64: Wine64 detected, WINEPRELOADRESERVE=\"%s\"\n", prereserve?prereserve:"");
         if(wine_preloaded)
             wine_prereserve(prereserve);
         // special case for winedbg, doesn't work anyway
         if(argv[nextarg+1] && strstr(argv[nextarg+1], "winedbg")==argv[nextarg+1]) {
-            printf_log(LOG_NONE, "winedbg detected, not launching it!\n");
-            exit(0);    // exiting, it doesn't work anyway
+            if(getenv("BOX64_WINEDBG")) {
+                box64_nobanner = 1;
+                box64_log = 0;
+            } else {
+                printf_log(LOG_NONE, "winedbg detected, not launching it!\n");
+                exit(0);    // exiting, it doesn't work anyway
+            }
         }
         box64_wine = 1;
-    } else 
+        // check if it's proton, with it's custom gstreamer build, to disable gtk3 loading
+        char tmp[strlen(prog)+100];
+        strcpy(tmp, prog);
+        char* pp = strrchr(tmp, '/');
+        if(pp) {
+            *pp = '\0'; // remove the wine binary call
+            strcat(tmp, "/../lib64/gstreamer-1.0");
+            // check if it exist
+            if(FileExist(tmp, 0)) {
+                //printf_log(LOG_INFO, "BOX64: Custom gstreamer detected, disable gtk wrapping\n");
+                //box64_nogtk = 1;
+                //is_custom_gstreamer = 1;
+                box64_custom_gstreamer = box_strdup(tmp);
+            }
+        }
+    } else if(strstr(prog, "ld-musl-x86_64.so.1")) {
     // check if ld-musl-x86_64.so.1 is used
-    if(strstr(prog, "ld-musl-x86_64.so.1")) {
-        printf_log(LOG_INFO, "BOX64: ld-musl detected, trying to workaround and use system ld-linux\n");
+        printf_log(LOG_INFO, "BOX64: ld-musl detected. Trying to workaround and use system ld-linux\n");
         box64_musl = 1;
         // skip ld-musl and go through args unti "--" is found, handling "--library-path" to add some libs to BOX64_LD_LIBRARY
         ++nextarg;
@@ -1380,6 +1602,8 @@ int main(int argc, const char **argv, char **env) {
     // Append ld_list if it exist
     if(ld_libs_args!=-1)
         PrependList(&my_context->box64_ld_lib, argv[ld_libs_args], 1);
+    if(is_custom_gstreamer)
+        AddPath("libwayland-client.so.0", &my_context->box64_emulated_libs, 0);
 
     my_context->box64path = ResolveFile(argv[0], &my_context->box64_path);
     // prepare all other env. var
@@ -1398,7 +1622,7 @@ int main(int argc, const char **argv, char **env) {
         char* p = getenv("BOX64_LD_PRELOAD");
         ParseList(p, &ld_preload, 0);
         if (ld_preload.size && box64_log) {
-            printf_log(LOG_INFO, "BOX64 try to Preload ");
+            printf_log(LOG_INFO, "BOX64 trying to Preload ");
             for (int i=0; i<ld_preload.size; ++i)
                 printf_log(LOG_INFO, "%s ", ld_preload.paths[i]);
             printf_log(LOG_INFO, "\n");
@@ -1416,13 +1640,16 @@ int main(int argc, const char **argv, char **env) {
                 box64_tcmalloc_minimal = 1; // it seems Address Sanitizer doesn't handle dlsym'd malloc very well
             ParseList(p, &ld_preload, 0);
             if (ld_preload.size && box64_log) {
-                printf_log(LOG_INFO, "BOX64 try to Preload ");
+                printf_log(LOG_INFO, "BOX64 trying to Preload ");
                 for (int i=0; i<ld_preload.size; ++i)
                     printf_log(LOG_INFO, "%s ", ld_preload.paths[i]);
                 printf_log(LOG_INFO, "\n");
             }
         }
     }
+    // print PATH and LD_LIB used
+    PrintCollection(&my_context->box64_ld_lib, "BOX64 LIB PATH");
+    PrintCollection(&my_context->box64_path, "BOX64 BIN PATH");
     // lets build argc/argv stuff
     printf_log(LOG_INFO, "Looking for %s\n", prog);
     my_context->argv[0] = ResolveFile(prog, &my_context->box64_path);
@@ -1442,11 +1669,15 @@ int main(int argc, const char **argv, char **env) {
     else
         ++prgname;
     if(box64_wine) {
-        AddPath("libdl.so.2", &ld_preload, 0);
+        #ifdef ANDROID
+            AddPath("libdl.so", &ld_preload, 0);
+        #else
+            AddPath("libdl.so.2", &ld_preload, 0);
+        #endif
     }
     // special case for zoom
     if(strstr(prgname, "zoom")==prgname) {
-        printf_log(LOG_INFO, "Zoom detected, trying to use system libturbojpeg if possible\n");
+        printf_log(LOG_INFO, "Zoom detected, Trying to use system libturbojpeg if possible\n");
         box64_zoom = 1;
     }
     // special case for bash (add BOX86_NOBANNER=1 if not there)
@@ -1491,17 +1722,30 @@ int main(int argc, const char **argv, char **env) {
             my_context->argc++;
         }
     }
+    if(box64_inprocessgpu)
+    {
+        // check if in-process-gpu is already there
+        int there = 0;
+        for(int i=1; i<my_context->argc && !there; ++i)
+            if(!strcmp(my_context->argv[i], "--in-process-gpu"))
+                there = 1;
+        if(!there) {
+            my_context->argv = (char**)box_realloc(my_context->argv, (my_context->argc+1)*sizeof(char*));
+            my_context->argv[my_context->argc] = box_strdup("--in-process-gpu");
+            my_context->argc++;
+        }
+    }
 
     // check if file exist
     if(!my_context->argv[0] || !FileExist(my_context->argv[0], IS_FILE)) {
-        printf_log(LOG_NONE, "Error: file is not found (check BOX64_PATH)\n");
+        printf_log(LOG_NONE, "Error: File is not found. (check BOX64_PATH)\n");
         free_contextargv();
         FreeBox64Context(&my_context);
         FreeCollection(&ld_preload);
         return -1;
     }
     if(!FileExist(my_context->argv[0], IS_FILE|IS_EXECUTABLE)) {
-        printf_log(LOG_NONE, "Error: %s is not an executable file\n", my_context->argv[0]);
+        printf_log(LOG_NONE, "Error: %s is not an executable file.\n", my_context->argv[0]);
         free_contextargv();
         FreeBox64Context(&my_context);
         FreeCollection(&ld_preload);
@@ -1523,7 +1767,7 @@ int main(int argc, const char **argv, char **env) {
     if(!elf_header) {
         int x86 = my_context->box86path?FileIsX86ELF(my_context->fullpath):0;
         int script = my_context->bashpath?FileIsShell(my_context->fullpath):0;
-        printf_log(LOG_NONE, "Error: reading elf header of %s, try to launch %s instead\n", my_context->fullpath, x86?"using box86":(script?"using bash":"natively"));
+        printf_log(LOG_NONE, "Error: Reading elf header of %s, Try to launch %s instead\n", my_context->fullpath, x86?"using box86":(script?"using bash":"natively"));
         fclose(f);
         FreeCollection(&ld_preload);
         int ret;
@@ -1555,37 +1799,26 @@ int main(int argc, const char **argv, char **env) {
     AddElfHeader(my_context, elf_header);
 
     if(CalcLoadAddr(elf_header)) {
-        printf_log(LOG_NONE, "Error: reading elf header of %s\n", my_context->fullpath);
-        fclose(f);
+        printf_log(LOG_NONE, "Error: Reading elf header of %s\n", my_context->fullpath);
+        FreeElfHeader(&elf_header);
         free_contextargv();
         FreeBox64Context(&my_context);
         FreeCollection(&ld_preload);
         return -1;
     }
-    // allocate memory
-    if(AllocElfMemory(my_context, elf_header, 1)) {
-        printf_log(LOG_NONE, "Error: allocating memory for elf %s\n", my_context->fullpath);
-        fclose(f);
+    // allocate memory and load elf
+    if(AllocLoadElfMemory(my_context, elf_header, 1)) {
+        printf_log(LOG_NONE, "Error: Loading elf %s\n", my_context->fullpath);
+        FreeElfHeader(&elf_header);
         free_contextargv();
         FreeBox64Context(&my_context);
         FreeCollection(&ld_preload);
         return -1;
     }
-    // Load elf into memory
-    if(LoadElfMemory(f, my_context, elf_header)) {
-        printf_log(LOG_NONE, "Error: loading in memory elf %s\n", my_context->fullpath);
-        fclose(f);
-        free_contextargv();
-        FreeBox64Context(&my_context);
-        FreeCollection(&ld_preload);
-        return -1;
-    }
-    // can close the file now
-    fclose(f);
     if(ElfCheckIfUseTCMallocMinimal(elf_header)) {
         if(!box64_tcmalloc_minimal) {
             // need to reload with tcmalloc_minimal as a LD_PRELOAD!
-            printf_log(LOG_INFO, "BOX64: tcmalloc_minimal.so.4 used, reloading box64 with the lib preladed\n");
+            printf_log(LOG_INFO, "BOX64: tcmalloc_minimal.so.4 used. Reloading box64 with the lib preladed\n");
             // need to get a new envv variable. so first count it and check if LD_PRELOAD is there
             int preload=(getenv("LD_PRELOAD"))?1:0;
             int nenv = 0;
@@ -1623,7 +1856,7 @@ int main(int argc, const char **argv, char **env) {
             while(argv[narg]) {newargv[narg] = box_strdup(argv[narg]); narg++;}
             // launch with new env...
             if(execve(newargv[0], newargv, newenv)<0)
-                printf_log(LOG_NONE, "Failed to relaunch, error is %d/%s\n", errno, strerror(errno));
+                printf_log(LOG_NONE, "Failed to relaunch. Error is %d/%s\n", errno, strerror(errno));
         } else {
             printf_log(LOG_INFO, "BOX64: Using tcmalloc_minimal.so.4, and it's in the LD_PRELOAD command\n");
         }
@@ -1657,9 +1890,12 @@ int main(int argc, const char **argv, char **env) {
         for(int i=nextarg; i<argc; ++i)
             argv[i] -= diff;    // adjust strings
     }
+    box64_isglibc234 = GetNeededVersionForLib(elf_header, "libc.so.6", "GLIBC_2.34");
+    if(box64_isglibc234)
+        printf_log(LOG_DEBUG, "Program linked with GLIBC 2.34+\n");
     // get and alloc stack size and align
     if(CalcStackSize(my_context)) {
-        printf_log(LOG_NONE, "Error: allocating stack\n");
+        printf_log(LOG_NONE, "Error: Allocating stack\n");
         free_contextargv();
         FreeBox64Context(&my_context);
         FreeCollection(&ld_preload);
@@ -1669,7 +1905,7 @@ int main(int argc, const char **argv, char **env) {
     x64emu_t *emu = NewX64Emu(my_context, my_context->ep, (uintptr_t)my_context->stack, my_context->stacksz, 0);
     // stack setup is much more complicated then just that!
     SetupInitialStack(emu); // starting here, the argv[] don't need free anymore
-    SetupX64Emu(emu);
+    SetupX64Emu(emu, NULL);
     SetRSI(emu, my_context->argc);
     SetRDX(emu, (uint64_t)my_context->argv);
     SetRCX(emu, (uint64_t)my_context->envv);
@@ -1682,9 +1918,6 @@ int main(int argc, const char **argv, char **env) {
 
     // export symbols
     AddSymbols(my_context->maplib, GetMapSymbols(elf_header), GetWeakSymbols(elf_header), GetLocalSymbols(elf_header), elf_header);
-    box64_isglibc234 = GetVersionIndice(elf_header, "GLIBC_2.34")?1:0;
-    if(box64_isglibc234)
-        printf_log(LOG_DEBUG, "Program linked with GLIBC 2.34+\n");
     if(wine_preloaded) {
         uintptr_t wineinfo = FindSymbol(GetMapSymbols(elf_header), "wine_main_preload_info", -1, NULL, 1, NULL);
         if(!wineinfo) wineinfo = FindSymbol(GetWeakSymbols(elf_header), "wine_main_preload_info", -1, NULL, 1, NULL);
@@ -1701,24 +1934,31 @@ int main(int argc, const char **argv, char **env) {
     AddMainElfToLinkmap(elf_header);
     // pre-load lib if needed
     if(ld_preload.size) {
-        my_context->preload = new_neededlib(ld_preload.size);
-        for(int i=0; i<ld_preload.size; ++i)
-            my_context->preload->names[i] = ld_preload.paths[i];
-        if(AddNeededLib(my_context->maplib, 0, 0, my_context->preload, my_context, emu)) {
-            printf_log(LOG_INFO, "Warning, cannot pre-load of the libs\n");
-        }            
+        my_context->preload = new_neededlib(0);
+        for(int i=0; i<ld_preload.size; ++i) {
+            needed_libs_t* tmp = new_neededlib(1);
+            tmp->names[0] = ld_preload.paths[i];
+            if(AddNeededLib(my_context->maplib, 0, 0, tmp, elf_header, my_context, emu)) {
+                printf_log(LOG_INFO, "Warning, cannot pre-load %s\n", tmp->names[0]);
+                RemoveNeededLib(my_context->maplib, 0, tmp, my_context, emu);
+            } else {
+                for(int j=0; j<tmp->size; ++j)
+                    add1lib_neededlib(my_context->preload, tmp->libs[j], tmp->names[j]);
+                free_neededlib(tmp);
+            }
+        }
     }
     FreeCollection(&ld_preload);
     // Call librarian to load all dependant elf
     if(LoadNeededLibs(elf_header, my_context->maplib, 0, 0, my_context, emu)) {
-        printf_log(LOG_NONE, "Error: loading needed libs in elf %s\n", my_context->argv[0]);
+        printf_log(LOG_NONE, "Error: Loading needed libs in elf %s\n", my_context->argv[0]);
         FreeBox64Context(&my_context);
         return -1;
     }
     // reloc...
     printf_log(LOG_DEBUG, "And now export symbols / relocation for %s...\n", ElfName(elf_header));
     if(RelocateElf(my_context->maplib, NULL, 0, elf_header)) {
-        printf_log(LOG_NONE, "Error: relocating symbols in elf %s\n", my_context->argv[0]);
+        printf_log(LOG_NONE, "Error: Relocating symbols in elf %s\n", my_context->argv[0]);
         FreeBox64Context(&my_context);
         return -1;
     }
@@ -1744,13 +1984,13 @@ int main(int argc, const char **argv, char **env) {
     // Stack is ready, with stacked: NULL env NULL argv argc
     SetRIP(emu, my_context->ep);
     ResetFlags(emu);
-    PushExit(emu);  // push to pop it just after
+    Push64(emu, my_context->exit_bridge);  // push to pop it just after
     SetRDX(emu, Pop64(emu));    // RDX is exit function
     Run(emu, 0);
     // Get EAX
     int ret = GetEAX(emu);
     printf_log(LOG_DEBUG, "Emulation finished, EAX=%d\n", ret);
-
+    endBox64();
 #ifdef HAVE_TRACE
     if(trace_func)  {
         box_free(trace_func);

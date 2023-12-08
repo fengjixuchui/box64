@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [X64, OTHER_ARM, RISCV, RPI4ARM64, RK3326, RK3399, RK3588, PHYTIUM, SD845]
+        platform: [X64, OTHER_ARM, RISCV, RPI4ARM64, RK3326, RK3399, RK3588, PHYTIUM, SD845, SD888, ADLINK, ARM64, ANDROID]
         type: [Release, Trace]
         os: [ubuntu-latest]
         include:
@@ -47,9 +47,17 @@ jobs:
         run: |
           sudo apt-get update
           if [[ ${{ matrix.platform }} != 'X64' && ${{ matrix.platform }} != 'OTHER_ARM' && ${{ matrix.platform }} != 'RISCV' ]]; then
-            echo "BOX64_PLATFORM_MARCRO=-D${{ matrix.platform }}=1" >> $GITHUB_ENV
-            echo "BOX64_COMPILER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-            sudo apt-get -y install git gcc-aarch64-linux-gnu cmake make python3
+            sudo apt-get -y install git cmake make python3
+            if [[ ${{ matrix.platform }} == 'ANDROID' ]]; then
+              wget https://dl.google.com/android/repository/android-ndk-r23b-linux.zip
+              unzip android-ndk-r23b-linux.zip
+              echo "BOX64_COMPILER=$PWD/android-ndk-r23b/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android31-clang" >> $GITHUB_ENV
+              echo "BOX64_PLATFORM_MARCRO=-DANDROID=1 -DARM_DYNAREC=1 -DNOLOADADDR=1" >> $GITHUB_ENV
+            else
+              sudo apt-get -y install git gcc-aarch64-linux-gnu
+              echo "BOX64_PLATFORM_MARCRO=-D${{ matrix.platform }}=1" >> $GITHUB_ENV
+              echo "BOX64_COMPILER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+            fi
           else
             if [[ ${{ matrix.platform }} == 'X64' ]]; then
               echo "BOX64_PLATFORM_MARCRO=-DLD80BITS=1 -DNOALIGN=1" >> $GITHUB_ENV
@@ -88,22 +96,32 @@ jobs:
                    ${{ env.BOX64_PLATFORM_MARCRO }}\
                    -DCMAKE_BUILD_TYPE=${{ env.BOX64_BUILD_TYPE }}\
                    -DHAVE_TRACE=${{ env.BOX64_HAVE_TRACE }}\
-                   -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON
+                   -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON\
+                   -DCI=${{ matrix.platform != 'ANDROID' }}
           make -j$(nproc) VERBOSE=1
 
       - name: "Test Box64"
         if: ${{ matrix.platform != 'TEGRAX1' }}
         run: |
-          if [[ ${{ matrix.platform }} != 'X64' ]]; then
-            sudo apt-get -y install qemu-user
+          if [[ ${{ matrix.platform }} != 'X64' && ${{ matrix.platform }} != 'ANDROID' ]]; then
+            mkdir qemu8.1.0
+            wget -O- -q https://archive.archlinux.org/packages/q/qemu-user-static/qemu-user-static-8.1.0-2-x86_64.pkg.tar.zst | tar -I zstd -C qemu8.1.0 -xf -
+            sudo cp qemu8.1.0/usr/bin/* /usr/bin/
           fi
 
           cd build
           if [[ ${{ matrix.platform }} == 'RISCV' ]]; then
-            QEMU_LD_PREFIX=/usr/riscv64-linux-gnu/ ctest -j$(nproc) --rerun-failed --output-on-failure
-          elif [[ ${{ matrix.platform }} != 'X64' ]]; then
-            QEMU_LD_PREFIX=/usr/aarch64-linux-gnu/ ctest -j$(nproc) --rerun-failed --output-on-failure
+            INTERPRETER=qemu-riscv64-static QEMU_LD_PREFIX=/usr/riscv64-linux-gnu/ ctest -j$(nproc) --rerun-failed --output-on-failure
+            INTERPRETER=qemu-riscv64-static QEMU_LD_PREFIX=/usr/riscv64-linux-gnu/ BOX64_DYNAREC=0 ctest -j$(nproc) --rerun-failed --output-on-failure
+            INTERPRETER=qemu-riscv64-static QEMU_LD_PREFIX=/usr/riscv64-linux-gnu/ QEMU_CPU=rv64,zba=true,zbb=true,zbc=true,zbs=true ctest -j$(nproc) --rerun-failed --output-on-failure
+            INTERPRETER=qemu-riscv64-static QEMU_LD_PREFIX=/usr/riscv64-linux-gnu/ QEMU_CPU=rv64,xtheadba=true,xtheadba=true,xtheadbb=true,xtheadbs=true,xtheadcondmov=true,xtheadmemidx=true,xtheadmempair=true,xtheadfmemidx=true,xtheadmac=true,xtheadfmv=true ctest -j$(nproc) --rerun-failed --output-on-failure
+          elif [[ ${{ matrix.platform }} != 'X64' && ${{ matrix.platform }} != 'ANDROID' ]]; then # AArch64
+            INTERPRETER=qemu-aarch64-static QEMU_LD_PREFIX=/usr/aarch64-linux-gnu/ BOX64_DYNAREC=0 ctest -j$(nproc) --rerun-failed --output-on-failure
+            INTERPRETER=qemu-aarch64-static QEMU_LD_PREFIX=/usr/aarch64-linux-gnu/ ctest -j$(nproc) --rerun-failed --output-on-failure
+          elif [[ ${{ matrix.platform }} == 'ANDROID' ]]; then
+            true
           else
+            BOX64_DYNAREC=0 ctest -j$(nproc) --rerun-failed --output-on-failure
             ctest -j$(nproc) --rerun-failed --output-on-failure
           fi
 

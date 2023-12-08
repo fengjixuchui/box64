@@ -14,18 +14,31 @@ option(ODROIDN2 "Set to ON if targeting an Odroid-N2 device" ${ODROIDN2})
 option(TEGRAX1 "Set to ON if targeting an Tegra X1 based device" ${TEGRAX1})
 option(PHYTIUM "Set to ON if targeting an Phytium (D2000 or FT2000/4) based device" ${PHYTIUM})
 option(SD845 "Set to ON if targeting a Snapragon 845 based device" ${SD845})
+option(SD888 "Set to ON if targeting a Snapragon 888 based device" ${SD888})
+option(SD8G2 "Set to ON if targeting a Snapragon 8 Gen 2 based device" ${SD8G2})
+option(ADLINK "Set to ON if targeting an ADLink AmpereAltra based device" ${ADLINK})
 option(M1 "Set to ON if targeting a AppleM1 running on Asahi computer" ${M1})
 option(LARCH64 "Set to ON if targeting an Loongarch64 based device" ${LARCH64})
 option(RV64 "Set to ON if targeting an RISC-V RV64GC based device" ${RV64})
 option(PPC64LE "Set to ON if targeting an PowerPC 64 LE based device" ${PPC64LE})
 option(LX2160A "Set to ON if targeting an LX2160A based device" ${LX2160A})
+option(ARM64 "Set to ON if targeting a generic ARM64 based device" ${ARM64})
+option(ANDROID "Set to ON if targeting an Android device" ${ANDROID})
+option(TERMUX "Set to ON if targeting an Android device with Termux" ${TERMUX})
 option(USE_CCACHE "Set to ON to use ccache if present in the system" ${USE_CCACHE})
 option(HAVE_TRACE "Set to ON to have Trace ability (needs ZydisInfo library)" ${HAVE_TRACE})
+option(SAVE_MEM "Set to ON to build dynarec with some slower memory saving optimisations" ${SAVE_MEM})
 option(NOLOADADDR "Set to ON to avoid fixing the load address of Box64" OFF)
 option(NOGIT "Set to ON if not building from a git clone repo (like when building from a zip download from github)" ${NOGIT})
 option(BAD_SIGNAL "Set to ON to activate the workaround for incoherent si_info on SIGSEGV" ${BAD_SIGNAL})
 option(SW64 "Set ON if targeting an SW64 based device" ${SW64})
+option(CI "Set to ON if running in CI" ${CI})
+option(WITH_MOLD "Set to ON to use with mold" ${WITH_MOLD})
 
+if(TERMUX)
+    set(TERMUX_PATH "/data/data/com.termux/files")
+    set(ANDROID ON CACHE BOOL "")
+endif()
 if(LARCH64)
     set(LD80BITS OFF CACHE BOOL "")
     set(NOALIGN OFF CACHE BOOL "")
@@ -46,14 +59,17 @@ if(PPC64LE)
     set(RV64_DYNAREC OFF CACHE BOOL "")
     set(PAGE16K OFF CACHE BOOL "")
 endif()
-if(RK3399 OR RK3588 OR ODROIDN2 OR RPI3ARM64 OR RPI4ARM64 OR RK3326 OR TEGRAX1 OR PHYTIUM OR SD845 OR LX2160A OR M1)
+if(RK3399 OR RK3588 OR ODROIDN2 OR RPI3ARM64 OR RPI4ARM64 OR RK3326 OR TEGRAX1 OR PHYTIUM OR SD845 OR SD888 OR SD8G2 OR LX2160A OR M1 OR ARM64 OR ADLINK)
     set(LD80BITS OFF CACHE BOOL "")
     set(NOALIGN OFF CACHE BOOL "")
     set(ARM_DYNAREC ON CACHE BOOL "")
     set(RV64_DYNAREC OFF CACHE BOOL "")
 endif()
-if(RK3399 OR RK3588 OR ODROIDN2 OR RPI3ARM64 OR RPI4ARM64 OR RK3326 OR TEGRAX1 OR PHYTIUM OR SD845 OR LX2160A)
+if(RK3399 OR RK3588 OR ODROIDN2 OR RPI3ARM64 OR RPI4ARM64 OR RK3326 OR TEGRAX1 OR PHYTIUM OR SD845 OR SD888 OR SD8G2 OR LX2160A OR ADLINK)
     set(PAGE16K OFF CACHE BOOL "")
+endif()
+if(RK3399 OR ODROIDN2 OR RPI3ARM64 OR RPI4ARM64)
+    set(SAVE_MEM ON CACHE BOOL "")
 endif()
 if(RK3588)
     set(BAD_SIGNAL ON CACHE BOOL "")
@@ -65,6 +81,10 @@ if(SW64)
     set(LD80BITS OFF CACHE BOOL "")
     set(NOALIGN OFF CACHE BOOL "")
     set(PAGE8K ON CACHE BOOL "")
+endif()
+if(ANDROID)
+    set(NOLOADADDR ON CACHE BOOL "")
+    set(BAD_SIGNAL ON CACHE BOOL "")
 endif()
 
 option(LD80BITS "Set to ON if host device have 80bits long double (i.e. i386)" ${LD80BITS})
@@ -137,13 +157,25 @@ elseif(TEGRAX1)
     add_definitions(-pipe -march=armv8-a+crc+simd+crypto -mcpu=cortex-a57+crypto)
     set(CMAKE_ASM_FLAGS  "-pipe -march=armv8-a+crc+simd+crypto -mcpu=cortex-a57+crypto")
 elseif(PHYTIUM)
-    add_definitions(-DPHYSIUM)
+    add_definitions(-DPHYTIUM)
     add_definitions(-pipe -march=armv8.1-a+crc+simd+crypto)
     set(CMAKE_ASM_FLAGS  "-pipe -march=armv8.1-a+crc+simd+crypto+aes")
 elseif(SD845)
     add_definitions(-DSD845)
     add_definitions(-pipe -march=armv8.2-a+simd+crypto -mtune=cortex-a75.cortex-a55)
     set(CMAKE_ASM_FLAGS  "-pipe -march=armv8.2-a+simd+crypto -mtune=cortex-a75.cortex-a55")
+elseif(SD888)
+    add_definitions(-DSD888)
+    add_definitions(-pipe -march=armv8.4-a+simd+crypto)
+    set(CMAKE_ASM_FLAGS  "-pipe -march=armv8.4-a+simd+crypto")
+elseif(SD8G2)
+    add_definitions(-DSD8G2)
+    add_definitions(-pipe -march=armv9-a+i8mm+sm4+sha3+rcpc+crypto+nosve+nosve2)
+    set(CMAKE_ASM_FLAGS  "-pipe -march=armv9-a+i8mm+sm4+sha3+rcpc+crypto+nosve+nosve2")
+elseif(ADLINK)
+    add_definitions(-DADLINK)
+    add_definitions(-pipe -mcpu=neoverse-n1 -fuse-ld=gold -fuse-linker-plugin)
+    set(CMAKE_ASM_FLAGS  "-pipe -mcpu=neoverse-n1")
 elseif(M1)
     add_definitions(-DM1)
     add_definitions(-pipe -march=armv8.5-a+simd+crypto)
@@ -164,14 +196,26 @@ elseif(LX2160A)
     set(CMAKE_ASM_FLAGS  "-pipe -march=armv8-a+crypto+crc -mcpu=cortex-a72+crypto")
 elseif(SW64)
     add_definitions(-DSW64)
+elseif(ARM64)
+    #add_definitions(-pipe -march=native)
+    set(CMAKE_ASM_FLAGS  "-pipe -march=armv8-a+simd")
 elseif(ARM_DYNAREC)
-    set(CMAKE_ASM_FLAGS  "-pipe -march=armv8-a+crc+simd+crypto")
+    if(NOT ANDROID)
+        set(CMAKE_ASM_FLAGS  "-pipe -march=armv8-a+crc+simd+crypto")
+    endif()
 endif()
-
+if(ANDROID)
+    add_definitions(-DANDROID)
+endif()
+if(TERMUX)
+    add_definitions(-DTERMUX)
+endif()
 if(BAD_SIGNAL)
     add_definitions(-DBAD_SIGNAL)
 endif()
-
+if(SAVE_MEM)
+    add_definitions(-DSAVE_MEM)
+endif()
 if(PAGE8K)
     add_definitions(-DPAGE8K)
 endif()
@@ -259,16 +303,18 @@ set(ELFLOADER_SRC
     "${BOX64_ROOT}/src/mallochook.c"
     "${BOX64_ROOT}/src/steam.c"
     "${BOX64_ROOT}/src/dynarec/dynarec.c"
-    "${BOX64_ROOT}/src/elfs/elfdwarf_private.c"
     "${BOX64_ROOT}/src/elfs/elfloader.c"
     "${BOX64_ROOT}/src/elfs/elfparser.c"
     "${BOX64_ROOT}/src/elfs/elfload_dump.c"
+    "${BOX64_ROOT}/src/emu/x64compstrings.c"
     "${BOX64_ROOT}/src/emu/x64emu.c"
     "${BOX64_ROOT}/src/emu/x64int3.c"
     "${BOX64_ROOT}/src/emu/x87emu_private.c"
     "${BOX64_ROOT}/src/emu/x64primop.c"
     "${BOX64_ROOT}/src/emu/x64run_private.c"
+    "${BOX64_ROOT}/src/emu/x64shaext.c"
     "${BOX64_ROOT}/src/emu/x64syscall.c"
+    "${BOX64_ROOT}/src/emu/x86syscall.c"
     "${BOX64_ROOT}/src/emu/x64tls.c"
     "${BOX64_ROOT}/src/emu/x64trace.c"
     "${BOX64_ROOT}/src/librarian/librarian.c"
@@ -277,7 +323,6 @@ set(ELFLOADER_SRC
     "${BOX64_ROOT}/src/librarian/globalsymbols.c"
     "${BOX64_ROOT}/src/librarian/symbols.c"
     "${BOX64_ROOT}/src/libtools/auxval.c"
-    "${BOX64_ROOT}/src/libtools/obstack.c"
     "${BOX64_ROOT}/src/libtools/myalign.c"
     "${BOX64_ROOT}/src/libtools/sdl1rwops.c"
     "${BOX64_ROOT}/src/libtools/sdl2rwops.c"
@@ -295,6 +340,12 @@ set(ELFLOADER_SRC
     "${BOX64_ROOT}/src/tools/wine_tools.c"
     "${BOX64_ROOT}/src/wrapped/generated/wrapper.c"
 )
+if(NOT ANDROID)
+    list(APPEND ELFLOADER_SRC
+        "${BOX64_ROOT}/src/libtools/obstack.c"
+        "${BOX64_ROOT}/src/elfs/elfdwarf_private.c"
+    )
+endif()
 
 set(INTERPRETER
     "${BOX64_ROOT}/src/emu/x64run.c"
@@ -302,11 +353,15 @@ set(INTERPRETER
     "${BOX64_ROOT}/src/emu/x64run64.c"
     "${BOX64_ROOT}/src/emu/x64run66.c"
     "${BOX64_ROOT}/src/emu/x64run660f.c"
+    "${BOX64_ROOT}/src/emu/x64run66f20f.c"
+    "${BOX64_ROOT}/src/emu/x64run66f30f.c"
     "${BOX64_ROOT}/src/emu/x64run6664.c"
     "${BOX64_ROOT}/src/emu/x64run66d9.c"
     "${BOX64_ROOT}/src/emu/x64run66dd.c"
     "${BOX64_ROOT}/src/emu/x64run66f0.c"
     "${BOX64_ROOT}/src/emu/x64run67.c"
+    "${BOX64_ROOT}/src/emu/x64run67_32.c"
+    "${BOX64_ROOT}/src/emu/x64run6764_32.c"
     "${BOX64_ROOT}/src/emu/x64run670f.c"
     "${BOX64_ROOT}/src/emu/x64run6766.c"
     "${BOX64_ROOT}/src/emu/x64run67660f.c"
@@ -330,7 +385,9 @@ set(WRAPPEDS
     "${BOX64_ROOT}/src/wrapped/wrappedatkbridge.c"
     "${BOX64_ROOT}/src/wrapped/wrappedatomic.c"
     "${BOX64_ROOT}/src/wrapped/wrappedatspi.c"
+    "${BOX64_ROOT}/src/wrapped/wrappedayatanaappindicator3.c"
     "${BOX64_ROOT}/src/wrapped/wrappedbz2.c"
+    "${BOX64_ROOT}/src/wrapped/wrappedcap.c"
     "${BOX64_ROOT}/src/wrapped/wrappedcairo.c"
     "${BOX64_ROOT}/src/wrapped/wrappedcairogobject.c"
     "${BOX64_ROOT}/src/wrapped/wrappedcrashhandler.c"
@@ -339,6 +396,8 @@ set(WRAPPEDS
     "${BOX64_ROOT}/src/wrapped/wrappedcurl.c"
     "${BOX64_ROOT}/src/wrapped/wrappeddbus.c"
     "${BOX64_ROOT}/src/wrapped/wrappeddbusglib1.c"
+    "${BOX64_ROOT}/src/wrapped/wrappeddbusmenuglib.c"
+    "${BOX64_ROOT}/src/wrapped/wrappedevent21.c"
     "${BOX64_ROOT}/src/wrapped/wrappedexpat.c"
     "${BOX64_ROOT}/src/wrapped/wrappedfaudio.c"
     "${BOX64_ROOT}/src/wrapped/wrappedflac.c"
@@ -357,21 +416,34 @@ set(WRAPPEDS
     "${BOX64_ROOT}/src/wrapped/wrappedgmp.c"
     "${BOX64_ROOT}/src/wrapped/wrappedgnutls.c"
     "${BOX64_ROOT}/src/wrapped/wrappedgobject2.c"
+    "${BOX64_ROOT}/src/wrapped/wrappedgomp.c"
     "${BOX64_ROOT}/src/wrapped/wrappedgssapi.c"
     "${BOX64_ROOT}/src/wrapped/wrappedgssapikrb5.c"
+    "${BOX64_ROOT}/src/wrapped/wrappedgstallocators.c"
     "${BOX64_ROOT}/src/wrapped/wrappedgstapp.c"
     "${BOX64_ROOT}/src/wrapped/wrappedgstaudio.c"
     "${BOX64_ROOT}/src/wrapped/wrappedgstbase.c"
+    "${BOX64_ROOT}/src/wrapped/wrappedgstcheck.c"
+    "${BOX64_ROOT}/src/wrapped/wrappedgstcontroller.c"
+    "${BOX64_ROOT}/src/wrapped/wrappedgstfft.c"
     "${BOX64_ROOT}/src/wrapped/wrappedgstgl.c"
+    "${BOX64_ROOT}/src/wrapped/wrappedgstnet.c"
+    "${BOX64_ROOT}/src/wrapped/wrappedgstpbutils.c"
     "${BOX64_ROOT}/src/wrapped/wrappedgstreamer.c"
+    "${BOX64_ROOT}/src/wrapped/wrappedgstriff.c"
+    "${BOX64_ROOT}/src/wrapped/wrappedgstrtp.c"
+    "${BOX64_ROOT}/src/wrapped/wrappedgstrtsp.c"
+    "${BOX64_ROOT}/src/wrapped/wrappedgstsdp.c"
     "${BOX64_ROOT}/src/wrapped/wrappedgsttag.c"
     "${BOX64_ROOT}/src/wrapped/wrappedgstvideo.c"
     "${BOX64_ROOT}/src/wrapped/wrappedgthread2.c"
     "${BOX64_ROOT}/src/wrapped/wrappedgtk3.c"
     "${BOX64_ROOT}/src/wrapped/wrappedgtkx112.c"
     "${BOX64_ROOT}/src/wrapped/wrappedkrb5.c"
+    "${BOX64_ROOT}/src/wrapped/wrappedlcms2.c"
     "${BOX64_ROOT}/src/wrapped/wrappedldlinux.c"
     "${BOX64_ROOT}/src/wrapped/wrappedlibasound.c"
+    "${BOX64_ROOT}/src/wrapped/wrappedlibbsd.c"
     "${BOX64_ROOT}/src/wrapped/wrappedlibc.c"
     "${BOX64_ROOT}/src/wrapped/wrappedlibcmusl.c"
     "${BOX64_ROOT}/src/wrapped/wrappedlibcrypt.c"
@@ -381,10 +453,12 @@ set(WRAPPEDS
     "${BOX64_ROOT}/src/wrapped/wrappedlibegl.c"
     "${BOX64_ROOT}/src/wrapped/wrappedlibform.c"
     "${BOX64_ROOT}/src/wrapped/wrappedlibformw.c"
+    "${BOX64_ROOT}/src/wrapped/wrappedlibformw6.c"
     "${BOX64_ROOT}/src/wrapped/wrappedlibfuse.c"
     "${BOX64_ROOT}/src/wrapped/wrappedlibgl.c"
     "${BOX64_ROOT}/src/wrapped/wrappedlibglu.c"
     "${BOX64_ROOT}/src/wrapped/wrappedlibglx.c"
+    "${BOX64_ROOT}/src/wrapped/wrappedlibharfbuzz.c"
     "${BOX64_ROOT}/src/wrapped/wrappedlibibus.c"
     "${BOX64_ROOT}/src/wrapped/wrappedlibice.c"
     "${BOX64_ROOT}/src/wrapped/wrappedlibm.c"
@@ -462,6 +536,7 @@ set(WRAPPEDS
     "${BOX64_ROOT}/src/wrapped/wrappednss3.c"
     "${BOX64_ROOT}/src/wrapped/wrappednssutil3.c"
     "${BOX64_ROOT}/src/wrapped/wrappedopenal.c"
+    "${BOX64_ROOT}/src/wrapped/wrappedopencl.c"
     "${BOX64_ROOT}/src/wrapped/wrappedpango.c"
     "${BOX64_ROOT}/src/wrapped/wrappedpangocairo.c"
     "${BOX64_ROOT}/src/wrapped/wrappedpangoft2.c"
@@ -510,11 +585,25 @@ set(WRAPPEDS
     "${BOX64_ROOT}/src/wrapped/wrappedvulkan.c"
     "${BOX64_ROOT}/src/wrapped/wrappedxshmfence.c"
     "${BOX64_ROOT}/src/wrapped/wrappedd3dadapter9.c"
+    "${BOX64_ROOT}/src/wrapped/wrappedicuuc66.c"
+    "${BOX64_ROOT}/src/wrapped/wrappedicui18n66.c"
     "${BOX64_ROOT}/src/wrapped/wrappedicuuc67.c"
     "${BOX64_ROOT}/src/wrapped/wrappedicui18n67.c"
     "${BOX64_ROOT}/src/wrapped/wrappedicuuc72.c"
     "${BOX64_ROOT}/src/wrapped/wrappedicui18n72.c"
 )
+if(ANDROID)
+    list(APPEND WRAPPEDS
+        "${BOX64_ROOT}/src/wrapped/wrappedandroidshmem.c"
+    )
+endif()
+if(TERMUX)
+    list(APPEND WRAPPEDS
+        "${BOX64_ROOT}/src/wrapped/wrappediconv.c"
+        "${BOX64_ROOT}/src/wrapped/wrappedtermuxexec.c"
+        "${BOX64_ROOT}/src/wrapped/wrappedandroidsupport.c"
+    )
+endif()
 
 # If BOX64_ROOT contains a ".c", the build breaks...
 string(REPLACE ".c" "_private.h" MODROOT ${BOX64_ROOT})
@@ -529,16 +618,18 @@ endforeach()
 
 set(WRAPPER "${BOX64_ROOT}/src/wrapped/generated/wrapper.c" "${BOX64_ROOT}/src/wrapped/generated/wrapper.h")
 
-add_custom_command(
-    OUTPUT "${BOX64_ROOT}/src/wrapped/generated/functions_list.txt"
-    COMMAND "${PYTHON_EXECUTABLE}" "${BOX64_ROOT}/rebuild_wrappers.py"
-    "${BOX64_ROOT}"
-    "PANDORA" "HAVE_LD80BITS" "NOALIGN" "HAVE_TRACE" "--"
-    ${WRAPPEDS_HEAD}
-    MAIN_DEPENDENCY "${BOX64_ROOT}/rebuild_wrappers.py"
-    DEPENDS ${WRAPPEDS} ${WRAPPEDS_HEAD}
-    BYPRODUCTS ${WRAPPER}
-)
+if(NOT CI)
+    add_custom_command(
+        OUTPUT "${BOX64_ROOT}/src/wrapped/generated/functions_list.txt"
+        COMMAND "${PYTHON_EXECUTABLE}" "${BOX64_ROOT}/rebuild_wrappers.py"
+        "${BOX64_ROOT}"
+        "PANDORA" "HAVE_LD80BITS" "NOALIGN" "HAVE_TRACE" "ANDROID" "TERMUX" "--"
+        ${WRAPPEDS_HEAD}
+        MAIN_DEPENDENCY "${BOX64_ROOT}/rebuild_wrappers.py"
+        DEPENDS ${WRAPPEDS} ${WRAPPEDS_HEAD}
+        BYPRODUCTS ${WRAPPER}
+    )
+endif ()
 
 #add_custom_command(
 #    OUTPUT "${BOX64_ROOT}/src/dynarec/last_run.txt"
@@ -586,9 +677,11 @@ if(ARM_DYNAREC)
     #"${BOX64_ROOT}/src/dynarec/arm64/dynarec_arm64_65.c"
     "${BOX64_ROOT}/src/dynarec/arm64/dynarec_arm64_66.c"
     "${BOX64_ROOT}/src/dynarec/arm64/dynarec_arm64_67.c"
+    "${BOX64_ROOT}/src/dynarec/arm64/dynarec_arm64_67_32.c"
+    "${BOX64_ROOT}/src/dynarec/arm64/dynarec_arm64_6764_32.c"
     "${BOX64_ROOT}/src/dynarec/arm64/dynarec_arm64_d8.c"
     "${BOX64_ROOT}/src/dynarec/arm64/dynarec_arm64_d9.c"
-    #"${BOX64_ROOT}/src/dynarec/arm64/dynarec_arm64_da.c"
+    "${BOX64_ROOT}/src/dynarec/arm64/dynarec_arm64_da.c"
     "${BOX64_ROOT}/src/dynarec/arm64/dynarec_arm64_db.c"
     "${BOX64_ROOT}/src/dynarec/arm64/dynarec_arm64_dc.c"
     "${BOX64_ROOT}/src/dynarec/arm64/dynarec_arm64_dd.c"
@@ -596,6 +689,8 @@ if(ARM_DYNAREC)
     "${BOX64_ROOT}/src/dynarec/arm64/dynarec_arm64_df.c"
     "${BOX64_ROOT}/src/dynarec/arm64/dynarec_arm64_f0.c"
     "${BOX64_ROOT}/src/dynarec/arm64/dynarec_arm64_660f.c"
+    "${BOX64_ROOT}/src/dynarec/arm64/dynarec_arm64_66f20f.c"
+    "${BOX64_ROOT}/src/dynarec/arm64/dynarec_arm64_66f30f.c"
     "${BOX64_ROOT}/src/dynarec/arm64/dynarec_arm64_6664.c"
     "${BOX64_ROOT}/src/dynarec/arm64/dynarec_arm64_66f0.c"
     "${BOX64_ROOT}/src/dynarec/arm64/dynarec_arm64_f20f.c"
@@ -610,6 +705,7 @@ if(RV64_DYNAREC)
         "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_functions.c"
         "${BOX64_ROOT}/src/dynarec/rv64/rv64_printer.c"
         "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_jmpnext.c"
+        "${BOX64_ROOT}/src/rv64detect.c"
 
         "${BOX64_ROOT}/src/dynarec/rv64/rv64_prolog.S"
         "${BOX64_ROOT}/src/dynarec/rv64/rv64_epilog.S"
@@ -632,19 +728,22 @@ if(RV64_DYNAREC)
     "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_64.c"
     #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_65.c"
     "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_66.c"
-    #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_67.c"
+    "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_67.c"
+    "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_67_32.c"
     "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_d8.c"
     "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_d9.c"
-    #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_da.c"
+    "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_da.c"
     "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_db.c"
-    #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_dc.c"
-    #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_dd.c"
+    "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_dc.c"
+    "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_dd.c"
     "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_de.c"
     "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_df.c"
     "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_f0.c"
     "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_660f.c"
-    #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_6664.c"
-    #"${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_66f0.c"
+    "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_66f20f.c"
+    "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_66f30f.c"
+    "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_6664.c"
+    "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_66f0.c"
     "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_f20f.c"
     "${BOX64_ROOT}/src/dynarec/rv64/dynarec_rv64_f30f.c"
     )
@@ -709,7 +808,15 @@ add_dependencies(${BOX64} WRAPPERS)
 if(STATICBUILD)
     set_target_properties(${BOX64} PROPERTIES LINK_FLAGS "-static -Wl,--no-as-needed -Wl,--whole-archive -Wl,--allow-multiple-definition -lm -ldl -lrt -lpthread -lresolv -lc -Wl,-defsym,_DYNAMIC=0 -pthread")
 else()
-    set_target_properties(${BOX64} PROPERTIES LINK_FLAGS "-Wl,--no-as-needed -lc -lm -ldl -lrt -lpthread -lresolv -Wl,--as-needed -pthread")
+    if(ANDROID)
+        if(TERMUX)
+        target_link_libraries(${BOX64} c m dl android-sysv-semaphore)
+        else()
+        target_link_libraries(${BOX64} c m dl)
+        endif()
+    else()
+	    set_target_properties(${BOX64} PROPERTIES LINK_FLAGS "-Wl,--no-as-needed -lc -lm -ldl -lrt -lpthread -lresolv -Wl,--as-needed -pthread")
+    endif()
 endif()
 if(DYNAREC)
     target_link_libraries(${BOX64} dynarec)
@@ -718,7 +825,7 @@ target_link_libraries(${BOX64} interpreter)
 
 if(${CMAKE_VERSION} VERSION_LESS "3.13")
     if(NOT NOLOADADDR)
-        if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
+        if(CMAKE_C_COMPILER_ID STREQUAL "Clang" OR WITH_MOLD)
             set_target_properties(${BOX64} PROPERTIES LINK_FLAGS "-Wl,--image-base=${BOX64_ELF_ADDRESS}")
         else()
             set_target_properties(${BOX64} PROPERTIES LINK_FLAGS "-Wl,-Ttext-segment,${BOX64_ELF_ADDRESS}")
@@ -727,7 +834,7 @@ if(${CMAKE_VERSION} VERSION_LESS "3.13")
 else()
     # If symbols are missing, try this: target_link_options(${BOX64} PUBLIC -rdynamic)
     if(NOT NOLOADADDR)
-        if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
+        if(CMAKE_C_COMPILER_ID STREQUAL "Clang" OR WITH_MOLD)
             target_link_options(${BOX64} PUBLIC LINKER:--image-base=${BOX64_ELF_ADDRESS})
         else()
             target_link_options(${BOX64} PUBLIC LINKER:-Ttext-segment,${BOX64_ELF_ADDRESS})
@@ -735,28 +842,52 @@ else()
     endif()
 endif()
 
-string(COMPARE EQUAL "${CMAKE_HOST_SYSTEM_PROCESSOR}" "i686"  _x86)
-string(COMPARE EQUAL "${CMAKE_HOST_SYSTEM_PROCESSOR}" "x86_64"  _x86_64)
-string(COMPARE EQUAL "${CMAKE_HOST_SYSTEM_PROCESSOR}" "aarch64"  _aarch64)
-string(COMPARE EQUAL "${CMAKE_HOST_SYSTEM_PROCESSOR}" "riscv64"  _riscv64)
+string(COMPARE EQUAL "${CMAKE_SYSTEM_PROCESSOR}" "i686"  _x86)
+string(COMPARE EQUAL "${CMAKE_SYSTEM_PROCESSOR}" "x86_64"  _x86_64)
+string(COMPARE EQUAL "${CMAKE_SYSTEM_PROCESSOR}" "aarch64"  _aarch64)
+string(COMPARE EQUAL "${CMAKE_SYSTEM_PROCESSOR}" "riscv64"  _riscv64)
 
 if(_x86_64 OR _aarch64)
   add_definitions(-DCONFIG_64BIT)
 endif()
 
 if(NOT _x86 AND NOT _x86_64)
-  install(TARGETS ${BOX64}
+  if(NOT TERMUX)
+   install(TARGETS ${BOX64}
     RUNTIME DESTINATION bin)
+  else()
+   install(TARGETS ${BOX64}
+    RUNTIME DESTINATION ${TERMUX_PATH}/usr/bin)
+  endif()
   if(NOT NO_CONF_INSTALL)
     configure_file(system/box64.conf.cmake system/box64.conf)
-    install(FILES ${CMAKE_BINARY_DIR}/system/box64.conf DESTINATION /etc/binfmt.d/)
-    install(FILES ${CMAKE_SOURCE_DIR}/system/box64.box64rc DESTINATION /etc/)
+	  if(NOT TERMUX)
+    		install(FILES ${CMAKE_BINARY_DIR}/system/box64.conf DESTINATION /etc/binfmt.d/)
+    		install(FILES ${CMAKE_SOURCE_DIR}/system/box64.box64rc DESTINATION /etc/)
+	  else()
+		#install(FILES ${CMAKE_BINARY_DIR}/system/box64.conf DESTINATION ${TERMUX_PATH}/usr/etc/binfmt.d/)
+		install(FILES ${CMAKE_SOURCE_DIR}/system/box64.box64rc DESTINATION ${TERMUX_PATH}/usr/etc/)
+	  endif()
+
   endif()
   if(NOT NO_LIB_INSTALL)
-    install(FILES ${CMAKE_SOURCE_DIR}/x64lib/libstdc++.so.5 DESTINATION /usr/lib/x86_64-linux-gnu/)
-    install(FILES ${CMAKE_SOURCE_DIR}/x64lib/libstdc++.so.6 DESTINATION /usr/lib/x86_64-linux-gnu/)
-    install(FILES ${CMAKE_SOURCE_DIR}/x64lib/libgcc_s.so.1 DESTINATION /usr/lib/x86_64-linux-gnu/)
-    install(FILES ${CMAKE_SOURCE_DIR}/x64lib/libpng12.so.0 DESTINATION /usr/lib/x86_64-linux-gnu/)
+	if(NOT TERMUX)
+    		install(FILES ${CMAKE_SOURCE_DIR}/x64lib/libstdc++.so.5 DESTINATION /usr/lib/x86_64-linux-gnu/)
+    		install(FILES ${CMAKE_SOURCE_DIR}/x64lib/libstdc++.so.6 DESTINATION /usr/lib/x86_64-linux-gnu/)
+    		install(FILES ${CMAKE_SOURCE_DIR}/x64lib/libgcc_s.so.1 DESTINATION /usr/lib/x86_64-linux-gnu/)
+    		install(FILES ${CMAKE_SOURCE_DIR}/x64lib/libpng12.so.0 DESTINATION /usr/lib/x86_64-linux-gnu/)
+    		install(FILES ${CMAKE_SOURCE_DIR}/x64lib/libcrypto.so.1.1 DESTINATION /usr/lib/x86_64-linux-gnu/)
+    		install(FILES ${CMAKE_SOURCE_DIR}/x64lib/libssl.so.1.1 DESTINATION /usr/lib/x86_64-linux-gnu/)
+    		install(FILES ${CMAKE_SOURCE_DIR}/x64lib/libunwind.so.8 DESTINATION /usr/lib/x86_64-linux-gnu/)
+	else()
+		install(FILES ${CMAKE_SOURCE_DIR}/x64lib/libstdc++.so.5 DESTINATION ${TERMUX_PATH}/usr/lib/x86_64-linux-gnu/)
+		install(FILES ${CMAKE_SOURCE_DIR}/x64lib/libstdc++.so.6 DESTINATION ${TERMUX_PATH}/usr/lib/x86_64-linux-gnu/)
+		install(FILES ${CMAKE_SOURCE_DIR}/x64lib/libgcc_s.so.1 DESTINATION ${TERMUX_PATH}/usr/lib/x86_64-linux-gnu/)
+		install(FILES ${CMAKE_SOURCE_DIR}/x64lib/libpng12.so.0 DESTINATION ${TERMUX_PATH}/usr/lib/x86_64-linux-gnu/)
+		install(FILES ${CMAKE_SOURCE_DIR}/x64lib/libcrypto.so.1.1 DESTINATION ${TERMUX_PATH}/usr/lib/x86_64-linux-gnu/)
+		install(FILES ${CMAKE_SOURCE_DIR}/x64lib/libssl.so.1.1 DESTINATION ${TERMUX_PATH}/usr/lib/x86_64-linux-gnu/)
+		install(FILES ${CMAKE_SOURCE_DIR}/x64lib/libunwind.so.8 DESTINATION ${TERMUX_PATH}/usr/lib/x86_64-linux-gnu/)
+	endif()
    endif()
 endif()
 
@@ -774,7 +905,11 @@ set(CPACK_GENERATOR "DEB")
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "ptitSeb")
 set(CPACK_PACKAGE_CONTACT "ptitSeb@box86.org")
 set(CPACK_PACKAGE_DESCRIPTION "Box64 - Linux Userspace x86_64 Emulator with a twist")
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6")
+if(NOT TERMUX)
+	set(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6")
+else()
+	set(CPACK_DEBIAN_PACKAGE_DEPENDS "libandroid-sysv-semaphore")
+endif()
 set(CPACK_PACKAGE_HOMEPAGE_URL, "https://box86.org")
 file(STRINGS "${BOX64_ROOT}/src/box64version.h" TEMP_STRING REGEX "BOX64_MAJOR\\s*")
 string(REGEX REPLACE "BOX64_MAJOR" "" TEMP_STRING ${TEMP_STRING})
@@ -788,9 +923,15 @@ string(REGEX MATCH "[0-9]" BOX64_REVISION ${TEMP_STRING})
 set(CPACK_PACKAGE_VERSION_MAJOR ${BOX64_MAJOR})
 set(CPACK_PACKAGE_VERSION_MINOR ${BOX64_MINOR})
 set(CPACK_PACKAGE_VERSION_PATCH ${BOX64_REVISION})
+if(NOT TERMUX)
 set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/postinst")
+endif()
 if(_aarch64)
-    set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "arm64")
+	if(TERMUX)
+		set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "aarch64")
+	else()
+    		set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "arm64")
+	endif()
 elseif(__riscv64)
     set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "riscv64")
 elseif(_x86_64)
@@ -799,7 +940,14 @@ else()
     #probably wrong...
     execute_process(COMMAND "dpkg --print-architecture" OUTPUT_VARIABLE CPACK_DEBIAN_PACKAGE_ARCHITECTURE)
 endif()
-set(CPACK_DEBIAN_FILE_NAME "${BOX64}-${BOX64_MAJOR}.${BOX64_MINOR}.${BOX64_REVISION}_Linux-${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
+if(TERMUX)
+set(CPACK_PACKAGING_INSTALL_PREFIX "${TERMUX_PATH}/usr")
+endif()
+if(NOT TERMUX)
+set(CPACK_DEBIAN_FILE_NAME "${BOX64}-${BOX64_MAJOR}.${BOX64_MINOR}.${BOX64_REVISION}_${CMAKE_SYSTEM_NAME}-${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
+else()
+set(CPACK_DEBIAN_FILE_NAME "${BOX64}-${BOX64_MAJOR}.${BOX64_MINOR}.${BOX64_REVISION}_Termux-${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
+endif()
 INCLUDE(CPack)
 
 add_test(bootSyscall ${CMAKE_COMMAND} -D TEST_PROGRAM=${CMAKE_BINARY_DIR}/${BOX64}
@@ -906,17 +1054,56 @@ add_test(irelative_reloc ${CMAKE_COMMAND} -D TEST_PROGRAM=${CMAKE_BINARY_DIR}/${
     -D TEST_REFERENCE=${CMAKE_SOURCE_DIR}/tests/ref20.txt
     -P ${CMAKE_SOURCE_DIR}/runTest.cmake )
 
-    add_test(longjumpInSignals ${CMAKE_COMMAND} -D TEST_PROGRAM=${CMAKE_BINARY_DIR}/${BOX64}
+add_test(longjumpInSignals ${CMAKE_COMMAND} -D TEST_PROGRAM=${CMAKE_BINARY_DIR}/${BOX64}
     -D TEST_ARGS=${CMAKE_SOURCE_DIR}/tests/test21 -D TEST_OUTPUT=tmpfile21.txt
     -D TEST_REFERENCE=${CMAKE_SOURCE_DIR}/tests/ref21.txt
     -P ${CMAKE_SOURCE_DIR}/runTest.cmake )
 
-    add_test(x87 ${CMAKE_COMMAND} -D TEST_PROGRAM=${CMAKE_BINARY_DIR}/${BOX64}
+add_test(x87 ${CMAKE_COMMAND} -D TEST_PROGRAM=${CMAKE_BINARY_DIR}/${BOX64}
     -D TEST_ARGS=${CMAKE_SOURCE_DIR}/tests/test22 -D TEST_OUTPUT=tmpfile22.txt
     -D TEST_REFERENCE=${CMAKE_SOURCE_DIR}/tests/ref22.txt
     -P ${CMAKE_SOURCE_DIR}/runTest.cmake )
 
-    file(GLOB extension_tests "${CMAKE_SOURCE_DIR}/tests/extensions/*.c")
+set_tests_properties(x87 PROPERTIES ENVIRONMENT "BOX64_DYNAREC_FASTROUND=0")
+
+add_test(pshufb ${CMAKE_COMMAND} -D TEST_PROGRAM=${CMAKE_BINARY_DIR}/${BOX64}
+    -D TEST_ARGS=${CMAKE_SOURCE_DIR}/tests/test23 -D TEST_OUTPUT=tmpfile23.txt
+    -D TEST_REFERENCE=${CMAKE_SOURCE_DIR}/tests/ref23.txt
+    -P ${CMAKE_SOURCE_DIR}/runTest.cmake )
+
+add_test(bswap ${CMAKE_COMMAND} -D TEST_PROGRAM=${CMAKE_BINARY_DIR}/${BOX64}
+    -D TEST_ARGS=${CMAKE_SOURCE_DIR}/tests/test24 -D TEST_OUTPUT=tmpfile24.txt
+    -D TEST_REFERENCE=${CMAKE_SOURCE_DIR}/tests/ref24.txt
+    -P ${CMAKE_SOURCE_DIR}/runTest.cmake )
+
+add_test(x87cache ${CMAKE_COMMAND} -D TEST_PROGRAM=${CMAKE_BINARY_DIR}/${BOX64}
+    -D TEST_ARGS=${CMAKE_SOURCE_DIR}/tests/test25 -D TEST_OUTPUT=tmpfile25.txt
+    -D TEST_REFERENCE=${CMAKE_SOURCE_DIR}/tests/ref25.txt
+    -P ${CMAKE_SOURCE_DIR}/runTest.cmake )
+
+add_test(feround ${CMAKE_COMMAND} -D TEST_PROGRAM=${CMAKE_BINARY_DIR}/${BOX64}
+    -D TEST_ARGS=${CMAKE_SOURCE_DIR}/tests/test26 -D TEST_OUTPUT=tmpfile26.txt
+    -D TEST_REFERENCE=${CMAKE_SOURCE_DIR}/tests/ref26.txt
+    -P ${CMAKE_SOURCE_DIR}/runTest.cmake )
+set_tests_properties(feround PROPERTIES ENVIRONMENT "BOX64_SYNC_ROUNDING=1")
+
+add_test(sse4_2 ${CMAKE_COMMAND} -D TEST_PROGRAM=${CMAKE_BINARY_DIR}/${BOX64}
+    -D TEST_ARGS=${CMAKE_SOURCE_DIR}/tests/test27 -D TEST_OUTPUT=tmpfile27.txt
+    -D TEST_REFERENCE=${CMAKE_SOURCE_DIR}/tests/ref27.txt
+    -P ${CMAKE_SOURCE_DIR}/runTest.cmake )
+
+add_test(shaext ${CMAKE_COMMAND} -D TEST_PROGRAM=${CMAKE_BINARY_DIR}/${BOX64}
+    -D TEST_ARGS=${CMAKE_SOURCE_DIR}/tests/test28 -D TEST_OUTPUT=tmpfile28.txt
+    -D TEST_REFERENCE=${CMAKE_SOURCE_DIR}/tests/ref28.txt
+    -P ${CMAKE_SOURCE_DIR}/runTest.cmake )
+
+add_test(lock ${CMAKE_COMMAND} -D TEST_PROGRAM=${CMAKE_BINARY_DIR}/${BOX64}
+    -D TEST_ARGS=${CMAKE_SOURCE_DIR}/tests/test29 -D TEST_OUTPUT=tmpfile29.txt
+    -D TEST_REFERENCE=${CMAKE_SOURCE_DIR}/tests/ref29.txt
+    -P ${CMAKE_SOURCE_DIR}/runTest.cmake )
+
+
+file(GLOB extension_tests "${CMAKE_SOURCE_DIR}/tests/extensions/*.c")
 foreach(file ${extension_tests})
     get_filename_component(testname "${file}" NAME_WE)
     add_test(NAME "${testname}" COMMAND ${CMAKE_COMMAND} -D TEST_PROGRAM=${CMAKE_BINARY_DIR}/${BOX64}

@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
-#include <pthread.h>
 #include <errno.h>
 
 #include "debug.h"
@@ -35,6 +34,7 @@ uintptr_t dynarec64_DF(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int nin
     int64_t j64;
     int64_t fixedaddress;
     int unscaled;
+    int i1;
 
     MAYUSE(s0);
     MAYUSE(v2);
@@ -52,12 +52,20 @@ uintptr_t dynarec64_DF(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int nin
         case 0xC7:
             INST_NAME("FFREEP STx");
             // not handling Tag...
-            x87_do_pop(dyn, ninst, x3);
+            X87_POP_OR_FAIL(dyn, ninst, x3);
             break;
 
         case 0xE0:
             INST_NAME("FNSTSW AX");
             LDRw_U12(x2, xEmu, offsetof(x64emu_t, top));
+            if(dyn->n.x87stack) {
+                if(dyn->n.x87stack>0) {
+                    SUBw_U12(x2, x2, dyn->n.x87stack);
+                } else {
+                    ADDw_U12(x2, x2, -dyn->n.x87stack);
+                }
+                ANDw_mask(x2, x2, 0, 2);  //mask=7
+            }
             LDRH_U12(x1, xEmu, offsetof(x64emu_t, sw));
             BFIw(x1, x2, 11, 3); // inject top
             STRH_U12(x1, xEmu, offsetof(x64emu_t, sw));
@@ -82,7 +90,7 @@ uintptr_t dynarec64_DF(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int nin
                 FCMPD(v1, v2);
             }
             FCOMI(x1, x2);
-            x87_do_pop(dyn, ninst, x3);
+            X87_POP_OR_FAIL(dyn, ninst, x3);
             break;
         case 0xF0:
         case 0xF1:
@@ -103,7 +111,7 @@ uintptr_t dynarec64_DF(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int nin
                 FCMPD(v1, v2);
             }
             FCOMI(x1, x2);
-            x87_do_pop(dyn, ninst, x3);
+            X87_POP_OR_FAIL(dyn, ninst, x3);
             break;
 
         case 0xC8:
@@ -152,7 +160,7 @@ uintptr_t dynarec64_DF(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int nin
             switch((nextop>>3)&7) {
                 case 0:
                     INST_NAME("FILD ST0, Ew");
-                    v1 = x87_do_push(dyn, ninst, x1, NEON_CACHE_ST_F);
+                    X87_PUSH_OR_FAIL(v1, dyn, ninst, x1, NEON_CACHE_ST_F);
                     addr = geted(dyn, addr, ninst, nextop, &wback, x3, &fixedaddress, &unscaled, 0xfff<<1, 1, rex, NULL, 0, 0);
                     LDSHw(x1, wback, fixedaddress);
                     if(ST_IS_F(0)) {
@@ -178,6 +186,7 @@ uintptr_t dynarec64_DF(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int nin
                     #else
                     MRS_fpsr(x5);
                     BFCw(x5, FPSR_IOC, 1);   // reset IOC bit
+                    BFCw(x5, FPSR_QC, 1);   // reset QC bit
                     MSR_fpsr(x5);
                     if(ST_IS_F(0)) {
                         VFCVTZSs(s0, v1);
@@ -185,15 +194,18 @@ uintptr_t dynarec64_DF(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int nin
                         VFCVTZSd(s0, v1);
                         SQXTN_S_D(s0, s0);
                     }
-                    SQXTN_H_S(s0, s0);
-                    VST16(s0, wback, fixedaddress);
+                    VMOVSto(x3, s0, 0);
                     MRS_fpsr(x5);   // get back FPSR to check the IOC bit
-                    TBZ_MARK3(x5, FPSR_IOC);
-                    MOV32w(x5, 0x8000);
-                    STH(x5, wback, fixedaddress);
+                    TBNZ_MARK2(x5, FPSR_IOC);
+                    SXTHw(x5, x3);  // check if 16bits value is fine
+                    SUBw_REG(x5, x5, x3);
+                    CBZw_MARK3(x5);
+                    MARK2;
+                    MOV32w(x3, 0x8000);
                     MARK3;
+                    STH(x3, wback, fixedaddress);
                     #endif
-                    x87_do_pop(dyn, ninst, x3);
+                    X87_POP_OR_FAIL(dyn, ninst, x3);
                     break;
                 case 2:
                     INST_NAME("FIST Ew, ST0");
@@ -212,6 +224,7 @@ uintptr_t dynarec64_DF(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int nin
                     #else
                     MRS_fpsr(x5);
                     BFCw(x5, FPSR_IOC, 1);   // reset IOC bit
+                    BFCw(x5, FPSR_QC, 1);   // reset QC bit
                     MSR_fpsr(x5);
                     if(ST_IS_F(0)) {
                         FRINTXS(s0, v1);
@@ -221,13 +234,16 @@ uintptr_t dynarec64_DF(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int nin
                         VFCVTZSd(s0, s0);
                         SQXTN_S_D(s0, s0);
                     }
-                    SQXTN_H_S(s0, s0);
-                    VST16(s0, wback, fixedaddress);
+                    VMOVSto(x3, s0, 0);
                     MRS_fpsr(x5);   // get back FPSR to check the IOC bit
-                    TBZ_MARK3(x5, FPSR_IOC);
-                    MOV32w(x5, 0x8000);
-                    STH(x5, wback, fixedaddress);
+                    TBNZ_MARK2(x5, FPSR_IOC);
+                    SXTHw(x5, x3);  // check if 16bits value is fine
+                    SUBw_REG(x5, x5, x3);
+                    CBZw_MARK3(x5);
+                    MARK2;
+                    MOV32w(x3, 0x8000);
                     MARK3;
+                    STH(x3, wback, fixedaddress);
                     #endif
                     x87_restoreround(dyn, ninst, u8);
                     break;
@@ -257,65 +273,120 @@ uintptr_t dynarec64_DF(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int nin
                         VFCVTZSd(s0, s0);
                         SQXTN_S_D(s0, s0);
                     }
-                    SQXTN_H_S(s0, s0);
-                    VST16(s0, wback, fixedaddress);
+                    VMOVSto(x3, s0, 0);
                     MRS_fpsr(x5);   // get back FPSR to check the IOC bit
-                    TBZ_MARK3(x5, FPSR_IOC);
-                    MOV32w(x5, 0x8000);
-                    STH(x5, wback, fixedaddress);
+                    TBNZ_MARK2(x5, FPSR_IOC);
+                    SXTHw(x5, x3);  // check if 16bits value is fine
+                    SUBw_REG(x5, x5, x3);
+                    CBZw_MARK3(x5);
+                    MARK2;
+                    MOV32w(x3, 0x8000);
                     MARK3;
+                    STH(x3, wback, fixedaddress);
                     #endif
-                    x87_do_pop(dyn, ninst, x3);
+                    X87_POP_OR_FAIL(dyn, ninst, x3);
                     x87_restoreround(dyn, ninst, u8);
                     break;
                 case 4:
                     INST_NAME("FBLD ST0, tbytes");
-                    x87_do_push_empty(dyn, ninst, x1);
+                    X87_PUSH_EMPTY_OR_FAIL(dyn, ninst, x1);
                     addr = geted(dyn, addr, ninst, nextop, &ed, x1, &fixedaddress, NULL, 0, 0, rex, NULL, 0, 0);
                     if(ed!=x1) {MOVx_REG(x1, ed);}
                     CALL(fpu_fbld, -1);
                     break;
                 case 5:
                     INST_NAME("FILD ST0, i64");
-                    v1 = x87_do_push(dyn, ninst, x1, NEON_CACHE_ST_D);
+                    X87_PUSH_OR_FAIL(v1, dyn, ninst, x1, NEON_CACHE_ST_I64);
                     addr = geted(dyn, addr, ninst, nextop, &wback, x3, &fixedaddress, &unscaled, 0xfff<<3, 7, rex, NULL, 0, 0);
-                    LDx(x1, wback, fixedaddress);
-                    SCVTFDx(v1, x1);
+                    VLD64(v1, wback, fixedaddress);
+                    if(!ST_IS_I64(0)) {
+                        if(rex.is32bits) {
+                            // need to also feed the STll stuff...
+                            ADDx_U12(x4, xEmu, offsetof(x64emu_t, fpu_ll));
+                            LDRw_U12(x1, xEmu, offsetof(x64emu_t, top));
+                            int a = 0 - dyn->n.x87stack;
+                            if(a) {
+                                if(a<0) {
+                                    SUBw_U12(x1, x1, -a);
+                                } else {
+                                    ADDw_U12(x1, x1, a);
+                                }
+                                ANDw_mask(x1, x1, 0, 2); //mask=7
+                            }
+                            ADDx_REG_LSL(x1, x4, x1, 4);    // fpu_ll is 2 i64
+                            VSTR64_U12(v1, x1, 8);  // ll
+                        }
+                        SCVTFDD(v1, v1);
+                        if(rex.is32bits) {
+                            VSTR64_U12(v1, x1, 0);  // ref
+                        }
+                    }
                     break;
                 case 6:
                     INST_NAME("FBSTP tbytes, ST0");
+                    i1 = x87_stackcount(dyn, ninst, x1);
                     x87_forget(dyn, ninst, x1, x2, 0);
                     addr = geted(dyn, addr, ninst, nextop, &ed, x1, &fixedaddress, NULL, 0, 0, rex, NULL, 0, 0);
                     if(ed!=x1) {MOVx_REG(x1, ed);}
                     CALL(fpu_fbst, -1);
-                    x87_do_pop(dyn, ninst, x3);
+                    x87_unstackcount(dyn, ninst, x1, i1);
+                    X87_POP_OR_FAIL(dyn, ninst, x3);
                     break;
                 case 7:
                     INST_NAME("FISTP i64, ST0");
-                    v1 = x87_get_st(dyn, ninst, x1, x2, 0, NEON_CACHE_ST_D);
-                    u8 = x87_setround(dyn, ninst, x1, x2, x4);
+                    v1 = x87_get_st(dyn, ninst, x1, x2, 0, NEON_CACHE_ST_I64);
+                    if(!ST_IS_I64(0)) {
+                        u8 = x87_setround(dyn, ninst, x1, x2, x4);
+                    }
                     addr = geted(dyn, addr, ninst, nextop, &wback, x2, &fixedaddress, &unscaled, 0xfff<<3, 7, rex, NULL, 0, 0);
                     ed = x1;
                     s0 = fpu_get_scratch(dyn);
-                    #if 0
-                    FRINT64XD(s0, v1);
-                    VFCVTZSd(s0, s0);
-                    VSTR64_U12(s0, wback, fixedaddress);
-                    #else
-                    MRS_fpsr(x5);
-                    BFCw(x5, FPSR_IOC, 1);   // reset IOC bit
-                    MSR_fpsr(x5);
-                    FRINTXD(s0, v1);
-                    VFCVTZSd(s0, s0);
-                    VST64(s0, wback, fixedaddress);
-                    MRS_fpsr(x5);   // get back FPSR to check the IOC bit
-                    TBZ_MARK3(x5, FPSR_IOC);
-                    ORRx_mask(x5, xZR, 1, 1, 0);    //0x8000000000000000
-                    STx(x5, wback, fixedaddress);
-                    MARK3;
-                    #endif
-                    x87_restoreround(dyn, ninst, u8);
-                    x87_do_pop(dyn, ninst, x3);
+                    if(ST_IS_I64(0)) {
+                        VST64(v1, wback, fixedaddress);
+                    } else {
+                        #if 0
+                        FRINT64XD(s0, v1);
+                        VFCVTZSd(s0, s0);
+                        VSTR64_U12(s0, wback, fixedaddress);
+                        #else
+                        if(rex.is32bits) {
+                            // need to check STll first...
+                            ADDx_U12(x5, xEmu, offsetof(x64emu_t, fpu_ll));
+                            LDRw_U12(x1, xEmu, offsetof(x64emu_t, top));
+                            VMOVQDto(x3, v1, 0);
+                            int a = 0 - dyn->n.x87stack;
+                            if(a) {
+                                if(a<0) {
+                                    SUBw_U12(x1, x1, -a);
+                                } else {
+                                    ADDw_U12(x1, x1, a);
+                                }
+                                ANDw_mask(x1, x1, 0, 2); //mask=7
+                            }
+                            ADDx_REG_LSL(x1, x5, x1, 4);    // fpu_ll is 2 i64
+                            LDRx_U12(x5, x1, 0);  // ref
+                            SUBx_REG(x5, x5, x3);
+                            CBNZx_MARK2(x5);
+                            LDRx_U12(x5, x1, 8);  // ll
+                            STx(x5, wback, fixedaddress);
+                            B_MARK3(c__);
+                            MARK2;
+                        }
+                        MRS_fpsr(x5);
+                        BFCw(x5, FPSR_IOC, 1);   // reset IOC bit
+                        MSR_fpsr(x5);
+                        FRINTXD(s0, v1);
+                        VFCVTZSd(s0, s0);
+                        VST64(s0, wback, fixedaddress);
+                        MRS_fpsr(x5);   // get back FPSR to check the IOC bit
+                        TBZ_MARK3(x5, FPSR_IOC);
+                        ORRx_mask(x5, xZR, 1, 1, 0);    //0x8000000000000000
+                        STx(x5, wback, fixedaddress);
+                        MARK3;
+                        #endif
+                        x87_restoreround(dyn, ninst, u8);
+                    }
+                    X87_POP_OR_FAIL(dyn, ninst, x3);
                     break;
                 default:
                     DEFAULT;

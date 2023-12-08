@@ -18,7 +18,10 @@ on:
         - RK3588
         - RPI4ARM64
         - SD845
+        - SD888
+        - ADLINK
         - TEGRAX1
+        - ARM64
       build_type:
         description: 'Build type'
         required: true

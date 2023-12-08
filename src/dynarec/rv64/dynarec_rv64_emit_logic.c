@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
-#include <pthread.h>
 #include <errno.h>
 
 #include "debug.h"
@@ -16,7 +15,6 @@
 #include "emu/x64run_private.h"
 #include "x64trace.h"
 #include "dynarec_native.h"
-#include "../tools/bridge_private.h"
 
 #include "rv64_printer.h"
 #include "dynarec_rv64_private.h"
@@ -165,8 +163,7 @@ void emit_xor16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, 
     }
 
     XOR(s1, s1, s2);
-    SLLI(s1, s1, 48);
-    SRLI(s1, s1, 48);
+    ZEXTH(s1, s1);
 
     IFX(X_PEND) {
         SH(s1, xEmu, offsetof(x64emu_t, res));
@@ -197,8 +194,7 @@ void emit_or16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4) {
     }
 
     OR(s1, s1, s2);
-    SLLI(s1, s1, 48);
-    SRLI(s1, s1, 48);
+    ZEXTH(s1, s1);
     IFX(X_PEND) {
         SD(s1, xEmu, offsetof(x64emu_t, res));
     }
@@ -426,7 +422,7 @@ void emit_and32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int64_t c, i
         MOV64xw(s3, c);
         AND(s1, s1, s3); // res = s1 & s2
     }
-    if (!rex.w) ZEROUP(s1);
+    if (!rex.w && c<0 && c>=-2048) ZEROUP(s1);
 
     IFX(X_PEND) {
         SDxw(s1, xEmu, offsetof(x64emu_t, res));

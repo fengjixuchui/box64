@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
-#include <pthread.h>
 #include <errno.h>
 
 #include "debug.h"
@@ -16,7 +15,6 @@
 #include "emu/x64run_private.h"
 #include "x64trace.h"
 #include "dynarec_native.h"
-#include "../tools/bridge_private.h"
 
 #include "rv64_printer.h"
 #include "dynarec_rv64_private.h"
@@ -327,11 +325,15 @@ void emit_rol32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s
     } else {
         ANDI(s4, s2, 0x1f);
     }
-    SLLxw(s3, s1, s4);
-    NEG(s4, s4);
-    ADDI(s4, s4, rex.w?64:32);
-    SRLxw(s1, s1, s4);
-    OR(s1, s3, s1);
+    if(rv64_zbb) {
+        ROLxw(s1, s1, s4);
+    } else {
+        SLLxw(s3, s1, s4);
+        NEG(s4, s4);
+        ADDI(s4, s4, rex.w?64:32);
+        SRLxw(s1, s1, s4);
+        OR(s1, s3, s1);
+    }
     IFX(X_PEND) {
         SDxw(s1, xEmu, offsetof(x64emu_t, res));
     }
@@ -370,17 +372,21 @@ void emit_ror32(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, int s2, int s
     } else {
         ANDI(s4, s2, 0x1f);
     }
-    SRLxw(s3, s1, s4);
-    NEG(s4, s4);
-    ADDI(s4, s4, rex.w?64:32);
-    SLLxw(s1, s1, s4);
-    OR(s1, s3, s1);
+    if(rv64_zbb) {
+        RORxw(s1, s1, s4);
+    } else {
+        SRLxw(s3, s1, s4);
+        NEG(s4, s4);
+        ADDI(s4, s4, rex.w?64:32);
+        SLLxw(s1, s1, s4);
+        OR(s1, s3, s1);
+    }
     IFX(X_PEND) {
         SDxw(s1, xEmu, offsetof(x64emu_t, res));
     }
     IFX(X_CF) {
-        SRLI(s3, s1, rex.w?63:31);
-        AND(xFlags, xFlags, s3);
+        SRLIxw(s3, s1, rex.w?63:31);
+        OR(xFlags, xFlags, s3);
     }
     IFX(X_OF) {
         ADDI(s3, xZR, 1);
@@ -413,9 +419,15 @@ void emit_rol32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, 
         }
         return;
     }
-    SLLIxw(s3, s1, c);
-    SRLIxw(s1, s1, (rex.w?64:32)-c);
-    OR(s1, s3, s1);
+    if(rv64_zbb) {
+        RORIxw(s1, s1, (rex.w?64:32)-c);
+    } else if (rv64_xtheadbb) {
+        TH_SRRIxw(s1, s1, (rex.w?64:32)-c);
+    } else {
+        SLLIxw(s3, s1, c);
+        SRLIxw(s1, s1, (rex.w?64:32)-c);
+        OR(s1, s3, s1);
+    }
     IFX(X_PEND) {
         SDxw(s1, xEmu, offsetof(x64emu_t, res));
     }
@@ -454,15 +466,21 @@ void emit_ror32c(dynarec_rv64_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, 
         }
         return;
     }
-    SRLIxw(s3, s1, c);
-    SLLIxw(s1, s1, (rex.w?64:32)-c);
-    OR(s1, s3, s1);
+    if(rv64_zbb) {
+        RORIxw(s1, s1, c);
+    } else if (rv64_xtheadbb) {
+        TH_SRRIxw(s1, s1, c);
+    } else {
+        SRLIxw(s3, s1, c);
+        SLLIxw(s1, s1, (rex.w?64:32)-c);
+        OR(s1, s3, s1);
+    }
     IFX(X_PEND) {
         SDxw(s1, xEmu, offsetof(x64emu_t, res));
     }
     IFX(X_CF) {
-        SRLI(s3, s1, rex.w?63:31);
-        AND(xFlags, xFlags, s3);
+        SRLIxw(s3, s1, rex.w?63:31);
+        OR(xFlags, xFlags, s3);
     }
     IFX(X_OF) {
         if(c==1) {

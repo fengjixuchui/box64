@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
-#include <pthread.h>
 #include <errno.h>
 #include <string.h>
 
@@ -27,7 +26,7 @@
 #error No STEP defined
 #endif
 
-uintptr_t native_pass(dynarec_native_t* dyn, uintptr_t addr)
+uintptr_t native_pass(dynarec_native_t* dyn, uintptr_t addr, int alternate, int is32bits)
 {
     int ok = 1;
     int ninst = 0;
@@ -47,8 +46,8 @@ uintptr_t native_pass(dynarec_native_t* dyn, uintptr_t addr)
     fpu_reset(dyn);
     ARCH_INIT();
     int reset_n = -1;
-    dyn->last_ip = (dyn->insts && dyn->insts[0].pred_sz)?0:ip;  // RIP is always set at start of block unless there is a predecessor!
-    int stopblock = 2+(FindElfAddress(my_context, addr)?0:1); // if block is in elf_memory, it can be extended with bligblocks==2, else it needs 3
+    dyn->last_ip = (alternate || (dyn->insts && dyn->insts[0].pred_sz))?0:ip;  // RIP is always set at start of block unless there is a predecessor!
+    int stopblock = 2+(FindElfAddress(my_context, addr)?0:1); // if block is in elf_memory, it can be extended with box64_dynarec_bigblock==2, else it needs 3
     // ok, go now
     INIT;
     while(ok) {
@@ -75,7 +74,7 @@ uintptr_t native_pass(dynarec_native_t* dyn, uintptr_t addr)
             }
             reset_n = -1;
         } else if(ninst && (dyn->insts[ninst].pred_sz>1 || (dyn->insts[ninst].pred_sz==1 && dyn->insts[ninst].pred[0]!=ninst-1)))
-            dyn->last_ip = 0;   // reset IP if some jump are comming here
+            dyn->last_ip = 0;   // reset IP if some jump are coming here
         fpu_propagate_stack(dyn, ninst);
         NEW_INST;
         if(!ninst) {
@@ -89,17 +88,17 @@ uintptr_t native_pass(dynarec_native_t* dyn, uintptr_t addr)
         if(box64_dynarec_test) {
             MESSAGE(LOG_DUMP, "TEST INIT ----\n");
             fpu_reflectcache(dyn, ninst, x1, x2, x3);
-            GO_TRACE(x64test_init, 1);
+            GO_TRACE(x64test_init, 1, x5);
             fpu_unreflectcache(dyn, ninst, x1, x2, x3);
             MESSAGE(LOG_DUMP, "----------\n");
         }
 #ifdef HAVE_TRACE
         else if(my_context->dec && box64_dynarec_trace) {
-        if((trace_end == 0) 
+        if((trace_end == 0)
             || ((ip >= trace_start) && (ip < trace_end)))  {
                 MESSAGE(LOG_DUMP, "TRACE ----\n");
                 fpu_reflectcache(dyn, ninst, x1, x2, x3);
-                GO_TRACE(PrintTrace, 1);
+                GO_TRACE(PrintTrace, 1, x5);
                 fpu_unreflectcache(dyn, ninst, x1, x2, x3);
                 MESSAGE(LOG_DUMP, "----------\n");
             }
@@ -108,21 +107,24 @@ uintptr_t native_pass(dynarec_native_t* dyn, uintptr_t addr)
 
         rep = 0;
         uint8_t pk = PK(0);
-        while((pk==0xF2) || (pk==0xF3)) {
-            rep = pk-0xF1;
-            ++addr;
-            pk = PK(0);
-        }
-        while(pk==0x3E || pk==0x26) {   //Branch Taken Hint ignored, same for ES: prefix
+        while((pk==0xF2) || (pk==0xF3) || (pk==0x3E) || (pk==0x26)) {
+            switch(pk) {
+                case 0xF2: rep = 1; break;
+                case 0xF3: rep = 2; break;
+                case 0x3E:
+                case 0x26: /* ignored */ break;
+            }
             ++addr;
             pk = PK(0);
         }
         rex.rex = 0;
-        while(pk>=0x40 && pk<=0x4f) {
-            rex.rex = pk;
-            ++addr;
-            pk = PK(0);
-        }
+        rex.is32bits = is32bits;
+        if(!rex.is32bits)
+            while(pk>=0x40 && pk<=0x4f) {
+                rex.rex = pk;
+                ++addr;
+                pk = PK(0);
+            }
 
         addr = dynarec64_00(dyn, addr, ip, ninst, rex, rep, &ok, &need_epilog);
 
@@ -165,7 +167,7 @@ uintptr_t native_pass(dynarec_native_t* dyn, uintptr_t addr)
             if((dyn->insts[ii].x64.barrier&BARRIER_FULL)==BARRIER_FULL)
                 reset_n = -2;    // hack to say Barrier!
             else {
-                reset_n = getNominalPred(dyn, ii);  // may get -1 if no predecessor are availble
+                reset_n = getNominalPred(dyn, ii);  // may get -1 if no predecessor are available
                 if(reset_n==-1) {
                     reset_n = -2;
                     MESSAGE(LOG_DEBUG, "Warning, Reset Caches mark not found\n");
@@ -182,7 +184,7 @@ uintptr_t native_pass(dynarec_native_t* dyn, uintptr_t addr)
                 dyn->forward_size = 0;
                 dyn->forward_ninst = 0;
                 ok = 1; // in case it was 0
-            } else if ((dyn->forward_to < addr) || !ok) {
+            } else if ((dyn->forward_to < addr) || ok<=0) {
                 // something when wrong! rollback
                 if(box64_dynarec_dump) dynarec_log(LOG_NONE, "Could not forward extend block for %d bytes %p -> %p\n", dyn->forward_to-dyn->forward, (void*)dyn->forward, (void*)dyn->forward_to);
                 ok = 0;
@@ -199,7 +201,7 @@ uintptr_t native_pass(dynarec_native_t* dyn, uintptr_t addr)
             if(*(uint32_t*)addr!=0) {   // check if need to continue (but is next 4 bytes are 0, stop)
                 uintptr_t next = get_closest_next(dyn, addr);
                 if(next && (
-                    (((next-addr)<15) && is_nops(dyn, addr, next-addr)) 
+                    (((next-addr)<15) && is_nops(dyn, addr, next-addr))
                     /*||(((next-addr)<30) && is_instructions(dyn, addr, next-addr))*/ ))
                 {
                     ok = 1;
@@ -213,18 +215,25 @@ uintptr_t native_pass(dynarec_native_t* dyn, uintptr_t addr)
                     if(box64_dynarec_dump) dynarec_log(LOG_NONE, "Extend block %p, %p -> %p (ninst=%d, jump from %d)\n", dyn, (void*)addr, (void*)next, ninst, reset_n);
                 } else if(next && (next-addr)<box64_dynarec_forward && (getProtection(next)&PROT_READ)/*box64_dynarec_bigblock>=stopblock*/) {
                     if(!((box64_dynarec_bigblock<stopblock) && !isJumpTableDefault64((void*)next))) {
-                        dyn->forward = addr;
-                        dyn->forward_to = next;
-                        dyn->forward_size = dyn->size;
-                        dyn->forward_ninst = ninst;
-                        reset_n = -2;
-                        ok = 1;
+                        if(dyn->forward) {
+                            if(next<dyn->forward_to)
+                                dyn->forward_to = next;
+                            reset_n = -2;
+                            ok = 1;
+                        } else {
+                            dyn->forward = addr;
+                            dyn->forward_to = next;
+                            dyn->forward_size = dyn->size;
+                            dyn->forward_ninst = ninst;
+                            reset_n = -2;
+                            ok = 1;
+                        }
                     }
                 }
             }
         #endif
         if(ok<0)  {
-            ok = 0; need_epilog=1; 
+            ok = 0; need_epilog=1;
             #if STEP == 0
             if(ninst) {
                 --ninst;
@@ -234,11 +243,21 @@ uintptr_t native_pass(dynarec_native_t* dyn, uintptr_t addr)
                 dyn->insts[ninst].x64.need_after |= X_PEND;
                 ++ninst;
             }
+            if(dyn->forward) {
+                // stopping too soon
+                dyn->size = dyn->forward_size;
+                ninst = dyn->forward_ninst+1;
+                addr = dyn->forward;
+                dyn->forward = 0;
+                dyn->forward_to = 0;
+                dyn->forward_size = 0;
+                dyn->forward_ninst = 0;
+            }
             #endif
         }
         ++ninst;
         #if STEP == 0
-        if(ok && (((box64_dynarec_bigblock<stopblock) && !isJumpTableDefault64((void*)addr)) 
+        if(ok && (((box64_dynarec_bigblock<stopblock) && !isJumpTableDefault64((void*)addr))
             || (addr>=box64_nodynarec_start && addr<box64_nodynarec_end)))
         #else
         if(ok && (ninst==dyn->size))
@@ -278,7 +297,7 @@ uintptr_t native_pass(dynarec_native_t* dyn, uintptr_t addr)
     if(need_epilog) {
         NOTEST(x3);
         fpu_purgecache(dyn, ninst, 0, x1, x2, x3);
-        jump_to_epilog(dyn, ip, 0, ninst);  // no linker here, it's an unknow instruction
+        jump_to_epilog(dyn, ip, 0, ninst);  // no linker here, it's an unknown instruction
     }
     FINI;
     MESSAGE(LOG_DUMP, "---- END OF BLOCK ---- (%d)\n", dyn->size);

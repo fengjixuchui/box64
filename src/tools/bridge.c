@@ -6,7 +6,6 @@
 #include <pthread.h>
 #include <sys/mman.h>
 #include <errno.h>
-#include <execinfo.h>
 
 #include <wrappedlibs.h>
 #include "custommem.h"
@@ -54,14 +53,14 @@ brick_t* NewBrick(void* old)
     brick_t* ret = (brick_t*)box_calloc(1, sizeof(brick_t));
     if(old)
         old = old + NBRICK * sizeof(onebridge_t);
-    void* ptr = my_mmap(thread_get_emu(), old, NBRICK * sizeof(onebridge_t), PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | 0x40 | MAP_ANONYMOUS, -1, 0); // 0x40 is MAP_32BIT
+    void* ptr = my_mmap(NULL, old, NBRICK * sizeof(onebridge_t), PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | 0x40 | MAP_ANONYMOUS, -1, 0); // 0x40 is MAP_32BIT
     if(ptr == MAP_FAILED)
-        ptr = my_mmap(thread_get_emu(), NULL, NBRICK * sizeof(onebridge_t), PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | 0x40 | MAP_ANONYMOUS, -1, 0);
+        ptr = my_mmap(NULL, NULL, NBRICK * sizeof(onebridge_t), PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | 0x40 | MAP_ANONYMOUS, -1, 0);
     if(ptr == MAP_FAILED) {
         printf_log(LOG_NONE, "Warning, cannot allocate 0x%lx aligned bytes for bridge, will probably crash later\n", NBRICK*sizeof(onebridge_t));
     }
     #ifdef DYNAREC
-    setProtection((uintptr_t)ptr, NBRICK * sizeof(onebridge_t), PROT_READ | PROT_WRITE | PROT_EXEC | PROT_NOPROT | PROT_MMAP);
+    setProtection((uintptr_t)ptr, NBRICK * sizeof(onebridge_t), PROT_READ | PROT_WRITE | PROT_EXEC | PROT_NOPROT);
     #endif
     dynarec_log(LOG_INFO, "New Bridge brick at %p (size 0x%zx)\n", ptr, NBRICK*sizeof(onebridge_t));
     ret->b = ptr;
@@ -82,11 +81,10 @@ void FreeBridge(bridge_t** bridge)
     if(!bridge || !*bridge)
         return;
     brick_t *b = (*bridge)->head;
-    x64emu_t* emu = thread_get_emu();
     while(b) {
         brick_t *n = b->next;
         dynarec_log(LOG_INFO, "FreeBridge brick at %p (size 0x%zx)\n", b->b, NBRICK*sizeof(onebridge_t));
-        my_munmap(emu, b->b, NBRICK*sizeof(onebridge_t));
+        my_munmap(NULL, b->b, NBRICK*sizeof(onebridge_t));
         box_free(b);
         b = n;
     }
@@ -99,6 +97,7 @@ void FreeBridge(bridge_t** bridge)
 void addBridgeName(void* addr, const char* name);
 #endif
 
+//static const char* default_bridge = "bridge???";
 uintptr_t AddBridge(bridge_t* bridge, wrapper_t w, void* fnc, int N, const char* name)
 {
     brick_t *b = NULL;
@@ -125,10 +124,7 @@ uintptr_t AddBridge(bridge_t* bridge, wrapper_t w, void* fnc, int N, const char*
     b->b[sz].f = (uintptr_t)fnc;
     b->b[sz].C3 = N?0xC2:0xC3;
     b->b[sz].N = N;
-    #ifdef HAVE_TRACE
-    if(name)
-        addBridgeName(fnc, name);
-    #endif
+    b->b[sz].name = name/*?name:default_bridge*/;
 
     return (uintptr_t)&b->b[sz].CC;
 }
@@ -152,7 +148,7 @@ uintptr_t AddCheckBridge(bridge_t* bridge, wrapper_t w, void* fnc, int N, const 
     return ret;
 }
 
-uintptr_t AddAutomaticBridge(x64emu_t* emu, bridge_t* bridge, wrapper_t w, void* fnc, int N)
+uintptr_t AddAutomaticBridge(x64emu_t* emu, bridge_t* bridge, wrapper_t w, void* fnc, int N, const char* name)
 {
     (void)emu;
 
@@ -160,14 +156,14 @@ uintptr_t AddAutomaticBridge(x64emu_t* emu, bridge_t* bridge, wrapper_t w, void*
         return 0;
     uintptr_t ret = CheckBridged(bridge, fnc);
     if(!ret)
-        ret = AddBridge(bridge, w, fnc, N, NULL);
+        ret = AddBridge(bridge, w, fnc, N, name);
     if(!hasAlternate(fnc)) {
         printf_log(LOG_DEBUG, "Adding AutomaticBridge for %p to %p\n", fnc, (void*)ret);
         addAlternate(fnc, (void*)ret);
         #ifdef DYNAREC
         // now, check if dynablock at native address exist
         if(box64_dynarec)
-            DBAlternateBlock(emu, (uintptr_t)fnc, ret);
+            DBAlternateBlock(emu, (uintptr_t)fnc, ret, 0);  // function wrapping is exclusive to 64bits on box64
         #endif
     }
     return ret;
@@ -238,34 +234,13 @@ uintptr_t AddVSyscall(bridge_t* bridge, int num)
     return (uintptr_t)&b->b[sz].CC;
 }
 
-#ifdef HAVE_TRACE
-KHASH_MAP_INIT_INT64(bridgename, const char*)
-static kh_bridgename_t *bridgename;
-void initBridgeName()
-{
-    bridgename = kh_init(bridgename);
-}
-void finiBridgeName()
-{
-    kh_destroy(bridgename, bridgename);
-    bridgename = NULL;
-}
-void addBridgeName(void* addr, const char* name)
-{
-    int ret;
-    khint_t k = kh_put(bridgename, bridgename, (uintptr_t)addr, &ret);
-    if(!ret) // already there
-        return;
-    kh_value(bridgename, k) = name;
-}
 const char* getBridgeName(void* addr)
 {
-    khint_t k = kh_get(bridgename, bridgename, (uintptr_t)addr);
-    if(k!=kh_end(bridgename))
-        return kh_value(bridgename, k);
+    onebridge_t* one = (onebridge_t*)(((uintptr_t)addr/sizeof(onebridge_t))*sizeof(onebridge_t));   // align to start of bridge
+    if(one->C3==0xC3 && one->S=='S' && one->C=='C')
+        return one->name;
     return NULL;
 }
-#endif
 
 
 // Alternate address handling
@@ -309,15 +284,9 @@ void cleanAlternate() {
 
 void init_bridge_helper()
 {
-    #ifdef HAVE_TRACE
-    initBridgeName();
-    #endif
 }
 
 void fini_bridge_helper()
 {
     cleanAlternate();
-    #ifdef HAVE_TRACE
-    finiBridgeName();
-    #endif
 }

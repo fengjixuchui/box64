@@ -16,7 +16,7 @@ static const char* conds[] = {"cEQ", "cNE", "cCS", "cCC", "cMI", "cPL", "cVS", "
 #define abs(A) (((A)<0)?(-(A)):(A))
 
 typedef struct arm64_print_s {
-    int N, S, U, L, Q;
+    int N, S, U, L, Q, A, R;
     int t, n, m, d, t2, a;
     int f, c, o, h, p;
     int i, r, s;
@@ -60,6 +60,8 @@ int isMask(uint32_t opcode, const char* mask, arm64_print_t *a)
             case 'N': a->N = (a->N<<1) | v; break;
             case 'S': a->S = (a->S<<1) | v; break;
             case 'U': a->U = (a->U<<1) | v; break;
+            case 'A': a->A = (a->A<<1) | v; break;
+            case 'R': a->R = (a->R<<1) | v; break;
             case 'L': a->L = (a->L<<1) | v; break;
             case 'Q': a->Q = (a->Q<<1) | v; break;
             case 't': a->t = (a->t<<1) | v; break;
@@ -182,22 +184,22 @@ const char* arm64_print(uint32_t opcode, uintptr_t addr)
     }
     if(isMask(opcode, "01111000010iiiiiiiii00nnnnnttttt", &a)) {
         int offset = signExtend(imm, 9);
-        snprintf(buff, sizeof(buff), "LDRUH %s, [%s, %s0x%x]", Wt[Rt], XtSp[Rn], (offset<0)?"-":"", abs(offset));
+        snprintf(buff, sizeof(buff), "LDURH %s, [%s, %s0x%x]", Wt[Rt], XtSp[Rn], (offset<0)?"-":"", abs(offset));
         return buff;
     }
     if(isMask(opcode, "001110001x0iiiiiiiii00nnnnnttttt", &a)) {
         int offset = signExtend(imm, 9);
-        snprintf(buff, sizeof(buff), "LDRUSB %s, [%s, %s0x%x]", a.x?Xt[Rt]:Wt[Rt], XtSp[Rn], (offset<0)?"-":"", abs(offset));
+        snprintf(buff, sizeof(buff), "LDURSB %s, [%s, %s0x%x]", a.x?Xt[Rt]:Wt[Rt], XtSp[Rn], (offset<0)?"-":"", abs(offset));
         return buff;
     }
     if(isMask(opcode, "011110001x0iiiiiiiii00nnnnnttttt", &a)) {
         int offset = signExtend(imm, 9);
-        snprintf(buff, sizeof(buff), "LDRUSH %s, [%s, %s0x%x]", a.x?Xt[Rt]:Wt[Rt], XtSp[Rn], (offset<0)?"-":"", abs(offset));
+        snprintf(buff, sizeof(buff), "LDURSH %s, [%s, %s0x%x]", a.x?Xt[Rt]:Wt[Rt], XtSp[Rn], (offset<0)?"-":"", abs(offset));
         return buff;
     }
     if(isMask(opcode, "10111000100iiiiiiiii00nnnnnttttt", &a)) {
         int offset = signExtend(imm, 9);
-        snprintf(buff, sizeof(buff), "LDRUSW %s, [%s, %s0x%x]", Xt[Rt], XtSp[Rn], (offset<0)?"-":"", abs(offset));
+        snprintf(buff, sizeof(buff), "LDURSW %s, [%s, %s0x%x]", Xt[Rt], XtSp[Rn], (offset<0)?"-":"", abs(offset));
         return buff;
     }
     if(isMask(opcode, "1x111000000iiiiiiiii00nnnnnttttt", &a)) {
@@ -213,7 +215,7 @@ const char* arm64_print(uint32_t opcode, uintptr_t addr)
     }
     if(isMask(opcode, "01111000000iiiiiiiii00nnnnnttttt", &a)) {
         int offset = signExtend(imm, 9);
-        snprintf(buff, sizeof(buff), "STRUH %s, [%s, %s0x%x]", Wt[Rt], XtSp[Rn], (offset<0)?"-":"", abs(offset));
+        snprintf(buff, sizeof(buff), "STURH %s, [%s, %s0x%x]", Wt[Rt], XtSp[Rn], (offset<0)?"-":"", abs(offset));
         return buff;
     }
     if(isMask(opcode, "1x11100101iiiiiiiiiiiinnnnnttttt", &a)) {
@@ -795,6 +797,11 @@ const char* arm64_print(uint32_t opcode, uintptr_t addr)
         snprintf(buff, sizeof(buff), "CSEL %s, %s, %s, %s", sf?Xt[Rd]:Wt[Rd], sf?Xt[Rn]:Wt[Rn], sf?Xt[Rm]:Wt[Rm], conds[cond]);    
         return buff;
     }
+    if(isMask(opcode, "f1111010010mmmmmcccc00nnnnn0iiii", &a)) {
+        snprintf(buff, sizeof(buff), "CCMP %s, %s, %s 0x%x", sf?Xt[Rn]:Wt[Rn], sf?Xt[Rm]:Wt[Rm], conds[cond], imm);
+        return buff;
+    }
+
     // MISC Bits
     if(isMask(opcode, "f10110101100000000010onnnnnddddd", &a)) {
         snprintf(buff, sizeof(buff), "CL%c %s, %s", option?'S':'Z', sf?Xt[Rd]:Wt[Rd], sf?Xt[Rn]:Wt[Rn]);
@@ -950,6 +957,22 @@ const char* arm64_print(uint32_t opcode, uintptr_t addr)
         snprintf(buff, sizeof(buff), "VCMEQ V%d.%s, V%d.%s, V%d.%s", Rd, Vd, Rn, Vd, Rm, Vd);
         return buff;
     }
+    // CMP zero
+    if(isMask(opcode, "0QU01110ff100000100o10nnnnnddddd", &a)) {
+        const char* Y[] = {"8B", "16B", "4H", "8H", "2S", "4S", "??", "2D"};
+        const char* Z[] = {"GT", "GE", "EQ", "LE"};
+        const char* Vd = Y[((sf)<<1) | a.Q];
+        const char* Cond = Z[(a.o << 1 | a.U)];
+        snprintf(buff, sizeof(buff), "VCM%s V%d.%s, V%d.%s, #0", Cond, Rd, Vd, Rn, Vd);
+        return buff;
+    }
+    // CMPLT zero
+    if(isMask(opcode, "0Q001110ff100000101010nnnnnddddd", &a)) {
+        const char* Y[] = {"8B", "16B", "4H", "8H", "2S", "4S", "??", "2D"};
+        const char* Vd = Y[((sf)<<1) | a.Q];
+        snprintf(buff, sizeof(buff), "VCMLT V%d.%s, V%d.%s, #0", Rd, Vd, Rn, Vd);
+        return buff;
+    }
     // MIN/MAX
     if(isMask(opcode, "0QU01110ff1mmmmm0110o1nnnnnddddd", &a)) {
         const char* Y[] = {"8B", "16B", "4H", "8H", "2S", "4S", "??", "2D"};
@@ -965,11 +988,21 @@ const char* arm64_print(uint32_t opcode, uintptr_t addr)
         snprintf(buff, sizeof(buff), "MOVI V%d.%s, #0x%x", Rd, Vd, imm);
         return buff;
     }
-    // MOV immediate (not)shifted 16bits & 32bits
+    // MOV immediate notshifted 16bits & 32bits
     if(isMask(opcode, "0Q00111100000iiif00001iiiiiddddd", &a)) {
         const char* Y[] = {"2S", "4S", "4H", "8H"};
         const char* Vd = Y[(sf<<1)| a.Q];
-        snprintf(buff, sizeof(buff), "MOVI V%d.%s, #0x%x", Rd, Vd, imm);
+        int sh = 0;
+
+        snprintf(buff, sizeof(buff), "MOVI V%d.%s, #0x%x", Rd, Vd, imm<<sh);
+        return buff;
+    }
+    // MOV immediate shifted 16bits
+    if(isMask(opcode, "0Q00111100000iii101001iiiiiddddd", &a)) {
+        const char* Y[] = {"4H", "8H"};
+        const char* Vd = Y[a.Q];
+
+        snprintf(buff, sizeof(buff), "MOVI V%d.%s, #0x%x", Rd, Vd, imm<<8);
         return buff;
     }
 
@@ -1034,7 +1067,30 @@ const char* arm64_print(uint32_t opcode, uintptr_t addr)
         if(!offset)
             snprintf(buff, sizeof(buff), "%s %c%d, [%s]", op?"STR":"LDR", s, Rt, XtSp[Rn]);
         else
-            snprintf(buff, sizeof(buff), "%s %c%d, [%s, %d]", op?"STR":"LDR", s, Rt, XtSp[Rn], offset);
+            snprintf(buff, sizeof(buff), "%s %c%d, [%s, 0x%x]", op?"STR":"LDR", s, Rt, XtSp[Rn], offset);
+        return buff;
+    }
+    if(isMask(opcode, "ss111100cc1mmmmmoooS10nnnnnttttt", &a)) {
+        char s = '?';
+        int size=imms;
+        int op=0;
+        if(size==0 && opc==1) {s='B';}
+        else if(size==1 && opc==1) {s='H';}
+        else if(size==2 && opc==1) {s='S';}
+        else if(size==3 && opc==1) {s='D';}
+        else if(size==0 && opc==3) {s='Q'; size = 4;}
+        else if(size==0 && opc==0) {s='B'; op=1;}
+        else if(size==1 && opc==0) {s='H'; op=1;}
+        else if(size==2 && opc==0) {s='S'; op=1;}
+        else if(size==3 && opc==0) {s='D'; op=1;}
+        else if(size==0 && opc==2) {s='Q'; op=1; size = 4;}
+
+        const char* extend[] = {"?0", "?1", "UXTW", "LSL", "?4", "?5", "SXTW", "SXTX"};
+        int amount = size*a.S;
+        if(option==3 && !amount)
+            snprintf(buff, sizeof(buff), "%s %c%d, [%s, %s]", op?"STR":"LDR", s, Rt, XtSp[Rn], ((option&1)==0)?Wt[Rm]:Xt[Rm]);
+        else
+            snprintf(buff, sizeof(buff), "%s %c%d, [%s, %s, %s %d]", op?"STR":"LDR", s, Rt, XtSp[Rn], ((option&1)==0)?Wt[Rm]:Xt[Rm], extend[option], amount);
         return buff;
     }
 
@@ -1094,6 +1150,20 @@ const char* arm64_print(uint32_t opcode, uintptr_t addr)
         return buff;
     }
 
+    // FADDP
+    if(isMask(opcode, "0Q1011100f1mmmmm110101nnnnnddddd", &a)) {
+        char s = a.Q?'V':'D';
+        char d = sf?'D':'S';
+        int n = (a.Q && !sf)?4:2;
+        snprintf(buff, sizeof(buff), "VFADDP %c%d.%d%c, %c%d.%d%c, %c%d.%d%c", s, Rd, n, d, s, Rn, n, d, s, Rm, n, d);
+        return buff;
+    }
+    if(isMask(opcode, "011111100f110000110110nnnnnddddd", &a)) {
+        char s = (sf==0)?'S':((sf==1)?'D':'?');
+        snprintf(buff, sizeof(buff), "FADDP %c%d, %c%d, %c%d", s, Rd, s, Rn, s, Rm);
+        return buff;
+    }
+
     // SQRT
     if(isMask(opcode, "0Q1011101f100001111110nnnnnddddd", &a)) {
         char s = a.Q?'V':'D';
@@ -1107,7 +1177,19 @@ const char* arm64_print(uint32_t opcode, uintptr_t addr)
         snprintf(buff, sizeof(buff), "FSQRT %c%d, %c%d", s, Rd, s, Rn);
         return buff;
     }
-
+    // FPRINTX
+    if(isMask(opcode, "0Q1011100f100001100110nnnnnddddd", &a)) {
+        char s = a.Q?'V':'D';
+        char d = sf?'D':'S';
+        int n = (a.Q && !sf)?4:2;
+        snprintf(buff, sizeof(buff), "VFRINTX %c%d.%d%c, %c%d.%d%c", s, Rd, n, d, s, Rn, n, d);
+        return buff;
+    }
+    if (isMask(opcode, "00011110ff100111010000nnnnnddddd", &a)) {
+        char s = (sf==0)?'S':((sf==1)?'D':'?');
+        snprintf(buff, sizeof(buff), "FRINTX %c%d, %c%d", s, Rd, s, Rn);
+        return buff;
+    }
     // FRINTI
     if(isMask(opcode, "0Q1011101f100001100110nnnnnddddd", &a)) {
         char s = a.Q?'V':'D';
@@ -1288,6 +1370,14 @@ const char* arm64_print(uint32_t opcode, uintptr_t addr)
         char s = (option==0)?'S':((option==1)?'D':'?');
         const char* roundings[] = {"N", "P", "M", "Z"};
         snprintf(buff, sizeof(buff), "FCVT%sS %s, %c%d", roundings[a.c], sf?Xt[Rd]:Wt[Rd], s, Rn);
+        return buff;
+    }
+    if(isMask(opcode, "0QU01110of100001101o10nnnnnddddd", &a)) {
+        const char* Y[] = {"2S", "4S", "??", "2D"};
+        const char* Z[] = {"S", "S", "??", "D"};
+        const char* Vd = Y[(sf<<1) | a.Q];
+        const char* roundings[] = {"N", "M", "P", "Z"};
+        snprintf(buff, sizeof(buff), "VFCVT%s%s%s%s V%d.%s, V%d.%s", roundings[option], a.U?"U":"S", a.Q?"Q":"", Z[(sf<<1)|a.Q], Rd, Vd, Rn, Vd);
         return buff;
     }
 
@@ -1487,7 +1577,7 @@ const char* arm64_print(uint32_t opcode, uintptr_t addr)
 
     // DUP
     if(isMask(opcode, "0Q001110000iiiii000001nnnnnddddd", &a)) {
-        const char* Y[] = {"8B", "16B", "4H", "8H", "2S", "4S", "2D", "??"};
+        const char* Y[] = {"8B", "16B", "4H", "8H", "2S", "4S", "??", "2D"};
         const char* Z[] = {"B", "H", "S", "D"};
         int sz = 3;
         if((imm&0b0001)==0b0001) sz=0;
@@ -1499,7 +1589,18 @@ const char* arm64_print(uint32_t opcode, uintptr_t addr)
         snprintf(buff, sizeof(buff), "DUP V%d.%s, V%d.%s[%d]", Rd, Vd, Rn, Vn, sh);
         return buff;
     }
-    
+
+    if(isMask(opcode, "0Q001110000iiiii000011nnnnnddddd", &a)) {
+        const char* Y[] = {"8B", "16B", "4H", "8H", "2S", "4S", "??", "2D"};
+        int sz = 3;
+        if((imm&0b0001)==0b0001) sz=0;
+        else if((imm&0b0011)==0b0010) sz=1;
+        else if((imm&0b0111)==0b0100) sz=2;
+        const char* Vd = Y[(sz<<1)|a.Q];
+        snprintf(buff, sizeof(buff), "DUP V%d.%s, X%d", Rd, Vd, Rn);
+        return buff;
+    }
+
     // AES
     if(isMask(opcode, "0100111000101000010f10nnnnnddddd", &a)) {
         snprintf(buff, sizeof(buff), "AES%c V%d.16B, V%d.16B", sf?'D':'E', Rd, Rn);
@@ -1523,8 +1624,141 @@ const char* arm64_print(uint32_t opcode, uintptr_t addr)
     // DMB ISH
     if(isMask(opcode, "11010101000000110011nnnn10111111", &a)) {
         snprintf(buff, sizeof(buff), "DMB %s", (Rn==0b1011)?"ISH":"???");
+        return buff;
+    }
+    // DSB ISH/ISHST
+    if(isMask(opcode, "11010101000000110011nnnn10011111", &a)) {
+        snprintf(buff, sizeof(buff), "DSB %s", (Rn==0b1011)?"ISH":((Rn==0b1010)?"ISHST":"???"));
+        return buff;
     }
 
+    // CASxw
+    if(isMask(opcode, "1f0010001L1ssssso11111nnnnnttttt", &a)) {
+        snprintf(buff, sizeof(buff), "CAS%s%s %s, %s, [%s]", a.o?"A":"", a.L?"L":"", sf?Xt[Rs]:Wt[Rs], sf?Xt[Rt]:Wt[Rt], XtSp[Rn]);
+        return buff;
+    }
+    // CAS B/H
+    if(isMask(opcode, "0f0010001L1ssssso11111nnnnnttttt", &a)) {
+        snprintf(buff, sizeof(buff), "CAS%s%s%s %s, %s, [%s]", a.o?"A":"", a.L?"L":"", sf?"H":"B", Xt[Rs], Xt[Rt], XtSp[Rn]);
+        return buff;
+    }
+    // CASPxw
+    if(isMask(opcode, "0f0010000L1ssssso11111nnnnnttttt", &a)) {
+        snprintf(buff, sizeof(buff), "CASP%s%s %s,%s, %s,%s, [%s]", a.o?"A":"", a.L?"L":"", sf?Xt[Rs]:Wt[Rs], sf?Xt[Rs+1]:Wt[Rs+1], sf?Xt[Rt]:Wt[Rt], sf?Xt[Rt+1]:Wt[Rt+1], XtSp[Rn]);
+        return buff;
+    }
+    // SWPxw
+    if(isMask(opcode, "1f111000AR1sssss100000nnnnnttttt", &a)) {
+        snprintf(buff, sizeof(buff), "SWP%s%s %s, %s, [%s]", a.A?"A":"", a.R?"L":"", sf?Xt[Rs]:Wt[Rs], sf?Xt[Rt]:Wt[Rt], XtSp[Rn]);
+        return buff;
+    }
+    // SWPxw
+    if(isMask(opcode, "0f111000AR1sssss100000nnnnnttttt", &a)) {
+        snprintf(buff, sizeof(buff), "CAS%s%s%s %s, %s, [%s]", a.A?"A":"", a.R?"L":"", sf?"H":"B", Xt[Rs], Xt[Rt], XtSp[Rn]);
+        return buff;
+    }
+    // LDXXXxw
+    if(isMask(opcode, "1f111000AR1sssss0ooo00nnnnnttttt", &a)) {
+        const char* ops[] = { "ADD", "CLR", "EOR", "SET", "SMAX, SMIN", "UMAX", "UMIN" };
+        if((Rt == 0b11111) && !a.A) {
+            snprintf(buff, sizeof(buff), "ST%s%s %s, [%s]", ops[a.o], a.R?"L":"", sf?Xt[Rs]:Wt[Rs], XtSp[Rn]);
+        } else {
+            snprintf(buff, sizeof(buff), "LD%s%s%s %s, %s, [%s]", ops[a.o], a.A?"A":"", a.R?"L":"", sf?Xt[Rs]:Wt[Rs], sf?Xt[Rt]:Wt[Rt], XtSp[Rn]);
+        }
+        return buff;
+    }
+    // LDXXX B/H
+    if(isMask(opcode, "0f111000AR1sssss0ooo00nnnnnttttt", &a)) {
+        const char* ops[] = { "ADD", "CLR", "EOR", "SET", "SMAX, SMIN", "UMAX", "UMIN" };
+        if((Rt == 0b11111) && !a.A) {
+            snprintf(buff, sizeof(buff), "ST%s%s%s %s, [%s]", ops[a.o], a.R?"L":"", sf?"H":"B", Xt[Rs], XtSp[Rn]);
+        } else {
+            snprintf(buff, sizeof(buff), "LD%s%s%s%s %s, %s, [%s]", ops[a.o], a.A?"A":"", a.R?"L":"", sf?"H":"B", Xt[Rs], Xt[Rt], XtSp[Rn]);
+        }
+        return buff;
+    }
+    // AXFLAG
+    if(isMask(opcode, "11010101000000000100000001011111", &a)) {
+        snprintf(buff, sizeof(buff), "AXFLAG");
+        return buff;
+    }
+    // XAFLAG
+    if(isMask(opcode, "11010101000000000100000000111111", &a)) {
+        snprintf(buff, sizeof(buff), "XAFLAG");
+        return buff;
+    }
+    // CFINV
+    if(isMask(opcode, "11010101000000000100000000011111", &a)) {
+        snprintf(buff, sizeof(buff), "CFINV");
+        return buff;
+    }
+    // RMIF
+    if(isMask(opcode, "10111010000iiiiii00001nnnnn0oooo", &a)) {
+        snprintf(buff, sizeof(buff), "RMIF %s, #%d, #0x%x", Xt[Rn], imm, opc);
+        return buff;
+    }
+    // SETF
+    if(isMask(opcode, "00111010000000000f0010nnnnn01101", &a)) {
+        snprintf(buff, sizeof(buff), "SETF%d %s", 8<<sf, Xt[Rn]);
+        return buff;
+    }
+    // REV64
+    if(isMask(opcode, "0Q001110ff100000000010nnnnnddddd", &a)) {
+        const char* T[] = {"8B", "16B", "4H", "8H", "2S", "4S", "??", "??"};
+        int sz = sf;
+        const char* Vn = T[(sz<<1)|a.Q];
+        const char* Vd = T[(sz<<1)|a.Q];
+        snprintf(buff, sizeof(buff), "REV64 V%d.%s, V%d.%s",Rd, Vd, Rn, Vn);
+        return buff;
+    }
+    //TRNx
+    if(isMask(opcode, "0Q001110ff0mmmmm0o1010nnnnnddddd", &a)) {
+        const char* T[] = {"8B", "16B", "4H", "8H", "2S", "4S", "??", "2D"};
+        int sz = sf;
+        const char* Vn = T[(sz<<1)|a.Q];
+        const char* Vm = T[(sz<<1)|a.Q];
+        const char* Vd = T[(sz<<1)|a.Q];
+        snprintf(buff, sizeof(buff), "TRN%d V%d.%s, V%d.%s, V%d.%s", a.o+1, Rd, Vd, Rn, Vn, Rm, Vm);
+        return buff;
+    }
+    //SHA1 stuffs
+    if(isMask(opcode, "0101111000101000000010nnnnnddddd", &a)) {
+        snprintf(buff, sizeof(buff), "SHA1H S%d, S%d", Rd, Rn);
+        return buff;
+    }
+    if(isMask(opcode, "0101111000101000000110nnnnnddddd", &a)) {
+        snprintf(buff, sizeof(buff), "SHA1SU1 V%d.4S, V%d.4S", Rd, Rn);
+        return buff;
+    }
+    if(isMask(opcode, "01011110000mmmmm000000nnnnnddddd", &a)) {
+        snprintf(buff, sizeof(buff), "SHA1C Q%d, S%d, V%d.4S", Rd, Rn, Rm);
+        return buff;
+    }
+    if(isMask(opcode, "01011110000mmmmm001000nnnnnddddd", &a)) {
+        snprintf(buff, sizeof(buff), "SHA1M Q%d, S%d, V%d.4S", Rd, Rn, Rm);
+        return buff;
+    }
+    if(isMask(opcode, "01011110000mmmmm000100nnnnnddddd", &a)) {
+        snprintf(buff, sizeof(buff), "SHA1P Q%d, S%d, V%d.4S", Rd, Rn, Rm);
+        return buff;
+    }
+    //SHA256 stuffs
+    if(isMask(opcode, "0101111000101000001010nnnnnddddd", &a)) {
+        snprintf(buff, sizeof(buff), "SHA256SU0 V%d.4S, V%d.4S", Rd, Rn);
+        return buff;
+    }
+    if(isMask(opcode, "01011110000mmmmm011000nnnnnddddd", &a)) {
+        snprintf(buff, sizeof(buff), "SHA256SU1 V%d.4S, V%d.4S, V%d.4S", Rd, Rn, Rm);
+        return buff;
+    }
+    if(isMask(opcode, "01011110000mmmmm010000nnnnnddddd", &a)) {
+        snprintf(buff, sizeof(buff), "SHA256H Q%d, Q%d, V%d.4S", Rd, Rn, Rm);
+        return buff;
+    }
+    if(isMask(opcode, "01011110000mmmmm010100nnnnnddddd", &a)) {
+        snprintf(buff, sizeof(buff), "SHA256H2 Q%d, Q%d, V%d.4S", Rd, Rn, Rm);
+        return buff;
+    }
 
     snprintf(buff, sizeof(buff), "%08X ???", __builtin_bswap32(opcode));
     return buff;

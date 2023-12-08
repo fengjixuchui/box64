@@ -14,6 +14,7 @@ typedef struct kh_defaultversion_s kh_defaultversion_t;
 typedef struct dynablock_s dynablock_t;
 #endif
 
+// Open an elfheader. Transfert control of f to elfheader also!
 elfheader_t* LoadAndCheckElfHeader(FILE* f, const char* name, int exec); // exec : 0 = lib, 1 = exec
 void FreeElfHeader(elfheader_t** head);
 const char* ElfName(elfheader_t* head);
@@ -22,10 +23,9 @@ void ElfAttachLib(elfheader_t* head, library_t* lib);
 
 // return 0 if OK
 int CalcLoadAddr(elfheader_t* head);
-int AllocElfMemory(box64context_t* context, elfheader_t* head, int mainbin);
+int AllocLoadElfMemory(box64context_t* context, elfheader_t* head, int mainbin);
 void FreeElfMemory(elfheader_t* head);
-int LoadElfMemory(FILE* f, box64context_t* context, elfheader_t* head);
-int ReloadElfMemory(FILE* f, box64context_t* context, elfheader_t* head);
+int isElfHasNeededVer(elfheader_t* head, const char* libname, elfheader_t* verneeded);
 int RelocateElf(lib_t *maplib, lib_t* local_maplib, int bindnow, elfheader_t* head);
 int RelocateElfPlt(lib_t *maplib, lib_t* local_maplib, int bindnow, elfheader_t* head);
 void CalcStack(elfheader_t* h, uint64_t* stacksz, size_t* stackalign);
@@ -64,6 +64,9 @@ const char* GetParentSymbolVersion(elfheader_t* h, int index);
 const char* VersionedName(const char* name, int ver, const char* vername);
 int SameVersionedSymbol(const char* name1, int ver1, const char* vername1, const char* name2, int ver2, const char* vername2);
 int GetVersionIndice(elfheader_t* h, const char* vername);
+int GetNeededVersionCnt(elfheader_t* h, const char* libname);
+const char* GetNeededVersionString(elfheader_t* h, const char* libname, int idx);
+int GetNeededVersionForLib(elfheader_t* h, const char* libname, const char* ver);
 
 kh_mapsymbols_t* GetMapSymbols(elfheader_t* h);
 kh_mapsymbols_t* GetWeakSymbols(elfheader_t* h);

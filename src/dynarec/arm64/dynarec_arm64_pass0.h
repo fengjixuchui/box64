@@ -16,13 +16,13 @@
         dyn->f.pending=(B)&SF_SET_PENDING;      \
         dyn->f.dfnone=((B)&SF_SET)?1:0;
 #define EMIT(A)     
-#define JUMP(A, C)         add_next(dyn, (uintptr_t)A); dyn->insts[ninst].x64.jmp = A; dyn->insts[ninst].x64.jmp_cond = C
+#define JUMP(A, C)         add_next(dyn, (uintptr_t)A); SMEND(); dyn->insts[ninst].x64.jmp = A; dyn->insts[ninst].x64.jmp_cond = C
 #define BARRIER(A)      if(A!=BARRIER_MAYBE) {fpu_purgecache(dyn, ninst, 0, x1, x2, x3); dyn->insts[ninst].x64.barrier = A;} else dyn->insts[ninst].barrier_maybe = 1
 #define BARRIER_NEXT(A) dyn->insts[ninst+1].x64.barrier = A
 #define NEW_INST \
         ++dyn->size;                            \
         if(dyn->size+3>=dyn->cap) {             \
-                dyn->insts = (instruction_native_t*)customRealloc(dyn->insts, sizeof(instruction_native_t)*dyn->cap*2);\
+                dyn->insts = (instruction_native_t*)dynaRealloc(dyn->insts, sizeof(instruction_native_t)*dyn->cap*2);\
                 memset(&dyn->insts[dyn->cap], 0, sizeof(instruction_native_t)*dyn->cap);   \
                 dyn->cap *= 2;                  \
         }                                       \
@@ -40,9 +40,10 @@
 #define DEFAULT                         \
         --dyn->size;                    \
         *ok = -1;                       \
-        if(box64_dynarec_log>=LOG_INFO) {\
-        dynarec_log(LOG_NONE, "%p: Dynarec stopped because of Opcode %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X", \
-        (void*)ip, PKip(0),             \
+        if(box64_dynarec_log>=LOG_INFO || box64_dynarec_dump || box64_dynarec_missing) {\
+        dynarec_log(LOG_NONE, "%p: Dynarec stopped because of %sOpcode %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X", \
+        (void*)ip, rex.is32bits?"32bits ":"",\
+        PKip(0),                        \
         PKip(1), PKip(2), PKip(3),      \
         PKip(4), PKip(5), PKip(6),      \
         PKip(7), PKip(8), PKip(9),      \

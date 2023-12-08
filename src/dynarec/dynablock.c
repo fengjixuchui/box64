@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
 #include <errno.h>
 #include <setjmp.h>
 #include <sys/mman.h>
@@ -9,7 +8,6 @@
 #include "box64context.h"
 #include "dynarec.h"
 #include "emu/x64emu_private.h"
-#include "tools/bridge_private.h"
 #include "x64run.h"
 #include "x64emu.h"
 #include "box64stack.h"
@@ -43,10 +41,10 @@ dynablock_t* InvalidDynablock(dynablock_t* db, int need_lock)
         if(db->gone)
             return NULL; // already in the process of deletion!
         dynarec_log(LOG_DEBUG, "InvalidDynablock(%p), db->block=%p x64=%p:%p already gone=%d\n", db, db->block, db->x64_addr, db->x64_addr+db->x64_size-1, db->gone);
+        // remove jumptable without waiting
+        setJumpTableDefault64(db->x64_addr);
         if(need_lock)
             mutex_lock(&my_context->mutex_dyndump);
-        // remove jumptable
-        setJumpTableDefault64(db->x64_addr);
         db->done = 0;
         db->gone = 1;
         if(need_lock)
@@ -76,10 +74,10 @@ void FreeDynablock(dynablock_t* db, int need_lock)
         if(db->gone)
             return; // already in the process of deletion!
         dynarec_log(LOG_DEBUG, "FreeDynablock(%p), db->block=%p x64=%p:%p already gone=%d\n", db, db->block, db->x64_addr, db->x64_addr+db->x64_size-1, db->gone);
+        // remove jumptable without waiting
+        setJumpTableDefault64(db->x64_addr);
         if(need_lock)
             mutex_lock(&my_context->mutex_dyndump);
-        // remove jumptable
-        setJumpTableDefault64(db->x64_addr);
         dynarec_log(LOG_DEBUG, " -- FreeDyrecMap(%p, %d)\n", db->actual_block, db->size);
         db->done = 0;
         db->gone = 1;
@@ -173,18 +171,23 @@ dynablock_t *AddNewDynablock(uintptr_t addr)
 }
 
 //TODO: move this to dynrec_arm.c and track allocated structure to avoid memory leak
-static __thread struct __jmp_buf_tag dynarec_jmpbuf;
+static __thread JUMPBUFF dynarec_jmpbuf;
+#ifdef ANDROID
+#define DYN_JMPBUF dynarec_jmpbuf
+#else
+#define DYN_JMPBUF &dynarec_jmpbuf
+#endif
 
 void cancelFillBlock()
 {
-    longjmp(&dynarec_jmpbuf, 1);
+    longjmp(DYN_JMPBUF, 1);
 }
 
 /* 
     return NULL if block is not found / cannot be created. 
     Don't create if create==0
 */
-static dynablock_t* internalDBGetBlock(x64emu_t* emu, uintptr_t addr, uintptr_t filladdr, int create, int need_lock)
+static dynablock_t* internalDBGetBlock(x64emu_t* emu, uintptr_t addr, uintptr_t filladdr, int create, int need_lock, int is32bits)
 {
     if(hasAlternate((void*)addr))
         return NULL;
@@ -210,20 +213,21 @@ static dynablock_t* internalDBGetBlock(x64emu_t* emu, uintptr_t addr, uintptr_t 
 
     // fill the block
     block->x64_addr = (void*)addr;
-    if(sigsetjmp(&dynarec_jmpbuf, 1)) {
-        printf_log(LOG_INFO, "FillBlock at %p triggered a segfault, cancelling\n", (void*)addr);
+    if(sigsetjmp(DYN_JMPBUF, 1)) {
+        printf_log(LOG_INFO, "FillBlock at %p triggered a segfault, canceling\n", (void*)addr);
+        FreeDynablock(block, 0);
         if(need_lock)
             mutex_unlock(&my_context->mutex_dyndump);
         return NULL;
     }
-    void* ret = FillBlock64(block, filladdr);
+    void* ret = FillBlock64(block, filladdr, (addr==filladdr)?0:1, is32bits);
     if(!ret) {
         dynarec_log(LOG_DEBUG, "Fillblock of block %p for %p returned an error\n", block, (void*)addr);
         customFree(block);
         block = NULL;
     }
     // check size
-    if(block && (block->x64_size || (!block->x64_size && !block->done))) {
+    if(block) {
         int blocksz = block->x64_size;
         if(blocksz>my_context->max_db_size)
             my_context->max_db_size = blocksz;
@@ -245,9 +249,9 @@ static dynablock_t* internalDBGetBlock(x64emu_t* emu, uintptr_t addr, uintptr_t 
     return block;
 }
 
-dynablock_t* DBGetBlock(x64emu_t* emu, uintptr_t addr, int create)
+dynablock_t* DBGetBlock(x64emu_t* emu, uintptr_t addr, int create, int is32bits)
 {
-    dynablock_t *db = internalDBGetBlock(emu, addr, addr, create, 1);
+    dynablock_t *db = internalDBGetBlock(emu, addr, addr, create, 1, is32bits);
     if(db && db->done && db->block && getNeedTest(addr)) {
         if(db->always_test)
             sched_yield();  // just calm down...
@@ -255,8 +259,10 @@ dynablock_t* DBGetBlock(x64emu_t* emu, uintptr_t addr, int create)
             emu->test.test = 0;
             if(box64_dynarec_fastpage) {
                 uint32_t hash = X31_hash_code(db->x64_addr, db->x64_size);
-                if(hash==db->hash)  // seems ok, run it without reprotecting it
+                if(hash==db->hash) { // seems ok, run it without reprotecting it
+                    setJumpTableIfRef64(db->x64_addr, db->block, db->jmpnext);
                     return db;
+                }
                 db->done = 0;   // invalidating the block, it's already not good
                 dynarec_log(LOG_DEBUG, "Invalidating block %p from %p:%p (hash:%X/%X) for %p\n", db, db->x64_addr, db->x64_addr+db->x64_size-1, hash, db->hash, (void*)addr);
                 // Free db, it's now invalid!
@@ -275,7 +281,7 @@ dynablock_t* DBGetBlock(x64emu_t* emu, uintptr_t addr, int create)
             // Free db, it's now invalid!
             dynablock_t* old = InvalidDynablock(db, need_lock);
             // start again... (will create a new block)
-            db = internalDBGetBlock(emu, addr, addr, create, need_lock);
+            db = internalDBGetBlock(emu, addr, addr, create, need_lock, is32bits);
             if(db) {
                 if(db->previous)
                     FreeInvalidDynablock(db->previous, need_lock);
@@ -298,11 +304,11 @@ dynablock_t* DBGetBlock(x64emu_t* emu, uintptr_t addr, int create)
     return db;
 }
 
-dynablock_t* DBAlternateBlock(x64emu_t* emu, uintptr_t addr, uintptr_t filladdr)
+dynablock_t* DBAlternateBlock(x64emu_t* emu, uintptr_t addr, uintptr_t filladdr, int is32bits)
 {
-    dynarec_log(LOG_DEBUG, "Creating AlternateBlock at %p for %p\n", (void*)addr, (void*)filladdr);
+    dynarec_log(LOG_DEBUG, "Creating AlternateBlock at %p for %p%s\n", (void*)addr, (void*)filladdr, is32bits?" 32bits":"");
     int create = 1;
-    dynablock_t *db = internalDBGetBlock(emu, addr, filladdr, create, 1);
+    dynablock_t *db = internalDBGetBlock(emu, addr, filladdr, create, 1, is32bits);
     if(db && db->done && db->block && getNeedTest(filladdr)) {
         if(db->always_test)
             sched_yield();  // just calm down...
@@ -314,7 +320,7 @@ dynablock_t* DBAlternateBlock(x64emu_t* emu, uintptr_t addr, uintptr_t filladdr)
             // Free db, it's now invalid!
             dynablock_t* old = InvalidDynablock(db, need_lock);
             // start again... (will create a new block)
-            db = internalDBGetBlock(emu, addr, filladdr, create, need_lock);
+            db = internalDBGetBlock(emu, addr, filladdr, create, need_lock, is32bits);
             if(db) {
                 if(db->previous)
                     FreeInvalidDynablock(db->previous, need_lock);

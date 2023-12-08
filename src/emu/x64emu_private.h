@@ -36,6 +36,21 @@ typedef struct x64test_s {
     uint8_t     mem[16];
 } x64test_t;
 
+typedef struct emu_flags_s {
+    uint32_t    need_jmpbuf:1;    // need a new jmpbuff for signal handling
+    uint32_t    quitonlongjmp:2;  // quit if longjmp is called
+    uint32_t    quitonexit:2;     // quit if exit/_exit is called
+    uint32_t    longjmp:1;        // if quit because of longjmp
+    uint32_t    jmpbuf_ready:1;   // the jmpbuf in the emu is ok and don't need refresh
+} emu_flags_t;
+
+#ifdef ANDROID
+#include <setjmp.h>
+#define JUMPBUFF sigjmp_buf
+#else
+#define JUMPBUFF struct __jmp_buf_tag
+#endif
+
 typedef struct x64emu_s {
     // cpu
 	reg64_t     regs[16];
@@ -46,10 +61,11 @@ typedef struct x64emu_s {
     // fpu / mmx
 	mmx87_regs_t x87[8];
 	mmx87_regs_t mmx[8];
-	x87control_t cw;
 	x87flags_t  sw;
-	uint32_t    top;        // top is part of sw, but it's faster to have it separatly
+	uint32_t    top;        // top is part of sw, but it's faster to have it separately
     int         fpu_stack;
+	x87control_t cw;
+    uint16_t    dummy_cw;   // align...
     mmxcontrol_t mxcsr;
     fpu_ld_t    fpu_ld[8]; // for long double emulation / 80bits fld fst
     fpu_ll_t    fpu_ll[8]; // for 64bits fild / fist sequence
@@ -71,7 +87,8 @@ typedef struct x64emu_s {
     uintptr_t   prev2_ip;
     #endif
     // segments
-    uint32_t    segs[6];        // only 32bits value?
+    uint16_t    segs[6];        // only 32bits value?
+    uint16_t    dummy_seg6, dummy_seg7; // to stay aligned
     uintptr_t   segs_offs[6];   // computed offset associate with segment
     uint32_t    segs_serial[6];  // are seg offset clean (not 0) or does they need to be re-computed (0)? For GS, serial need to be the same as context->sel_serial
     // parent context
@@ -83,21 +100,20 @@ typedef struct x64emu_s {
     int         quit;
     int         error;
     int         fork;   // quit because need to fork
-    forkpty_t*  forkpty_info;
     int         exit;
-    int         quitonlongjmp;  // quit if longjmp is called
-    int         quitonexit;     // quit if exit/_exit is called
-    int         longjmp;        // if quit because of longjmp
+    forkpty_t*  forkpty_info;
+    emu_flags_t flags;
     x64test_t   test;       // used for dynarec testing
     #ifdef HAVE_TRACE
     sse_regs_t  old_xmm[16];
     #endif
-    // scratch stack, used for alignement of double and 64bits ints on arm. 200 elements should be enough
+    // scratch stack, used for alignment of double and 64bits ints on arm. 200 elements should be enough
     uint64_t    scratch[200];
     // local stack, do be deleted when emu is freed
     void*       stack2free; // this is the stack to free (can be NULL)
     void*       init_stack; // initial stack (owned or not)
     uint32_t    size_stack; // stack size (owned or not)
+    JUMPBUFF*   jmpbuf;
 
     x64_ucontext_t *uc_link; // to handle setcontext
 

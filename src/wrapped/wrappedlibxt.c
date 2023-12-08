@@ -17,7 +17,12 @@
 #include "box64context.h"
 #include "emu/x64emu_private.h"
 
-const char* libxtName = "libXt.so.6";
+#ifdef ANDROID
+    const char* libxtName = "libXt.so";
+#else
+    const char* libxtName = "libXt.so.6";
+#endif
+
 #define LIBNAME libxt
 
 #include "generated/wrappedlibxttypes.h"
@@ -39,7 +44,7 @@ GO(7)
 static uintptr_t my_Event_fct_##A = 0;   \
 static void my_Event_##A(void* w, void* data, void* event)     \
 {                                       \
-    RunFunction(my_context, my_Event_fct_##A, 3, w, data, event);\
+    RunFunctionFmt(my_Event_fct_##A, "ppp", w, data, event);\
 }
 SUPER()
 #undef GO
@@ -61,7 +66,7 @@ static void* findEventFct(void* fct)
 static uintptr_t my_WorkProc_fct_##A = 0;   \
 static int my_WorkProc_##A(void* p)         \
 {                                           \
-    return (int)RunFunction(my_context, my_WorkProc_fct_##A, 1, p);\
+    return (int)RunFunctionFmt(my_WorkProc_fct_##A, "p", p);\
 }
 SUPER()
 #undef GO
@@ -83,7 +88,7 @@ static void* findWorkProcFct(void* fct)
 static uintptr_t my_InputCallback_fct_##A = 0;                      \
 static void my_InputCallback_##A(void* p, void* s, void* id)        \
 {                                                                   \
-    RunFunction(my_context, my_InputCallback_fct_##A, 3, p, s, id); \
+    RunFunctionFmt(my_InputCallback_fct_##A, "ppp", p, s, id); \
 }
 SUPER()
 #undef GO
@@ -122,9 +127,15 @@ EXPORT long my_XtAppAddInput(x64emu_t* emu, void* context, int source, void* con
     return my->XtAppAddInput(context, source, cond, findInputCallbackFct(proc), data);
 }
 
-#define CUSTOM_INIT \
-    getMy(lib);   \
-    setNeededLibs(lib, 2, "libX11.so.6", "libXext.so.6");
+#ifdef ANDROID
+    #define CUSTOM_INIT \
+        getMy(lib);   \
+        setNeededLibs(lib, 2, "libX11.so", "libXext.so");
+#else
+    #define CUSTOM_INIT \
+        getMy(lib);   \
+        setNeededLibs(lib, 2, "libX11.so.6", "libXext.so.6");
+#endif
 
 #define CUSTOM_FINI \
     freeMy();

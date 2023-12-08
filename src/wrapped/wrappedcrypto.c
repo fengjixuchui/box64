@@ -35,12 +35,180 @@ GO(2)   \
 GO(3)   \
 GO(4)
 
+// BIO_meth_set_write
+#define GO(A)   \
+static uintptr_t my_BIO_meth_set_write_fct_##A = 0;             \
+static int my_BIO_meth_set_write_##A(void* a, void* b, int c)   \
+{                                                               \
+    return (int)RunFunctionFmt(my_BIO_meth_set_write_fct_##A, "ppi", a, b, c);  \
+}
+SUPER()
+#undef GO
+static void* find_BIO_meth_set_write_Fct(void* fct)
+{
+    if (!fct) return NULL;
+    void* p;
+    if((p = GetNativeFnc((uintptr_t)fct))) return p;
+    #define GO(A) if(my_BIO_meth_set_write_fct_##A == (uintptr_t)fct) return my_BIO_meth_set_write_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_BIO_meth_set_write_fct_##A == 0) {my_BIO_meth_set_write_fct_##A = (uintptr_t)fct; return my_BIO_meth_set_write_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for libcrypto BIO_meth_set_write callback\n");
+    return NULL;
+}
+
+// BIO_meth_set_read
+#define GO(A)   \
+static uintptr_t my_BIO_meth_set_read_fct_##A = 0;          \
+static int my_BIO_meth_set_read_##A(void* a, void* b, int c)\
+{                                                           \
+    return (int)RunFunctionFmt(my_BIO_meth_set_read_fct_##A, "ppi", a, b, c);   \
+}
+SUPER()
+#undef GO
+static void* find_BIO_meth_set_read_Fct(void* fct)
+{
+    if (!fct) return NULL;
+    void* p;
+    if((p = GetNativeFnc((uintptr_t)fct))) return p;
+    #define GO(A) if(my_BIO_meth_set_read_fct_##A == (uintptr_t)fct) return my_BIO_meth_set_read_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_BIO_meth_set_read_fct_##A == 0) {my_BIO_meth_set_read_fct_##A = (uintptr_t)fct; return my_BIO_meth_set_read_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for libcrypto BIO_meth_set_read callback\n");
+    return NULL;
+}
+
+// BIO_meth_set_puts
+#define GO(A)   \
+static uintptr_t my_BIO_meth_set_puts_fct_##A = 0;      \
+static int my_BIO_meth_set_puts_##A(void* a, void* b)   \
+{                                                       \
+    return (int)RunFunctionFmt(my_BIO_meth_set_puts_fct_##A, "pp", a, b);   \
+}
+SUPER()
+#undef GO
+static void* find_BIO_meth_set_puts_Fct(void* fct)
+{
+    if (!fct) return NULL;
+    void* p;
+    if((p = GetNativeFnc((uintptr_t)fct))) return p;
+    #define GO(A) if(my_BIO_meth_set_puts_fct_##A == (uintptr_t)fct) return my_BIO_meth_set_puts_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_BIO_meth_set_puts_fct_##A == 0) {my_BIO_meth_set_puts_fct_##A = (uintptr_t)fct; return my_BIO_meth_set_puts_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for libcrypto BIO_meth_set_puts callback\n");
+    return NULL;
+}
+
+// BIO_meth_set_gets
+#define GO(A)   \
+static uintptr_t my_BIO_meth_set_gets_fct_##A = 0;          \
+static int my_BIO_meth_set_gets_##A(void* a, void* b, int c)\
+{                                                           \
+    return (int)RunFunctionFmt(my_BIO_meth_set_gets_fct_##A, "ppi", a, b, c);   \
+}
+SUPER()
+#undef GO
+static void* find_BIO_meth_set_gets_Fct(void* fct)
+{
+    if (!fct) return NULL;
+    void* p;
+    if((p = GetNativeFnc((uintptr_t)fct))) return p;
+    #define GO(A) if(my_BIO_meth_set_gets_fct_##A == (uintptr_t)fct) return my_BIO_meth_set_gets_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_BIO_meth_set_gets_fct_##A == 0) {my_BIO_meth_set_gets_fct_##A = (uintptr_t)fct; return my_BIO_meth_set_gets_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for libcrypto BIO_meth_set_gets callback\n");
+    return NULL;
+}
+
+// BIO_meth_set_ctrl
+#define GO(A)   \
+static uintptr_t my_BIO_meth_set_ctrl_fct_##A = 0;                      \
+static long my_BIO_meth_set_ctrl_##A(void* a, int b, long c, void* d)   \
+{                                                                       \
+    return (long)RunFunctionFmt(my_BIO_meth_set_ctrl_fct_##A, "pilp", a, b, c, d);  \
+}
+SUPER()
+#undef GO
+static void* find_BIO_meth_set_ctrl_Fct(void* fct)
+{
+    if (!fct) return NULL;
+    void* p;
+    if((p = GetNativeFnc((uintptr_t)fct))) return p;
+    #define GO(A) if(my_BIO_meth_set_ctrl_fct_##A == (uintptr_t)fct) return my_BIO_meth_set_ctrl_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_BIO_meth_set_ctrl_fct_##A == 0) {my_BIO_meth_set_ctrl_fct_##A = (uintptr_t)fct; return my_BIO_meth_set_ctrl_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for libcrypto BIO_meth_set_ctrl callback\n");
+    return NULL;
+}
+
+// BIO_meth_set_create
+#define GO(A)   \
+static uintptr_t my_BIO_meth_set_create_fct_##A = 0;\
+static int my_BIO_meth_set_create_##A(void* a)      \
+{                                                   \
+    return (int)RunFunctionFmt(my_BIO_meth_set_create_fct_##A, "p", a); \
+}
+SUPER()
+#undef GO
+static void* find_BIO_meth_set_create_Fct(void* fct)
+{
+    if (!fct) return NULL;
+    void* p;
+    if((p = GetNativeFnc((uintptr_t)fct))) return p;
+    #define GO(A) if(my_BIO_meth_set_create_fct_##A == (uintptr_t)fct) return my_BIO_meth_set_create_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_BIO_meth_set_create_fct_##A == 0) {my_BIO_meth_set_create_fct_##A = (uintptr_t)fct; return my_BIO_meth_set_create_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for libcrypto BIO_meth_set_create callback\n");
+    return NULL;
+}
+
+// BIO_meth_set_destroy
+#define GO(A)   \
+static uintptr_t my_BIO_meth_set_destroy_fct_##A = 0;   \
+static int my_BIO_meth_set_destroy_##A(void* a)         \
+{                                                       \
+    return (int)RunFunctionFmt(my_BIO_meth_set_destroy_fct_##A, "p", a);\
+}
+SUPER()
+#undef GO
+static void* find_BIO_meth_set_destroy_Fct(void* fct)
+{
+    if (!fct) return NULL;
+    void* p;
+    if((p = GetNativeFnc((uintptr_t)fct))) return p;
+    #define GO(A) if(my_BIO_meth_set_destroy_fct_##A == (uintptr_t)fct) return my_BIO_meth_set_destroy_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_BIO_meth_set_destroy_fct_##A == 0) {my_BIO_meth_set_destroy_fct_##A = (uintptr_t)fct; return my_BIO_meth_set_destroy_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for libcrypto BIO_meth_set_destroy callback\n");
+    return NULL;
+}
+
 // ENGINE_ctrl_cb
 #define GO(A)   \
-static uintptr_t my_ENGINE_ctrl_cb_fct_##A = 0;                                                      \
-static void my_ENGINE_ctrl_cb_##A()                    \
-{                                                                                                   \
-    RunFunction(my_context, my_ENGINE_ctrl_cb_fct_##A, 0);  \
+static uintptr_t my_ENGINE_ctrl_cb_fct_##A = 0; \
+static void my_ENGINE_ctrl_cb_##A()             \
+{                                               \
+    RunFunctionFmt(my_ENGINE_ctrl_cb_fct_##A, "");  \
 }
 SUPER()
 #undef GO
@@ -64,7 +232,7 @@ static void* find_ENGINE_ctrl_cb_Fct(void* fct)
 static uintptr_t my_cmp_fnc_fct_##A = 0;                                \
 static int my_cmp_fnc_##A(void* a, void* b)                             \
 {                                                                       \
-    return (int)RunFunction(my_context, my_cmp_fnc_fct_##A, 2, a, b);   \
+    return (int)RunFunctionFmt(my_cmp_fnc_fct_##A, "pp", a, b);   \
 }
 SUPER()
 #undef GO
@@ -88,7 +256,7 @@ static void* find_cmp_fnc_Fct(void* fct)
 static uintptr_t my_free_fnc_fct_##A = 0;               \
 static void my_free_fnc_##A(void* p)                    \
 {                                                       \
-    RunFunction(my_context, my_free_fnc_fct_##A, 1, p); \
+    RunFunctionFmt(my_free_fnc_fct_##A, "p", p); \
 }
 SUPER()
 #undef GO
@@ -112,7 +280,7 @@ static void* find_free_fnc_Fct(void* fct)
 static uintptr_t my_id_func_fct_##A = 0;                                    \
 static unsigned long my_id_func_##A()                                       \
 {                                                                           \
-    return (unsigned long)RunFunction(my_context, my_id_func_fct_##A, 0);   \
+    return (unsigned long)RunFunctionFmt(my_id_func_fct_##A, "");   \
 }
 SUPER()
 #undef GO
@@ -136,7 +304,7 @@ static void* find_id_func_Fct(void* fct)
 static uintptr_t my_lock_func_fct_##A = 0;                              \
 static void my_lock_func_##A(int mode, int n, void* f, int l)           \
 {                                                                       \
-    RunFunction(my_context, my_lock_func_fct_##A, 4, mode, n, f, l);    \
+    RunFunctionFmt(my_lock_func_fct_##A, "iipi", mode, n, f, l);    \
 }
 SUPER()
 #undef GO
@@ -160,7 +328,7 @@ static void* find_lock_func_Fct(void* fct)
 static uintptr_t my_passphrase_fct_##A = 0;                                             \
 static int my_passphrase_##A(void* buff, int size, int rw, void* u)                     \
 {                                                                                       \
-    return (int)RunFunction(my_context, my_passphrase_fct_##A, 4, buff, size, rw, u);   \
+    return (int)RunFunctionFmt(my_passphrase_fct_##A, "piip", buff, size, rw, u);   \
 }
 SUPER()
 #undef GO
@@ -184,7 +352,7 @@ static void* find_passphrase_Fct(void* fct)
 static uintptr_t my_xnew_fct_##A = 0;                           \
 static void* my_xnew_##A()                                      \
 {                                                               \
-    return (void*)RunFunction(my_context, my_xnew_fct_##A, 0);  \
+    return (void*)RunFunctionFmt(my_xnew_fct_##A, "");  \
 }
 SUPER()
 #undef GO
@@ -208,7 +376,7 @@ static void* find_xnew_Fct(void* fct)
 static uintptr_t my_d2i_fct_##A = 0;                            \
 static void* my_d2i_##A()                                       \
 {                                                               \
-    return (void*)RunFunction(my_context, my_d2i_fct_##A, 0);   \
+    return (void*)RunFunctionFmt(my_d2i_fct_##A, "");   \
 }
 SUPER()
 #undef GO
@@ -232,7 +400,7 @@ static void* find_d2i_Fct(void* fct)
 static uintptr_t my_i2d_fct_##A = 0;                        \
 static int my_i2d_##A()                                     \
 {                                                           \
-    return (int)RunFunction(my_context, my_i2d_fct_##A, 0); \
+    return (int)RunFunctionFmt(my_i2d_fct_##A, ""); \
 }
 SUPER()
 #undef GO
@@ -256,7 +424,7 @@ static void* find_i2d_Fct(void* fct)
 static uintptr_t my_pem_password_cb_fct_##A = 0;                                    \
 static int my_pem_password_cb_##A(void* a, int b, int c, void* d)                   \
 {                                                                                   \
-    return (int)RunFunction(my_context, my_pem_password_cb_fct_##A, 4, a, b, c, d); \
+    return (int)RunFunctionFmt(my_pem_password_cb_fct_##A, "piip", a, b, c, d); \
 }
 SUPER()
 #undef GO
@@ -275,12 +443,37 @@ static void* find_pem_password_cb_Fct(void* fct)
     return NULL;
 }
 
+// ctx_verify_cb
+#define GO(A)   \
+static uintptr_t my_ctx_verify_cb_fct_##A = 0;                          \
+static int my_ctx_verify_cb_##A(int a, void* b)                         \
+{                                                                       \
+    return (int)RunFunctionFmt(my_ctx_verify_cb_fct_##A, "ip", a, b);   \
+}
+SUPER()
+#undef GO
+static void* find_ctx_verify_cb_Fct(void* fct)
+{
+    if(!fct) return NULL;
+    void* p;
+    if((p = GetNativeFnc((uintptr_t)fct))) return p;
+    #define GO(A) if(my_ctx_verify_cb_fct_##A == (uintptr_t)fct) return my_ctx_verify_cb_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_ctx_verify_cb_fct_##A == 0) {my_ctx_verify_cb_fct_##A = (uintptr_t)fct; return my_ctx_verify_cb_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for libcrypto ctx_verify_cb callback\n");
+    return NULL;
+}
+
+
 // verify_cb
 #define GO(A)   \
 static uintptr_t my_verify_cb_fct_##A = 0;                              \
 static int my_verify_cb_##A(int a, void* b)                             \
 {                                                                       \
-    return (int)RunFunction(my_context, my_verify_cb_fct_##A, 2, a, b); \
+    return (int)RunFunctionFmt(my_verify_cb_fct_##A, "ip", a, b); \
 }
 SUPER()
 #undef GO
@@ -300,6 +493,42 @@ static void* find_verify_cb_Fct(void* fct)
 }
 
 #undef SUPER
+
+EXPORT int32_t my_BIO_meth_set_write(x64emu_t* emu, void* biom, void* cb)
+{
+    (void)emu;
+    return my->BIO_meth_set_write(biom, find_BIO_meth_set_write_Fct(cb));
+}
+EXPORT int32_t my_BIO_meth_set_read(x64emu_t* emu, void* biom, void* cb)
+{
+    (void)emu;
+    return my->BIO_meth_set_read(biom, find_BIO_meth_set_read_Fct(cb));
+}
+EXPORT int32_t my_BIO_meth_set_puts(x64emu_t* emu, void* biom, void* cb)
+{
+    (void)emu;
+    return my->BIO_meth_set_puts(biom, find_BIO_meth_set_puts_Fct(cb));
+}
+EXPORT int32_t my_BIO_meth_set_gets(x64emu_t* emu, void* biom, void* cb)
+{
+    (void)emu;
+    return my->BIO_meth_set_gets(biom, find_BIO_meth_set_gets_Fct(cb));
+}
+EXPORT int32_t my_BIO_meth_set_ctrl(x64emu_t* emu, void* biom, void* cb)
+{
+    (void)emu;
+    return my->BIO_meth_set_ctrl(biom, find_BIO_meth_set_ctrl_Fct(cb));
+}
+EXPORT int32_t my_BIO_meth_set_create(x64emu_t* emu, void* biom, void* cb)
+{
+    (void)emu;
+    return my->BIO_meth_set_create(biom, find_BIO_meth_set_create_Fct(cb));
+}
+EXPORT int32_t my_BIO_meth_set_destroy(x64emu_t* emu, void* biom, void* cb)
+{
+    (void)emu;
+    return my->BIO_meth_set_destroy(biom, find_BIO_meth_set_destroy_Fct(cb));
+}
 
 EXPORT int32_t my_ENGINE_ctrl(x64emu_t* emu, void* e, int32_t cmd, int32_t i, void* p, void* f)
 {
@@ -373,6 +602,13 @@ EXPORT int my_PEM_write_bio_RSAPrivateKey(x64emu_t* emu, void* bp, void* x, void
     return my->PEM_write_bio_RSAPrivateKey(bp, x, e, str, len, find_passphrase_Fct(cb), u);
 }
 
+
+EXPORT int my_PEM_write_bio_PrivateKey(x64emu_t* emu, void* bp, void* x, void* e, void* str, int len, void* cb, void* u)
+{
+    (void)emu;
+    return my->PEM_write_bio_PrivateKey(bp, x, e, str, len, find_passphrase_Fct(cb), u);
+}
+
 EXPORT int my_PEM_write_bio_ECPrivateKey(x64emu_t* emu, void* bp, void* x, void* e, void* str, int len, void* cb, void* u)
 {
     (void)emu;
@@ -409,6 +645,25 @@ EXPORT void* my_PEM_read_bio_PKCS7(x64emu_t* emu, void* bp, void* x, void* cb, v
     return my->PEM_read_bio_PKCS7(bp, x, find_pem_password_cb_Fct(cb), u);
 }
 
+EXPORT void* my_PEM_read_bio_PrivateKey(x64emu_t* emu, void* bp, void* x, void* cb, void* u)
+{
+    (void)emu;
+    return my->PEM_read_bio_PrivateKey(bp, x, find_pem_password_cb_Fct(cb), u);
+}
+
+
+EXPORT void* my_PEM_read_bio_PUBKEY(x64emu_t* emu, void* bp, void* x, void* cb, void* u)
+{
+    (void)emu;
+    return my->PEM_read_bio_PUBKEY(bp, x, find_pem_password_cb_Fct(cb), u);
+}
+
+EXPORT void* my_PEM_read_bio_DHparams(x64emu_t* emu, void* bp, void* x, void* cb, void* u)
+{
+    (void)emu;
+    return my->PEM_read_bio_DHparams(bp, x, find_pem_password_cb_Fct(cb), u);
+}
+
 EXPORT void* my_PEM_read_bio_X509(x64emu_t* emu, void* bp, void* x, void* cb, void* u)
 {
     (void)emu;
@@ -442,7 +697,14 @@ EXPORT void* my_PEM_read_bio_X509_CERT_PAIR(x64emu_t* emu, void* bp, void* x, vo
 EXPORT void my_X509_STORE_CTX_set_verify_cb(x64emu_t* emu, void* ctx, void* cb)
 {
     (void)emu;
-    my->X509_STORE_CTX_set_verify_cb(ctx, find_verify_cb_Fct(cb));
+    my->X509_STORE_CTX_set_verify_cb(ctx, find_ctx_verify_cb_Fct(cb));
+}
+
+
+EXPORT void my_X509_STORE_set_verify_cb(x64emu_t* emu, void* ctx, void* cb)
+{
+    (void)emu;
+    my->X509_STORE_set_verify_cb(ctx, find_verify_cb_Fct(cb));
 }
 
 EXPORT void my_OPENSSL_sk_pop_free(x64emu_t* emu, void* s, void* cb)

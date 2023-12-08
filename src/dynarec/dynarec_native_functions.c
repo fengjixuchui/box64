@@ -1,7 +1,6 @@
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
 #include <errno.h>
 #include <string.h>
 #include <math.h>
@@ -67,12 +66,24 @@ void native_fxtract(x64emu_t* emu)
 }
 void native_fprem(x64emu_t* emu)
 {
-    int32_t tmp32s = ST0.d / ST1.d;
-    ST0.d -= ST1.d * tmp32s;
-    emu->sw.f.F87_C2 = 0;
-    emu->sw.f.F87_C0 = (tmp32s&1);
-    emu->sw.f.F87_C3 = ((tmp32s>>1)&1);
-    emu->sw.f.F87_C1 = ((tmp32s>>2)&1);
+    int e0, e1;
+    int64_t ll;
+    frexp(ST0.d, &e0);
+    frexp(ST1.d, &e1);
+    int32_t tmp32s = e0 - e1;
+    if(tmp32s<64)
+    {
+        ll = (int64_t)floor(ST0.d/ST1.d);
+        ST0.d = ST0.d - (ST1.d*ll);
+        emu->sw.f.F87_C2 = 0;
+        emu->sw.f.F87_C1 = (ll&1)?1:0;
+        emu->sw.f.F87_C3 = (ll&2)?1:0;
+        emu->sw.f.F87_C0 = (ll&4)?1:0;
+    } else {
+        ll = (int64_t)(floor((ST0.d/ST1.d))/exp2(tmp32s - 32));
+        ST0.d = ST0.d - ST1.d*ll*exp2(tmp32s - 32);
+        emu->sw.f.F87_C2 = 1;
+    }
 }
 void native_fyl2xp1(x64emu_t* emu)
 {
@@ -139,7 +150,7 @@ void native_fistp64(x64emu_t* emu, int64_t* ed)
 
 void native_fistt64(x64emu_t* emu, int64_t* ed)
 {
-    // used of memcpy to avoid aligments issues
+    // used of memcpy to avoid alignments issues
     int64_t tmp = ST0.d;
     memcpy(ed, &tmp, sizeof(tmp));
 }
@@ -160,7 +171,30 @@ void native_ud(x64emu_t* emu)
 
 void native_priv(x64emu_t* emu)
 {
+    emu->test.test = 0;
     emit_signal(emu, SIGSEGV, (void*)R_RIP, 0);
+}
+
+void native_int(x64emu_t* emu, int num)
+{
+    emu->test.test = 0;
+    emit_interruption(emu, num, (void*)R_RIP);
+}
+
+void native_singlestep(x64emu_t* emu)
+{
+    emit_signal(emu, SIGTRAP, (void*)R_RIP, 1);
+}
+
+void native_int3(x64emu_t* emu)
+{
+    emit_signal(emu, SIGTRAP, (void*)R_RIP, 128);
+}
+
+void native_div0(x64emu_t* emu)
+{
+    emu->test.test = 0;
+    emit_div0(emu,  (void*)R_RIP, 0);
 }
 
 void native_fsave(x64emu_t* emu, uint8_t* ed)
@@ -189,13 +223,24 @@ void native_frstor(x64emu_t* emu, uint8_t* ed)
 
 void native_fprem1(x64emu_t* emu)
 {
-    // simplified version
-    int32_t tmp32s = round(ST0.d / ST1.d);
-    ST0.d -= ST1.d*tmp32s;
-    emu->sw.f.F87_C2 = 0;
-    emu->sw.f.F87_C0 = (tmp32s&1);
-    emu->sw.f.F87_C3 = ((tmp32s>>1)&1);
-    emu->sw.f.F87_C1 = ((tmp32s>>2)&1);
+    int e0, e1;
+    int64_t ll;
+    frexp(ST0.d, &e0);
+    frexp(ST1.d, &e1);
+    int32_t tmp32s = e0 - e1;
+    if(tmp32s<64)
+    {
+        ll = (int64_t)round(ST0.d/ST1.d);
+        ST0.d = ST0.d - (ST1.d*ll);
+        emu->sw.f.F87_C2 = 0;
+        emu->sw.f.F87_C1 = (ll&1)?1:0;
+        emu->sw.f.F87_C3 = (ll&2)?1:0;
+        emu->sw.f.F87_C0 = (ll&4)?1:0;
+    } else {
+        ll = (int64_t)(trunc((ST0.d/ST1.d))/exp2(tmp32s - 32));
+        ST0.d = ST0.d - ST1.d*ll*exp2(tmp32s - 32);
+        emu->sw.f.F87_C2 = 1;
+    }
 }
 
 static uint8_t ff_mult(uint8_t a, uint8_t b)
@@ -203,19 +248,19 @@ static uint8_t ff_mult(uint8_t a, uint8_t b)
 	int retval = 0;
 
 	for(int i = 0; i < 8; i++) {
-		if((b & 1) == 1) 
+		if((b & 1) == 1)
 			retval ^= a;
-		
+
 		if((a & 0x80)) {
 			a <<= 1;
 			a  ^= 0x1b;
 		} else {
 			a <<= 1;
 		}
-		
+
 		b >>= 1;
 	}
-	
+
 	return retval;
 }
 
@@ -360,33 +405,24 @@ static int flagsCacheNeedsTransform(dynarec_native_t* dyn, int ninst) {
         return 0;
     if(dyn->insts[ninst].f_exit.dfnone)  // flags are fully known, nothing we can do more
         return 0;
-/*    if((dyn->f.pending!=SF_SET)
-    && (dyn->f.pending!=SF_SET_PENDING)) {
-        if(dyn->f.pending!=SF_PENDING) {*/
-    switch (dyn->insts[jmp].f_entry.pending) {
-        case SF_UNKNOWN: return 0;
-        case SF_SET: 
-            if(dyn->insts[ninst].f_exit.pending!=SF_SET && dyn->insts[ninst].f_exit.pending!=SF_SET_PENDING) 
-                return 1; 
-            else 
-                return 0;
-        case SF_SET_PENDING:
-            if(dyn->insts[ninst].f_exit.pending!=SF_SET 
-            && dyn->insts[ninst].f_exit.pending!=SF_SET_PENDING
-            && dyn->insts[ninst].f_exit.pending!=SF_PENDING) 
-                return 1; 
-            else 
-                return 0;
-        case SF_PENDING:
-            if(dyn->insts[ninst].f_exit.pending!=SF_SET 
-            && dyn->insts[ninst].f_exit.pending!=SF_SET_PENDING
-            && dyn->insts[ninst].f_exit.pending!=SF_PENDING)
-                return 1;
-            else
-                return (dyn->insts[jmp].f_entry.dfnone  == dyn->insts[ninst].f_exit.dfnone)?0:1;
-    }
     if(dyn->insts[jmp].f_entry.dfnone && !dyn->insts[ninst].f_exit.dfnone)
         return 1;
+    switch (dyn->insts[jmp].f_entry.pending) {
+        case SF_UNKNOWN: return 0;
+        case SF_SET:
+            if(dyn->insts[ninst].f_exit.pending!=SF_SET && dyn->insts[ninst].f_exit.pending!=SF_SET_PENDING)
+                return 1;
+            else
+                return 0;
+        case SF_SET_PENDING:
+            if(dyn->insts[ninst].f_exit.pending==SF_SET_PENDING)
+                return 0;
+            return 1;
+        case SF_PENDING:
+            if(dyn->insts[ninst].f_exit.pending==SF_PENDING || dyn->insts[ninst].f_exit.pending==SF_SET_PENDING)
+                return 0;
+            return (dyn->insts[jmp].f_entry.dfnone  == dyn->insts[ninst].f_exit.dfnone)?0:1;
+    }
     return 0;
 }
 
@@ -413,7 +449,7 @@ int getNominalPred(dynarec_native_t* dyn, int ninst) {
 
 #define F8      *(uint8_t*)(addr++)
 // Do the GETED, but don't emit anything...
-uintptr_t fakeed(dynarec_native_t* dyn, uintptr_t addr, int ninst, uint8_t nextop) 
+uintptr_t fakeed(dynarec_native_t* dyn, uintptr_t addr, int ninst, uint8_t nextop)
 {
     (void)dyn; (void)addr; (void)ninst;
 
@@ -439,6 +475,12 @@ uintptr_t fakeed(dynarec_native_t* dyn, uintptr_t addr, int ninst, uint8_t nexto
         }
     }
     return addr;
+}
+// return Ib on a mod/rm opcode without emiting anything
+uint8_t geted_ib(dynarec_native_t* dyn, uintptr_t addr, int ninst, uint8_t nextop)
+{
+    addr = fakeed(dyn, addr, ninst, nextop);
+    return F8;
 }
 #undef F8
 

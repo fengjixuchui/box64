@@ -22,6 +22,9 @@
 
 // default rcfile
 static const char default_rcfile[] = 
+"[bash]\n"
+"BOX64_LOG=0\n"
+"\n"
 "[deadcells]\n"
 "BOX64_PREFER_EMULATED=1\n"
 "\n"
@@ -37,10 +40,17 @@ static const char default_rcfile[] =
 "\n"
 "[heroic]\n"
 "BOX64_NOSANDBOX=1\n"
+"BOX64_INPROCESSGPU=1\n"
 "BOX64_MALLOC_HACK=2\n"
+"\n"
+"[LotCG.x86_64]\n"
+"BOX64_DYNAREC_FASTROUND=0\n"
 "\n"
 "[pressure-vessel-wrap]\n"
 "BOX64_NOGTK=1\n"
+"\n"
+"[ShovelKnight]\n"
+"BOX64_SDL2_JGUID=1\n"
 "\n"
 "[Soma.bin.x86_64]\n"
 "BOX64_DYNAREC_FASTROUND=0\n"
@@ -50,11 +60,15 @@ static const char default_rcfile[] =
 "\n"
 "[steamwebhelper]\n"
 "BOX64_NOSANDBOX=1\n"
+"BOX64_INPROCESSGPU=1\n"
 "BOX64_MALLOC_HACK=2\n"
 "BOX64_LOG=0\n"
-"BOX64_NOGTK=1\n"
+"BOX64_DYNAREC_BIGBLOCK=0\n"
 "\n"
 "[steam-runtime-check-requirements]\n"
+"BOX64_EXIT=1\n"
+"\n"
+"[steam-runtime-launcher-service]\n"
 "BOX64_EXIT=1\n"
 ;
 
@@ -77,6 +91,7 @@ ENTRYBOOL(BOX64_X11GLX, box64_x11glx)                   \
 ENTRYDSTRING(BOX64_LIBGL, box64_libGL)                  \
 ENTRYBOOL(BOX64_SSE_FLUSHTO0, box64_sse_flushto0)       \
 ENTRYBOOL(BOX64_X87_NO80BITS, box64_x87_no80bits)       \
+ENTRYBOOL(BOX64_SYNC_ROUNDING, box64_sync_rounding)     \
 ENTRYSTRING_(BOX64_EMULATED_LIBS, emulated_libs)        \
 ENTRYBOOL(BOX64_ALLOWMISSINGLIBS, allow_missing_libs)   \
 ENTRYBOOL(BOX64_PREFER_WRAPPED, box64_prefer_wrapped)   \
@@ -85,12 +100,16 @@ ENTRYBOOL(BOX64_CRASHHANDLER, box64_dummy_crashhandler) \
 ENTRYBOOL(BOX64_NOPULSE, box64_nopulse)                 \
 ENTRYBOOL(BOX64_NOGTK, box64_nogtk)                     \
 ENTRYBOOL(BOX64_NOVULKAN, box64_novulkan)               \
+ENTRYBOOL(BOX64_FUTEX_WAITV, box64_futex_waitv)         \
 ENTRYSTRING_(BOX64_BASH, bash)                          \
 ENTRYINT(BOX64_JITGDB, jit_gdb, 0, 2, 2)                \
 ENTRYBOOL(BOX64_NOSANDBOX, box64_nosandbox)             \
+ENTRYBOOL(BOX64_INPROCESSGPU, box64_inprocessgpu)       \
 ENTRYBOOL(BOX64_EXIT, want_exit)                        \
 ENTRYBOOL(BOX64_LIBCEF, box64_libcef)                   \
+ENTRYBOOL(BOX64_SDL2_JGUID, box64_sdl2_jguid)           \
 ENTRYINT(BOX64_MALLOC_HACK, box64_malloc_hack, 0, 2, 2) \
+ENTRYSTRING_(BOX64_ENV, new_env)                        \
 
 #ifdef HAVE_TRACE
 #define SUPER2()                                        \
@@ -119,18 +138,22 @@ ENTRYINT(BOX64_DYNAREC_DUMP, box64_dynarec_dump, 0, 2, 2)           \
 ENTRYINT(BOX64_DYNAREC_LOG, box64_dynarec_log, 0, 3, 2)             \
 ENTRYINT(BOX64_DYNAREC_BIGBLOCK, box64_dynarec_bigblock, 0, 3, 2)   \
 ENTRYSTRING_(BOX64_DYNAREC_FORWARD, box64_dynarec_forward)          \
-ENTRYINT(BOX64_DYNAREC_STRONGMEM, box64_dynarec_strongmem, 0, 2, 2) \
+ENTRYINT(BOX64_DYNAREC_STRONGMEM, box64_dynarec_strongmem, 0, 3, 2) \
 ENTRYBOOL(BOX64_DYNAREC_X87DOUBLE, box64_dynarec_x87double)         \
 ENTRYBOOL(BOX64_DYNAREC_FASTNAN, box64_dynarec_fastnan)             \
 ENTRYBOOL(BOX64_DYNAREC_FASTROUND, box64_dynarec_fastround)         \
 ENTRYINT(BOX64_DYNAREC_SAFEFLAGS, box64_dynarec_safeflags, 0, 2, 2) \
 ENTRYBOOL(BOX64_DYNAREC_CALLRET, box64_dynarec_callret)             \
 ENTRYBOOL(BOX64_DYNAREC_BLEEDING_EDGE, box64_dynarec_bleeding_edge) \
+ENTRYBOOL(BOX64_DYNAREC_JVM, box64_dynarec_jvm)                     \
+ENTRYBOOL(BOX64_DYNAREC_TBB, box64_dynarec_tbb)                     \
 ENTRYINT(BOX64_DYNAREC_HOTPAGE, box64_dynarec_hotpage, 0, 255, 8)   \
 ENTRYBOOL(BOX64_DYNAREC_FASTPAGE, box64_dynarec_fastpage)           \
+ENTRYBOOL(BOX64_DYNAREC_ALIGNED_ATOMICS, box64_dynarec_aligned_atomics) \
 ENTRYBOOL(BOX64_DYNAREC_WAIT, box64_dynarec_wait)                   \
 ENTRYSTRING_(BOX64_NODYNAREC, box64_nodynarec)                      \
 ENTRYBOOL(BOX64_DYNAREC_TEST, box64_dynarec_test)                   \
+ENTRYBOOL(BOX64_DYNAREC_MISSING, box64_dynarec_missing)             \
 
 #else
 #define SUPER3()                                                    \
@@ -146,11 +169,15 @@ IGNORE(BOX64_DYNAREC_FASTROUND)                                     \
 IGNORE(BOX64_DYNAREC_SAFEFLAGS)                                     \
 IGNORE(BOX64_DYNAREC_CALLRET)                                       \
 IGNORE(BOX64_DYNAREC_BLEEDING_EDGE)                                 \
+IGNORE(BOX64_DYNAREC_JVM)                                           \
+IGNORE(BOX64_DYNAREC_TBB)                                           \
 IGNORE(BOX64_DYNAREC_HOTPAGE)                                       \
 IGNORE(BOX64_DYNAREC_FASTPAGE)                                      \
+IGNORE(BOX64_DYNAREC_ALIGNED_ATOMICS)                               \
 IGNORE(BOX64_DYNAREC_WAIT)                                          \
 IGNORE(BOX64_NODYNAREC)                                             \
 IGNORE(BOX64_DYNAREC_TEST)                                          \
+IGNORE(BOX64_DYNAREC_MISSING)                                       \
 
 #endif
 
@@ -269,6 +296,15 @@ static void trimString(char* s)
     while(s[0]==' ' || s[0]=='\t')
         memmove(s, s+1, strlen(s));
 }
+
+#ifdef ANDROID
+static int shm_open(const char *name, int oflag, mode_t mode) {
+    return -1;
+}
+static int shm_unlink(const char *name) {
+    return -1;
+}
+#endif
 
 void LoadRCFile(const char* filename)
 {
@@ -418,6 +454,7 @@ extern int ftrace_has_pid;
 extern FILE* ftrace;
 extern char* ftrace_name;
 void openFTrace(const char* newtrace);
+void addNewEnvVar(const char* s);
 #ifdef DYNAREC
 void GatherDynarecExtensions();
 #endif
@@ -482,6 +519,7 @@ void ApplyParams(const char* name)
     if(param->is_box64_path_present) AppendList(&my_context->box64_path, param->box64_path, 1);
     if(param->is_trace_file_present) {
         // open a new ftrace...
+        printf_log(LOG_INFO, "Applying %s=%s\n", "BOX64_TRACE_FILE", param->trace_file);
         if(ftrace_name) {
             fclose(ftrace);
         }
@@ -490,6 +528,10 @@ void ApplyParams(const char* name)
     if(param->is_emulated_libs_present) {
         AppendList(&my_context->box64_emulated_libs, param->emulated_libs, 0);
         printf_log(LOG_INFO, "Applying %s=%s\n", "BOX64_EMULATED_LIBS", param->emulated_libs);
+    }
+    if(param->is_new_env_present) {
+        addNewEnvVar(param->new_env);
+        printf_log(LOG_INFO, "Applying %s=%s\n", "BOX64_ENV", param->new_env);
     }
     if(param->is_bash_present && FileIsX64ELF(param->bash)) {
         if(my_context->bashpath)
@@ -505,7 +547,7 @@ void ApplyParams(const char* name)
             my_context->x64trace = 1;
             box64_trace = p;
         }
-        printf_log(LOG_INFO, "Applying %s=%s", "BOX64_TRACE", param->trace);
+        printf_log(LOG_INFO, "Applying %s=%s\n", "BOX64_TRACE", param->trace);
     }
     if(param->is_trace_init_present) {
         char* p = param->trace_init;
@@ -513,7 +555,7 @@ void ApplyParams(const char* name)
             my_context->x64trace = 1;
             trace_init = p;
         }
-        printf_log(LOG_INFO, "Applying %s=%s", "BOX64_TRACE_INIT", param->trace_init);
+        printf_log(LOG_INFO, "Applying %s=%s\n", "BOX64_TRACE_INIT", param->trace_init);
     }
     if(my_context->x64trace && !old_x64trace) {
         printf_log(LOG_INFO, "Initializing Zydis lib\n");
@@ -552,6 +594,11 @@ void ApplyParams(const char* name)
     }
     if(!olddynarec && box64_dynarec)
         GatherDynarecExtensions();
+    if(param->is_box64_dynarec_test_present && box64_dynarec_test) {
+        box64_dynarec_fastnan = 0;
+        box64_dynarec_fastround = 0;
+        box64_dynarec_callret = 0;
+    }
     #endif
     if(box64_log==3) {
         box64_log = 2;

@@ -47,19 +47,21 @@ uintptr_t Run64(x64emu_t *emu, rex_t rex, int seg, uintptr_t addr)
     opcode = F8;
     // REX prefix before the F0 are ignored
     rex.rex = 0;
-    while(opcode>=0x40 && opcode<=0x4f) {
-        rex.rex = opcode;
-        opcode = F8;
-    }
+    if(!rex.is32bits)
+        while(opcode>=0x40 && opcode<=0x4f) {
+            rex.rex = opcode;
+            opcode = F8;
+        }
     rep = 0;
     while((opcode==0xF2) || (opcode==0xF3)) {
         rep = opcode-0xF1;
         opcode = F8;
     }
-    while(opcode>=0x40 && opcode<=0x4f) {
-        rex.rex = opcode;
-        opcode = F8;
-    }
+    if(!rex.is32bits)
+        while(opcode>=0x40 && opcode<=0x4f) {
+            rex.rex = opcode;
+            opcode = F8;
+        }
 
     switch(opcode) {
         #define GO(B, OP)                                   \
@@ -121,6 +123,12 @@ uintptr_t Run64(x64emu_t *emu, rex_t rex, int seg, uintptr_t addr)
 
                 case 0x10:
                     switch(rep) {
+                        case 0: /* MOVUPS Gx, FS:Ex */
+                            nextop = F8;
+                            GETEX_OFFS(0, tlsdata);
+                            GETGX;
+                            GX->u128 = EX->u128;
+                            break;
                         case 1: /* MOVSD Gx, FS:Ex */
                             nextop = F8;
                             GETEX_OFFS(0, tlsdata);
@@ -169,7 +177,18 @@ uintptr_t Run64(x64emu_t *emu, rex_t rex, int seg, uintptr_t addr)
                             return 0;
                     }
                     break;
-
+                case 0x28:
+                    switch(rep) {
+                        case 0: /* MOVAPS Gx, FS:Ex */
+                            nextop = F8;
+                            GETEX_OFFS(0, tlsdata);
+                            GETGX;
+                            GX->u128 = EX->u128;
+                            break;
+                        default:
+                            return 0;
+                    }
+                    break;
                 case 0x29:                      /* MOVAPS FS:Ex,Gx */
                     switch(rep) {
                         case 0:
@@ -253,6 +272,18 @@ uintptr_t Run64(x64emu_t *emu, rex_t rex, int seg, uintptr_t addr)
                             return 0;
                     }
                     break;
+                case 0xB7:
+                    switch(rep) {
+                        case 0: /* MOVZX Gd, FS:Ew */
+                            nextop = F8;
+                            GETEW_OFFS(0, tlsdata);
+                            GETGD;
+                            GD->q[0] = EW->word[0];
+                            break;
+                        default:
+                            return 0;
+                    }
+                    break;
 
                 default:
                     return 0;
@@ -290,17 +321,41 @@ uintptr_t Run64(x64emu_t *emu, rex_t rex, int seg, uintptr_t addr)
             nextop = F8;
             GETED_OFFS(0, tlsdata);
             GETGD;
-            if(rex.w)
-                GD->sq[0] = ED->sdword[0];
-            else
-                if(MODREG)
-                    GD->q[0] = ED->dword[0];    // not really a sign extension
+            if(rex.is32bits) {
+                // ARPL here
+                // faking to always happy...
+                SET_FLAG(F_ZF);
+            } else {
+                if(rex.w)
+                    GD->sq[0] = ED->sdword[0];
                 else
-                    GD->sdword[0] = ED->sdword[0];  // meh?
+                    if(MODREG)
+                        GD->q[0] = ED->dword[0];    // not really a sign extension
+                    else
+                        GD->sdword[0] = ED->sdword[0];  // meh?
+            }
             break;
-
+        case 0x64:                      /* FS: prefix */
+            #ifdef TEST_INTERPRETER
+            return Test64(test, rex, _FS, addr);
+            #else
+            return Run64(emu, rex, _FS, addr);
+            #endif
+            break;
+        case 0x65:                      /* GS: prefix */
+            #ifdef TEST_INTERPRETER
+            return Test64(test, rex, _GS, addr);
+            #else
+            return Run64(emu, rex, _GS, addr);
+            #endif
+            break;
         case 0x66:
             return Run6664(emu, rex, seg, addr);
+        case 0x67:
+            if(rex.is32bits)
+                return Run6764_32(emu, rex, seg, seg, addr);
+            else
+                return 0;
 
         case 0x80:                      /* GRP Eb,Ib */
             nextop = F8;
@@ -378,7 +433,6 @@ uintptr_t Run64(x64emu_t *emu, rex_t rex, int seg, uintptr_t addr)
             if(rex.w) {
                 ED->q[0] = GD->q[0];
             } else {
-                //if ED is a reg, than the opcode works like movzx
                 if(MODREG)
                     ED->q[0] = GD->dword[0];
                 else
@@ -399,6 +453,70 @@ uintptr_t Run64(x64emu_t *emu, rex_t rex, int seg, uintptr_t addr)
                 GD->q[0] = ED->q[0];
             else
                 GD->q[0] = ED->dword[0];
+            break;
+
+        case 0x8D:                      /* LEA Gd,M */
+            nextop = F8;
+            GETGD;
+            tmp64u = GETEA(0);
+            if(rex.w)
+                GD->q[0] = tmp64u;
+            else
+                GD->q[0] = tmp64u&0xffffffff;
+            break;
+        case 0x8E:                      /* MOV Seg, Seg:Ew */
+            nextop = F8;
+            GETED_OFFS(0, tlsdata);
+            emu->segs[((nextop&0x38)>>3)] = ED->word[0];
+            emu->segs_serial[((nextop&0x38)>>3)] = 0;
+            break;
+        case 0x8F:                      /* POP FS:Ed */
+            nextop = F8;
+            if(MODREG) {
+                emu->regs[(nextop&7)+(rex.b<<3)].q[0] = Pop64(emu);
+            } else {
+                if(rex.is32bits) {
+                    tmp32u = Pop32(emu);  // this order allows handling POP [ESP] and variant
+                    GETED_OFFS(0, tlsdata);
+                    R_ESP -= 4; // to prevent issue with SEGFAULT
+                    ED->dword[0] = tmp32u;
+                    R_ESP += 4;
+                } else {
+                    tmp64u = Pop64(emu);  // this order allows handling POP [ESP] and variant
+                    GETED_OFFS(0, tlsdata);
+                    R_RSP -= sizeof(void*); // to prevent issue with SEGFAULT
+                    ED->q[0] = tmp64u;
+                    R_RSP += sizeof(void*);
+                }
+            }
+            break;
+        case 0x90:                      /* NOP */
+            break;
+
+        case 0xA1:                      /* MOV EAX,FS:Od */
+            if(rex.is32bits) {
+                tmp32s = F32S;
+                R_EAX = *(uint32_t*)(tlsdata+tmp32s);
+            } else {
+                tmp64u = F64;
+                if(rex.w)
+                    R_RAX = *(uint64_t*)(tlsdata+tmp64u);
+                else
+                    R_RAX = *(uint32_t*)(tlsdata+tmp64u);
+            }
+            break;
+
+        case 0xA3:                      /* MOV FS:Od,EAX */
+            if(rex.is32bits) {
+                tmp32s = F32S;
+                *(uint32_t*)(uintptr_t)(tlsdata+tmp32s) = R_EAX;
+            } else {
+                tmp64u = F64;
+                if(rex.w)
+                    *(uint64_t*)(tlsdata+tmp64u) = R_RAX;
+                else
+                    *(uint32_t*)(tlsdata+tmp64u) = R_EAX;
+            }
             break;
 
         case 0xC6:                      /* MOV FS:Eb, Ib */
@@ -556,42 +674,66 @@ uintptr_t Run64(x64emu_t *emu, rex_t rex, int seg, uintptr_t addr)
                     }
                     break;
                 case 2:                 /* CALL NEAR Ed */
-                    tmp64u = (uintptr_t)getAlternate((void*)ED->q[0]);
-                    Push(emu, addr);
+                    if(rex.is32bits) {
+                        tmp64u = (uintptr_t)getAlternate((void*)(uintptr_t)ED->dword[0]);
+                        Push32(emu, addr);
+                    } else {
+                        tmp64u = (uintptr_t)getAlternate((void*)ED->q[0]);
+                        Push64(emu, addr);
+                    }
                     addr = tmp64u;
                     break;
                 case 3:                 /* CALL FAR Ed */
-                    if(nextop>0xC0) {
+                    if(MODREG) {
                         printf_log(LOG_NONE, "Illegal Opcode %p: %02X %02X %02X %02X\n", (void*)R_RIP, opcode, nextop, PK(2), PK(3));
                         emu->quit=1;
                         emu->error |= ERR_ILLEGAL;
                         return 0;
                     } else {
-                        Push16(emu, R_CS);
-                        Push(emu, addr);
-                        R_RIP = addr = ED->dword[0];
-                        R_CS = (ED+1)->word[0];
+                        if(rex.is32bits || !rex.w) {
+                            Push32(emu, R_CS);
+                            Push32(emu, addr);
+                            R_RIP = addr = ED->dword[0];
+                            R_CS = ED->word[2];
+                        } else {
+                            Push64(emu, R_CS);
+                            Push64(emu, addr);
+                            R_RIP = addr = ED->q[0];
+                            R_CS = (ED+1)->word[0];
+                        }
                         return 0;  // exit loop to recompute new CS...
                     }
                     break;
                 case 4:                 /* JMP NEAR Ed */
-                    addr = (uintptr_t)getAlternate((void*)ED->q[0]);
+                    if(rex.is32bits)
+                        addr = (uintptr_t)getAlternate((void*)(uintptr_t)ED->dword[0]);
+                    else
+                        addr = (uintptr_t)getAlternate((void*)ED->q[0]);
                     break;
                 case 5:                 /* JMP FAR Ed */
-                    if(nextop>0xc0) {
+                    if(MODREG) {
                         printf_log(LOG_NONE, "Illegal Opcode %p: 0x%02X 0x%02X %02X %02X\n", (void*)R_RIP, opcode, nextop, PK(2), PK(3));
                         emu->quit=1;
                         emu->error |= ERR_ILLEGAL;
                         return 0;
                     } else {
-                        R_RIP = addr = ED->q[0];
-                        R_CS = (ED+1)->word[0];
-                        return 0;  // exit loop to recompute CS...
+                        if(rex.is32bits || !rex.w) {
+                            R_RIP = addr = ED->dword[0];
+                            R_CS = ED->word[2];
+                        } else {
+                            R_RIP = addr = ED->q[0];
+                            R_CS = (ED+1)->word[0];
+                        }
                     }
                     break;
                 case 6:                 /* Push Ed */
-                    tmp64u = ED->q[0];  // rex.w ignored
-                    Push(emu, tmp64u);  // avoid potential issue with push [esp+...]
+                    if(rex.is32bits) {
+                        tmp32u = ED->dword[0];
+                        Push32(emu, tmp32u);  // avoid potential issue with push [esp+...]
+                    } else {
+                        tmp64u = ED->q[0];  // rex.w ignored
+                        Push64(emu, tmp64u);  // avoid potential issue with push [esp+...]
+                    }
                     break;
                 default:
                     printf_log(LOG_NONE, "Illegal Opcode %p: %02X %02X %02X %02X %02X %02X\n",(void*)R_RIP, opcode, nextop, PK(2), PK(3), PK(4), PK(5));

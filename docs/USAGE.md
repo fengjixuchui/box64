@@ -3,7 +3,10 @@ Usage
 ----
 
 There are many environment variables to control Box64 behaviour. 
-Env. var with * can also be put inside box64rc files
+Env. var with * can also be put inside box64rc files. 
+Box64 look for 2 places for rcfile: `/etc/box64.box64rc` and `~/.box64rc`
+The second takes precedence to the first, on an APP level 
+(that means if an [MYAPP] my appears in both file, only the settings in `~/.box64rc` will be applied)
 
 #### BOX64_LOG *
 Controls the Verbosity level of the logs
@@ -49,7 +52,7 @@ Only on build with trace enabled. Trace allow the logging of all instruction exe
  * 0xXXXXXXX-0xYYYYYYY : Trace only between the 2 addresses.
 
 #### BOX64_TRACE_INIT *
-Use BOX64_TRACE_INIT instead of BOX_TRACE to start trace before the initialisation of libraries and the running program
+Use BOX64_TRACE_INIT instead of BOX64_TRACE to start trace before the initialisation of libraries and the running program
  * 0 : No trace. (Default.)
  * 1 : Trace enabled. The trace start with the initialisation of all depending libraries is done.
 
@@ -153,8 +156,9 @@ Define Box64's Dynarec max allowed forward value when building Block.
 #### BOX64_DYNAREC_STRONGMEM *
 Enable/Disable simulation of Strong Memory model
 * 0 : Don't try anything special (Default.)
-* 1 : Enable some Memory Barrier when reading from memory (on some MOV opcode) to simulate Strong Memory Model while trying to limit performance impact (Default when libmonobdwgc-2.0.so is loaded)
-* 2 : Enable some Memory Barrier when reading from memory (on some MOV opcode) to simulate Strong Memory Model
+* 1 : Enable some Memory Barrier when writting to memory (on some MOV opcode) to simulate Strong Memory Model while trying to limit performance impact (Default when libmonobdwgc-2.0.so is loaded)
+* 2 : All 1. plus a memory barrier on every write to memory using MOV
+* 3 : All 2. plus Memory Barrier when reading from memory and on some SSE/SSE2 opcodes too
 
 #### BOX64_DYNAREC_X87DOUBLE *
 Force the use of Double for x87 emulation
@@ -184,23 +188,38 @@ Optimisation of CALL/RET opcodes (not compatible with jit/dynarec/smc)
 
 #### BOX64_DYNAREC_HOTPAGE *
 Handling of HotPage (Page being both executed and written)
-* 0 : Don't track hotpage
-* 1-255 : Track HotPage, and disable execution of a page being written for N attempts (default is 4)
+* 0 : Don't track hotpage (Default)
+* 1-255 : Track HotPage, and disable execution of a page being written for N attempts
 
 #### BOX64_DYNAREC_FASTPAGE *
 Will use a faster handling of HotPage (Page being both executed and written)
 * 0 : use regular hotpage (Default)
 * 1 : Use faster hotpage, taking the risk of running obsolete JIT code (might be faster, but more prone to crash)
 
+#### BOX64_DYNAREC_ALIGNED_ATOMICS *
+Generated code for aligned atomics only
+* 0 : The code generated can handle unaligned atomics (Default)
+* 1 : Generated code only for aligned atomics (faster and less code generated, but will SEGBUS if LOCK prefix is unsed on unaligned data)
+
 #### BOX64_DYNAREC_BLEEDING_EDGE *
 Detect MonoBleedingEdge and apply conservative settings
 * 0 : Don't detect MonoBleedingEdge
 * 1 : Detect MonoBleedingEdge, and apply BIGBLOCK=0 STRONGMEM=1 if detected (Default)
 
+#### BOX64_DYNAREC_JVM *
+Detect libjvm and apply conservative settings
+* 0 : Don't detect libjvm
+* 1 : Detect libjvm, and apply BIGBLOCK=0 STRONGMEM=1 if detected (Default)
+
 #### BOX64_DYNAREC_WAIT *
 Behavior with FillBlock is not availble (FillBlock build Dynarec blocks and is not multithreaded)
 * 0 : Dynarec will not wait for FillBlock to ready and use Interpreter instead (might speedup a bit massive multithread or JIT programs)
 * 1 : Dynarec will wait for FillBlock to be ready (Default)
+
+#### BOX64_DYNAREC_MISSING *
+Dynarec print the missing opcodes
+* 0 : not print the missing opcode (Default, unless DYNAREC_LOG>=1 or DYNAREC_DUMP>=1 is used)
+* 1 : Will print the missing opcodes
 
 #### BOX64_SSE_FLUSHTO0 *
 Handling of SSE Flush to 0 flags
@@ -212,10 +231,20 @@ Handling of x87 80bits long double
 * 0 : Try to handle 80bits long double as precise as possible (Default)
 * 1 : Handle them as double
 
+#### BOX64_SYNC_ROUNDING *
+Box64 will sync rounding mode with fesetround/fegetround.
+* 0 : Disable rounding mode syncing. (Default.)
+* 1 : Enable rounding mode syncing.
+
 #### BOX64_LIBCEF *
 Detect libcef and apply malloc_hack settings
 * 0 : Don't detect libcef
 * 1 : Detect libcef, and apply MALLOC_HACK=2 if detected (Default)
+
+#### BOX64_SDL2_JGUID *
+Need a workaround for SDL_GetJoystickGUIDInfo function for wrapped SDL2
+* 0 : Don't use any workaround
+* 1 : Use a workaround for program that use the private SDL_GetJoystickGUIDInfo function with 1 missing argument
 
 #### BOX64_LIBGL *
  * libXXXX set the name for libGL (defaults to libGL.so.1).
@@ -272,18 +301,27 @@ Disables the load of vulkan libraries.
  * 0 : Load vulkan libraries if found.
  * 1 : Disables the load of vulkan libraries, both the native and the i386 version (can be useful on Pi4, where the vulkan driver is not quite there yet.)
 
+#### BOX64_FUTEX_WAITV *
+Use of the new fuext_waitc syscall
+ * 0 : Do not try to use it, return unsupported (Default for BAD_SIGNAL build)
+ * 1 : let program use the syscall if the host system support it (Default for other build)
+
 #### BOX64_BASH *
 Define x86_64 bash to launch script
  * yyyy
  Will use yyyy as x86_64 bash to launch script. yyyy needs to be a full path to a valid x86_64 version of bash
 
-#### BOX64_ENV
+#### BOX64_ENV *
  * XXX=yyyy
  will add XXX=yyyy env. var.
 
 #### BOX64_ENV1
  * XXX=yyyy
  will add XXX=yyyy env. var. and continue with BOX86_ENV2 ... until var doesn't exist
+
+#### BOX64_RESERVE_HIGH
+* 0 : Don't try to pe-reserve high memory (beyond 47bits) (Default)
+* 1 : Try to reserve (without allocating it) memory beyond 47bits (seems unstable)
 
 #### BOX64_JITGDB *
  * 0 : Just print the Segfault message on segfault (default)
@@ -307,6 +345,10 @@ Those variables are only valid inside a rcfile:
 #### BOX64_NOSANDBOX
  * 0 : Nothing special
  * 1 : Added "--no-sandbox" to command line arguments (usefull for chrome based programs)
+
+#### BOX64_INPROCESSGPU
+ * 0 : Nothing special
+ * 1 : Added "--in-process-gpu" to command line arguments (usefull for chrome based programs)
 
 #### BOX64_EXIT
  * 0 : Nothing special

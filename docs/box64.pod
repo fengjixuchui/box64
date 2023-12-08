@@ -55,6 +55,11 @@ F<~/.bashrc> may override the setting from your command line. Example:
 When set to 1, add C<--no-sandbox> to command line arguments (useful for chrome
 based programs).
 
+=item B<BOX64_INPROCESSGPU=0|1>
+
+When set to 1, add C<--in-process-gpu> to command line arguments (useful for chrome
+based programs).
+
 =item B<BOX64_EXIT>=I<0|1>
 
 When set to 1, just exit, don't try to run the program.
@@ -146,7 +151,7 @@ Only on build with trace enabled. Trace allow the logging of all instruction exe
 
 =item B<BOX64_TRACE_INIT>=I<0|1>
 
-Use B<BOX64_TRACE_INIT> instead of B<BOX_TRACE> to start trace before the
+Use B<BOX64_TRACE_INIT> instead of B<BOX64_TRACE> to start trace before the
 initialization of libraries and the running program
 
     * 0 : No trace. (Default.)
@@ -371,6 +376,13 @@ Handling of x87 80bits long double
     * 0 : Try to handle 80bits long double as precise as possible (Default)
     * 1 : Handle them as double
 
+=item B<BOX64_SYNC_ROUNDING>=I<0|1>
+
+Box64 will sync rounding mode with fesetround/fegetround.
+
+    * 0 : Disable rounding mode syncing. (Default.)
+    * 1 : Enable rounding mode syncing.
+
 =item B<BOX64_LIBCEF>=I<0|1>
 
 Detect libcef and apply malloc_hack settings
@@ -450,6 +462,13 @@ Disables the load of vulkan libraries.
 
     * 0 : Load vulkan libraries if found.
     * 1 : Disables the load of vulkan libraries, both the native and the i386 version (can be useful on Pi4, where the vulkan driver is not quite there yet.)
+
+=item B<BOX64_FUTEX_WAITV>=I<0|1>
+
+Use of the new fuext_waitc syscall
+
+     * 0 : Do not try to use it, return unsupported (default for BAD_SIGNAL build)
+    * 1 : let program use the syscall if the host system support it (Default for other build)
 
 =item B<BOX64_BASH>=I<yyyy>
 

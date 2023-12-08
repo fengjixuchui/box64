@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <fenv.h>
 #include <string.h>
 #include <signal.h>
 #include <sys/types.h>
@@ -21,6 +22,7 @@
 #include "my_cpuid.h"
 #include "bridge.h"
 #include "signals.h"
+#include "x64shaext.h"
 #ifdef DYNAREC
 #include "custommem.h"
 #include "../dynarec/native_lock.h"
@@ -108,7 +110,7 @@ uintptr_t Run0F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
             nextop = F8;
             GETEX(0);
             GETGX;
-            if((nextop&0xC0)==0xC0)    /* MOVHLPS Gx,Ex */
+            if(MODREG)    /* MOVHLPS Gx,Ex */
                 GX->q[0] = EX->q[1];
             else
                 GX->q[0] = EX->q[0];    /* MOVLPS Gx,Ex */
@@ -232,9 +234,13 @@ uintptr_t Run0F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
                     tmp64s = INT32_MIN;
                 else
                     switch(emu->mxcsr.f.MXCSR_RC) {
-                        case ROUND_Nearest:
+                        case ROUND_Nearest: {
+                            int round = fegetround();
+                            fesetround(FE_TONEAREST);
                             tmp64s = nearbyintf(EX->f[i]);
+                            fesetround(round);
                             break;
+                        }
                         case ROUND_Down:
                             tmp64s = floorf(EX->f[i]);
                             break;
@@ -335,6 +341,43 @@ uintptr_t Run0F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
                     }
                     break;
 
+                case 0xC8:  /* SHA1NEXTE Gx, Ex */
+                    nextop = F8;
+                    GETGX;
+                    GETEX(0);
+                    sha1nexte(emu, GX, EX);
+                    break;
+                case 0xC9:  /* SHA1MSG1 Gx, Ex */
+                    nextop = F8;
+                    GETGX;
+                    GETEX(0);
+                    sha1msg1(emu, GX, EX);
+                    break;
+                case 0xCA:  /* SHA1MSG2 Gx, Ex */
+                    nextop = F8;
+                    GETGX;
+                    GETEX(0);
+                    sha1msg2(emu, GX, EX);
+                    break;
+                case 0xCB:  /* SHA256RNDS2 Gx, Ex (, XMM0) */
+                    nextop = F8;
+                    GETGX;
+                    GETEX(0);
+                    sha256rnds2(emu, GX, EX);
+                    break;
+                case 0xCC:  /* SHA256MSG1 Gx, Ex */
+                    nextop = F8;
+                    GETGX;
+                    GETEX(0);
+                    sha256msg1(emu, GX, EX);
+                    break;
+                case 0xCD:  /* SHA256MSG2 Gx, Ex */
+                    nextop = F8;
+                    GETGX;
+                    GETEX(0);
+                    sha256msg2(emu, GX, EX);
+                    break;
+
                 case 0xF0: /* MOVBE Gd, Ed*/
                     nextop = F8;
                     GETGD;
@@ -350,8 +393,12 @@ uintptr_t Run0F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
                     GETED(0);
                     if(rex.w)
                         ED->q[0] = __builtin_bswap64(GD->q[0]);
-                    else
-                        ED->q[0] = __builtin_bswap32(GD->dword[0]);
+                    else {
+                        if(MODREG)
+                            ED->q[0] = __builtin_bswap32(GD->dword[0]);
+                        else
+                            ED->dword[0] = __builtin_bswap32(GD->dword[0]);
+                    }
                     break;
 
                 default:
@@ -378,6 +425,14 @@ uintptr_t Run0F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
                         GM->q <<= (8-tmp8u)*8;
                         GM->q |= (EM->q >> tmp8u*8);
                     }
+                    break;
+
+                case 0xCC:  /* SHA1RNDS4 Gx, Ex, Ib */
+                    nextop = F8;
+                    GETGX;
+                    GETEX(1);
+                    tmp8u = F8;
+                    sha1rnds4(emu, GX, EX, tmp8u);
                     break;
 
                 default:
@@ -809,7 +864,19 @@ uintptr_t Run0F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
             , EB->byte[0]=0;
             ,
         )                               /* 0x90 -> 0x9F SETxx Eb */
-
+        case 0xA0:                      /* PUSH FS */
+            if(rex.is32bits)
+                Push32(emu, emu->segs[_FS]);
+            else
+                Push64(emu, emu->segs[_FS]);
+            break;
+        case 0xA1:                      /* POP FS */
+            if(rex.is32bits)
+                emu->segs[_FS] = Pop32(emu);
+            else
+                emu->segs[_FS] = Pop64(emu);
+            emu->segs_serial[_FS] = 0;
+            break;
         case 0xA2:                      /* CPUID */
             tmp32u = R_EAX;
             my_cpuid(emu, tmp32u);
@@ -847,14 +914,10 @@ uintptr_t Run0F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
             }
             break;
         case 0xA4:                      /* SHLD Ed,Gd,Ib */
-        case 0xA5:                      /* SHLD Ed,Gd,CL */
             nextop = F8;
-            GETED((nextop==0xA4)?1:0);
+            GETED(1);
             GETGD;
-            if(opcode==0xA4)
-                tmp8u = F8;
-            else
-                tmp8u = R_CL;
+            tmp8u = F8;
             if(rex.w)
                 ED->q[0] = shld64(emu, ED->q[0], GD->q[0], tmp8u);
             else {
@@ -863,6 +926,34 @@ uintptr_t Run0F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
                 else
                     ED->dword[0] = shld32(emu, ED->dword[0], GD->dword[0], tmp8u);
             }
+            break;
+        case 0xA5:                      /* SHLD Ed,Gd,CL */
+            nextop = F8;
+            GETED(0);
+            GETGD;
+            tmp8u = R_CL;
+            if(rex.w)
+                ED->q[0] = shld64(emu, ED->q[0], GD->q[0], tmp8u);
+            else {
+                if(MODREG)
+                    ED->q[0] = shld32(emu, ED->dword[0], GD->dword[0], tmp8u);
+                else
+                    ED->dword[0] = shld32(emu, ED->dword[0], GD->dword[0], tmp8u);
+            }
+            break;
+
+        case 0xA8:                      /* PUSH GS */
+            if(rex.is32bits)
+                Push32(emu, emu->segs[_GS]);
+            else
+                Push64(emu, emu->segs[_GS]);
+            break;
+        case 0xA9:                      /* POP GS */
+            if(rex.is32bits)
+                emu->segs[_GS] = Pop32(emu);
+            else
+                emu->segs[_GS] = Pop64(emu);
+            emu->segs_serial[_FS] = 0;
             break;
 
         case 0xAB:                      /* BTS Ed,Gd */
@@ -929,9 +1020,9 @@ uintptr_t Run0F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
             if((nextop&0xF8)==0xF8) {
                 return addr;            /* SFENCE */
             }
-            GETED(0);
             switch((nextop>>3)&7) {
                 case 0:                 /* FXSAVE Ed */
+                    _GETED(0);
                     #ifndef TEST_INTERPRETER
                     if(rex.w)
                         fpu_fxsave64(emu, ED);
@@ -940,14 +1031,14 @@ uintptr_t Run0F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
                     #endif
                     break;
                 case 1:                 /* FXRSTOR Ed */
-                    #ifndef TEST_INTERPRETER
+                    _GETED(0);
                     if(rex.w)
                         fpu_fxrstor64(emu, ED);
                     else
                         fpu_fxrstor32(emu, ED);
-                    #endif
                     break;
                 case 2:                 /* LDMXCSR Md */
+                    GETED(0);
                     emu->mxcsr.x32 = ED->dword[0];
                     #ifndef TEST_INTERPRETER
                     if(box64_sse_flushto0)
@@ -955,9 +1046,11 @@ uintptr_t Run0F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
                     #endif
                     break;
                 case 3:                 /* STMXCSR Md */
+                    GETED(0);
                     ED->dword[0] = emu->mxcsr.x32;
                     break;
                 case 7:                 /* CLFLUSH Ed */
+                    _GETED(0);
                     #if defined(DYNAREC) && !defined(TEST_INTERPRETER)
                     if(box64_dynarec)
                         cleanDBFromAddressRange((uintptr_t)ED, 8, 0);
@@ -1102,6 +1195,8 @@ uintptr_t Run0F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
                             ED->dword[0] ^= (1<<tmp8u);
                             CLEAR_FLAG(F_CF);
                         }
+                        if(MODREG)
+                            ED->dword[1] = 0;
                     }
                     break;
                 case 6:             /* BTR Ed, Ib */
@@ -1122,6 +1217,8 @@ uintptr_t Run0F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
                             ED->dword[0] ^= (1<<tmp8u);
                         } else
                             CLEAR_FLAG(F_CF);
+                        if(MODREG)
+                            ED->dword[1] = 0;
                     }
                     break;
                 case 7:             /* BTC Ed, Ib */
@@ -1142,6 +1239,8 @@ uintptr_t Run0F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
                         else
                             CLEAR_FLAG(F_CF);
                         ED->dword[0] ^= (1<<tmp8u);
+                        if(MODREG)
+                            ED->dword[1] = 0;
                     }
                     break;
 
@@ -1432,7 +1531,12 @@ uintptr_t Run0F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
             GETGM;
             GM->q = (EM->q > 63) ? 0L : (GM->q >> EM->q);
             break;
-
+        case 0xD4:                   /* PADDQ Gm,Em */
+            nextop = F8;
+            GETEM(0);
+            GETGM;
+            GM->sq += EM->sq;
+            break;
         case 0xD5:                   /* PMULLW Gm,Em */
             nextop = F8;
             GETEM(0);
@@ -1572,7 +1676,7 @@ uintptr_t Run0F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
             break;
         case 0xE7:                   /* MOVNTQ Em,Gm */
             nextop = F8;
-            if((nextop&0xC0)==0xC0)
+            if(MODREG)
                 return 0;
             GETEM(0);
             GETGM;
@@ -1596,7 +1700,13 @@ uintptr_t Run0F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
                 GM->sw[i] = (tmp32s>32767)?32767:((tmp32s<-32768)?-32768:tmp32s);
             }
             break;
-
+        case 0xEA:                  /* PMINSW Gm,Em */
+            nextop = F8;
+            GETEM(0);
+            GETGM;
+            for (int i=0; i<4; ++i)
+                GM->sw[i] = (GM->sw[i]<EM->sw[i])?GM->sw[i]:EM->sw[i];
+            break;
         case 0xEB:                   /* POR Gm, Em */
             nextop = F8;
             GETEM(0);
@@ -1621,7 +1731,13 @@ uintptr_t Run0F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
                 GM->sw[i] = (tmp32s>32767)?32767:((tmp32s<-32768)?-32768:tmp32s);
             }
             break;
-
+        case 0xEE:                  /* PMAXSW Gm,Em */
+            nextop = F8;
+            GETEM(0);
+            GETGM;
+            for (int i=0; i<4; ++i)
+                GM->sw[i] = (GM->sw[i]>EM->sw[i])?GM->sw[i]:EM->sw[i];
+            break;
         case 0xEF:                   /* PXOR Gm, Em */
             nextop = F8;
             GETEM(0);
@@ -1659,7 +1775,12 @@ uintptr_t Run0F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
             GETGM;
             GM->q = (EM->q > 63) ? 0L : (GM->q << EM->ub[0]);
             break;
-
+        case 0xF4:                   /* PMULUDQ Gm,Em */
+            nextop = F8;
+            GETEM(0);
+            GETGM;
+            GM->q = (uint64_t)GM->ud[0] * (uint64_t)EM->ud[0];
+            break;
         case 0xF5:                   /* PMADDWD Gm, Em */
             nextop = F8;
             GETEM(0);
@@ -1680,7 +1801,16 @@ uintptr_t Run0F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
                 tmp32u += (GM->ub[i]>EM->ub[i])?(GM->ub[i] - EM->ub[i]):(EM->ub[i] - GM->ub[i]);
             GM->q = tmp32u;
             break;
-
+        case 0xF7:                   /* MASKMOVQ Gm, Em */
+            nextop = F8;
+            GETEM(0);
+            GETGM;
+            for (int i = 0; i < 8; i++) {
+                if (EM->ub[i] & 0x80) {
+                   ((reg64_t*)(emu->regs[_DI].q[0]))->byte[i] = GM->ub[i];
+                }
+            }
+            break;
         case 0xF8:                   /* PSUBB Gm,Em */
             nextop = F8;
             GETEM(0);
@@ -1702,7 +1832,12 @@ uintptr_t Run0F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
             for(int i=0; i<2; ++i)
                 GM->ud[i] -= EM->ud[i];
             break;
-
+        case 0xFB:                   /* PSUBQ Gm, Em */
+            nextop = F8;
+            GETEM(0);
+            GETGM;
+            GM->sq -= EM->sq;
+            break;
         case 0xFC:                   /* PADDB Gm, Em */
             nextop = F8;
             GETEM(0);

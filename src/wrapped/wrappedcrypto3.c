@@ -17,6 +17,7 @@
 #include "box64context.h"
 #include "emu/x64emu_private.h"
 #include "callback.h"
+#include "myalign.h"
 
 const char* crypto3Name = "libcrypto.so.3";
 #define LIBNAME crypto3
@@ -35,10 +36,10 @@ GO(4)
 
 // ENGINE_ctrl_cb
 #define GO(A)   \
-static uintptr_t my3_ENGINE_ctrl_cb_fct_##A = 0;                                                      \
-static void my3_ENGINE_ctrl_cb_##A()                    \
-{                                                                                                   \
-    RunFunction(my_context, my3_ENGINE_ctrl_cb_fct_##A, 0);  \
+static uintptr_t my3_ENGINE_ctrl_cb_fct_##A = 0;            \
+static void my3_ENGINE_ctrl_cb_##A()                        \
+{                                                           \
+    RunFunctionFmt(my3_ENGINE_ctrl_cb_fct_##A, "");   \
 }
 SUPER()
 #undef GO
@@ -61,8 +62,8 @@ static void* find_ENGINE_ctrl_cb_Fct(void* fct)
 #define GO(A)   \
 static uintptr_t my3_cmp_fnc_fct_##A = 0;                                \
 static int my3_cmp_fnc_##A(void* a, void* b)                             \
-{                                                                       \
-    return (int)RunFunction(my_context, my3_cmp_fnc_fct_##A, 2, a, b);   \
+{                                                                        \
+    return (int)RunFunctionFmt(my3_cmp_fnc_fct_##A, "pp", a, b);   \
 }
 SUPER()
 #undef GO
@@ -86,7 +87,7 @@ static void* find_cmp_fnc_Fct(void* fct)
 static uintptr_t my3_free_fnc_fct_##A = 0;               \
 static void my3_free_fnc_##A(void* p)                    \
 {                                                       \
-    RunFunction(my_context, my3_free_fnc_fct_##A, 1, p); \
+    RunFunctionFmt(my3_free_fnc_fct_##A, "p", p); \
 }
 SUPER()
 #undef GO
@@ -110,7 +111,7 @@ static void* find_free_fnc_Fct(void* fct)
 static uintptr_t my3_id_func_fct_##A = 0;                                    \
 static unsigned long my3_id_func_##A()                                       \
 {                                                                           \
-    return (unsigned long)RunFunction(my_context, my3_id_func_fct_##A, 0);   \
+    return (unsigned long)RunFunctionFmt(my3_id_func_fct_##A, "");   \
 }
 SUPER()
 #undef GO
@@ -134,7 +135,7 @@ static void* find_id_func_Fct(void* fct)
 static uintptr_t my3_lock_func_fct_##A = 0;                              \
 static void my3_lock_func_##A(int mode, int n, void* f, int l)           \
 {                                                                       \
-    RunFunction(my_context, my3_lock_func_fct_##A, 4, mode, n, f, l);    \
+    RunFunctionFmt(my3_lock_func_fct_##A, "iipi", mode, n, f, l);    \
 }
 SUPER()
 #undef GO
@@ -158,7 +159,7 @@ static void* find_lock_func_Fct(void* fct)
 static uintptr_t my3_passphrase_fct_##A = 0;                                             \
 static int my3_passphrase_##A(void* buff, int size, int rw, void* u)                     \
 {                                                                                       \
-    return (int)RunFunction(my_context, my3_passphrase_fct_##A, 4, buff, size, rw, u);   \
+    return (int)RunFunctionFmt(my3_passphrase_fct_##A, "piip", buff, size, rw, u);   \
 }
 SUPER()
 #undef GO
@@ -182,7 +183,7 @@ static void* find_passphrase_Fct(void* fct)
 static uintptr_t my3_xnew_fct_##A = 0;                           \
 static void* my3_xnew_##A()                                      \
 {                                                               \
-    return (void*)RunFunction(my_context, my3_xnew_fct_##A, 0);  \
+    return (void*)RunFunctionFmt(my3_xnew_fct_##A, "");  \
 }
 SUPER()
 #undef GO
@@ -206,7 +207,7 @@ static void* find_xnew_Fct(void* fct)
 static uintptr_t my3_d2i_fct_##A = 0;                            \
 static void* my3_d2i_##A()                                       \
 {                                                               \
-    return (void*)RunFunction(my_context, my3_d2i_fct_##A, 0);   \
+    return (void*)RunFunctionFmt(my3_d2i_fct_##A, "");   \
 }
 SUPER()
 #undef GO
@@ -230,7 +231,7 @@ static void* find_d2i_Fct(void* fct)
 static uintptr_t my3_i2d_fct_##A = 0;                        \
 static int my3_i2d_##A()                                     \
 {                                                           \
-    return (int)RunFunction(my_context, my3_i2d_fct_##A, 0); \
+    return (int)RunFunctionFmt(my3_i2d_fct_##A, ""); \
 }
 SUPER()
 #undef GO
@@ -254,7 +255,7 @@ static void* find_i2d_Fct(void* fct)
 static uintptr_t my3_pem_password_cb_fct_##A = 0;                                    \
 static int my3_pem_password_cb_##A(void* a, int b, int c, void* d)                   \
 {                                                                                   \
-    return (int)RunFunction(my_context, my3_pem_password_cb_fct_##A, 4, a, b, c, d); \
+    return (int)RunFunctionFmt(my3_pem_password_cb_fct_##A, "piip", a, b, c, d); \
 }
 SUPER()
 #undef GO
@@ -275,10 +276,10 @@ static void* find_pem_password_cb_Fct(void* fct)
 
 // verify_cb
 #define GO(A)   \
-static uintptr_t my3_verify_cb_fct_##A = 0;                              \
-static int my3_verify_cb_##A(int a, void* b)                             \
-{                                                                       \
-    return (int)RunFunction(my_context, my3_verify_cb_fct_##A, 2, a, b); \
+static uintptr_t my3_verify_cb_fct_##A = 0;                                     \
+static int my3_verify_cb_##A(int a, void* b)                                    \
+{                                                                               \
+    return (int)RunFunctionFmt(my3_verify_cb_fct_##A, "ip", a, b);  \
 }
 SUPER()
 #undef GO
@@ -436,6 +437,24 @@ EXPORT void my3_OPENSSL_sk_pop_free(x64emu_t* emu, void* s, void* cb)
     (void)emu;
     my->OPENSSL_sk_pop_free(s, find_free_fnc_Fct(cb));
 }
+
+EXPORT void my3_ERR_set_error(x64emu_t* emu, int lib, int reason, void* fmt, uintptr_t* b)
+{
+    myStackAlign(emu, (const char*)fmt, b, emu->scratch, R_EAX, 3);
+    PREPARE_VALIST;
+    my->ERR_vset_error(lib, reason, fmt, VARARGS);
+}
+EXPORT void my3_ERR_vset_error(x64emu_t* emu, int lib, int reason, void* fmt, x64_va_list_t b)
+{
+    #ifdef CONVERT_VALIST
+    CONVERT_VALIST(b);
+    #else
+    myStackAlignValist(emu, (const char*)fmt, emu->scratch, b);
+    PREPARE_VALIST;
+    #endif
+    my->ERR_vset_error(lib, reason, fmt, VARARGS);
+}
+
 
 #define CUSTOM_INIT \
     SETALT(my3_);   \

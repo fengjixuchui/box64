@@ -34,26 +34,21 @@ typedef void(*vFpUp_t)      (void*, uint64_t, void*);
 #define ADDED_SUPER 1
 #include "wrappercallback.h"
 
-void updateInstance(vulkan_my_t* my)
+static void updateInstance(x64emu_t* emu, vulkan_my_t* my)
 {
     void* p;
     #define GO(A, W) p = my_context->vkprocaddress(my->currentInstance, #A); if(p) my->A = p;
     SUPER()
     #undef GO
+    symbol1_t* s;
+    kh_foreach_value_ref(emu->context->vkwrappers, s, s->resolved = 0;)
 }
 
 void fillVulkanProcWrapper(box64context_t*);
 void freeVulkanProcWrapper(box64context_t*);
 
-static void* resolveSymbol(x64emu_t* emu, void* symbol, const char* rname)
+static symbol1_t* getWrappedSymbol(x64emu_t* emu, const char* rname, int warning)
 {
-    // check if alread bridged
-    uintptr_t ret = CheckBridged(emu->context->system, symbol);
-    if(ret) {
-        printf_dlsym(LOG_DEBUG, "%p\n", (void*)ret);
-        return (void*)ret; // already bridged
-    }
-    // get wrapper    
     khint_t k = kh_get(symbolmap, emu->context->vkwrappers, rname);
     if(k==kh_end(emu->context->vkwrappers) && strstr(rname, "KHR")==NULL) {
         // try again, adding KHR at the end if not present
@@ -63,18 +58,31 @@ static void* resolveSymbol(x64emu_t* emu, void* symbol, const char* rname)
         k = kh_get(symbolmap, emu->context->vkwrappers, tmp);
     }
     if(k==kh_end(emu->context->vkwrappers)) {
-        printf_dlsym(LOG_DEBUG, "%p\n", NULL);
-        printf_dlsym(LOG_INFO, "Warning, no wrapper for %s\n", rname);
+        if(warning) {
+            printf_dlsym(LOG_DEBUG, "%p\n", NULL);
+            printf_dlsym(LOG_INFO, "Warning, no wrapper for %s\n", rname);
+        }
         return NULL;
     }
-    const char* constname = kh_key(emu->context->vkwrappers, k);
-    AddOffsetSymbol(emu->context->maplib, symbol, constname);
-    ret = AddBridge(emu->context->system, kh_value(emu->context->vkwrappers, k), symbol, 0, constname);
-    printf_dlsym(LOG_DEBUG, "%p (%p)\n", (void*)ret, symbol);
-    return (void*)ret;
+    return &kh_value(emu->context->vkwrappers, k);
 }
 
-EXPORT void* my_vkGetDeviceProcAddr(x64emu_t* emu, void* device, void* name) 
+static void* resolveSymbol(x64emu_t* emu, void* symbol, const char* rname)
+{
+    // get wrapper
+    symbol1_t *s = getWrappedSymbol(emu, rname, 1);
+    if(!s->resolved) {
+        khint_t k = kh_get(symbolmap, emu->context->vkwrappers, rname);
+        const char* constname = kh_key(emu->context->vkwrappers, k);
+        s->addr = AddBridge(emu->context->system, s->w, symbol, 0, constname);
+        s->resolved = 1;
+    }
+    void* ret = (void*)s->addr;
+    printf_dlsym(LOG_DEBUG, "%p (%p)\n", ret, symbol);
+    return ret;
+}
+
+EXPORT void* my_vkGetDeviceProcAddr(x64emu_t* emu, void* device, void* name)
 {
     khint_t k;
     const char* rname = (const char*)name;
@@ -82,10 +90,16 @@ EXPORT void* my_vkGetDeviceProcAddr(x64emu_t* emu, void* device, void* name)
     printf_dlsym(LOG_DEBUG, "Calling my_vkGetDeviceProcAddr(%p, \"%s\") => ", device, rname);
     if(!emu->context->vkwrappers)
         fillVulkanProcWrapper(emu->context);
+    symbol1_t* s = getWrappedSymbol(emu, rname, 0);
+    if(s && s->resolved) {
+        void* ret = (void*)s->addr;
+        printf_dlsym(LOG_DEBUG, "%p (cached)\n", ret);
+        return ret;
+    }
     k = kh_get(symbolmap, emu->context->vkmymap, rname);
     int is_my = (k==kh_end(emu->context->vkmymap))?0:1;
-    void* symbol;
-    if(is_my) {
+    void* symbol = my->vkGetDeviceProcAddr(device, name);
+    if(symbol && is_my) {   // only wrap if symbol exist
         // try again, by using custom "my_" now...
         char tmp[200];
         strcpy(tmp, "my_");
@@ -95,8 +109,7 @@ EXPORT void* my_vkGetDeviceProcAddr(x64emu_t* emu, void* device, void* name)
         #define GO(A, W) if(!strcmp(rname, #A)) my->A = (W)my->vkGetDeviceProcAddr(device, name);
         SUPER()
         #undef GO
-    } else 
-        symbol = my->vkGetDeviceProcAddr(device, name);
+    } 
     if(!symbol) {
         printf_dlsym(LOG_DEBUG, "%p\n", NULL);
         return NULL;    // easy
@@ -104,7 +117,7 @@ EXPORT void* my_vkGetDeviceProcAddr(x64emu_t* emu, void* device, void* name)
     return resolveSymbol(emu, symbol, rname);
 }
 
-EXPORT void* my_vkGetInstanceProcAddr(x64emu_t* emu, void* instance, void* name) 
+EXPORT void* my_vkGetInstanceProcAddr(x64emu_t* emu, void* instance, void* name)
 {
     khint_t k;
     const char* rname = (const char*)name;
@@ -114,7 +127,13 @@ EXPORT void* my_vkGetInstanceProcAddr(x64emu_t* emu, void* instance, void* name)
         fillVulkanProcWrapper(emu->context);
     if(instance!=my->currentInstance) {
         my->currentInstance = instance;
-        updateInstance(my);
+        updateInstance(emu, my);
+    }
+    symbol1_t* s = getWrappedSymbol(emu, rname, 0);
+    if(s && s->resolved) {
+        void* ret = (void*)s->addr;
+        printf_dlsym(LOG_DEBUG, "%p (cached)\n", ret);
+        return ret;
     }
     // check if vkprocaddress is filled, and search for lib and fill it if needed
     // get proc adress using actual glXGetProcAddress
@@ -147,6 +166,12 @@ void* my_GetVkProcAddr(x64emu_t* emu, void* name, void*(*getaddr)(const char*))
     printf_dlsym(LOG_DEBUG, "Calling my_GetVkProcAddr(\"%s\", %p) => ", rname, getaddr);
     if(!emu->context->vkwrappers)
         fillVulkanProcWrapper(emu->context);
+    symbol1_t* s = getWrappedSymbol(emu, rname, 0);
+    if(s && s->resolved) {
+        void* ret = (void*)s->addr;
+        printf_dlsym(LOG_DEBUG, "%p (cached)\n", ret);
+        return ret;
+    }
     // check if vkprocaddress is filled, and search for lib and fill it if needed
     // get proc adress using actual glXGetProcAddress
     k = kh_get(symbolmap, emu->context->vkmymap, rname);
@@ -182,6 +207,28 @@ typedef struct my_VkAllocationCallbacks_s {
     void*   pfnInternalFree;
 } my_VkAllocationCallbacks_t;
 
+typedef struct my_VkDebugUtilsMessengerCreateInfoEXT_s {
+    int          sType;
+    const void*  pNext;
+    int          flags;
+    int          messageSeverity;
+    int          messageType;
+    void*        pfnUserCallback;
+    void*        pUserData;
+} my_VkDebugUtilsMessengerCreateInfoEXT_t;
+
+typedef struct my_VkDebugReportCallbackCreateInfoEXT_s {
+    int         sType;
+    const void* pNext;
+    int         flags;
+    void*       pfnCallback;
+    void*       pUserData;
+} my_VkDebugReportCallbackCreateInfoEXT_t;
+
+typedef struct my_VkStruct_s {
+    int         sType;
+    struct my_VkStruct_s* pNext;
+} my_VkStruct_t;
 
 #define SUPER() \
 GO(0)   \
@@ -192,10 +239,10 @@ GO(4)
 
 // Allocation ...
 #define GO(A)   \
-static uintptr_t my_Allocation_fct_##A = 0;                                         \
-static void* my_Allocation_##A(void* a, size_t b, size_t c, int d)                  \
-{                                                                                   \
-    return (void*)RunFunction(my_context, my_Allocation_fct_##A, 4, a, b, c, d);    \
+static uintptr_t my_Allocation_fct_##A = 0;                                             \
+static void* my_Allocation_##A(void* a, size_t b, size_t c, int d)                      \
+{                                                                                       \
+    return (void*)RunFunctionFmt(my_Allocation_fct_##A, "pLLi", a, b, c, d);      \
 }
 SUPER()
 #undef GO
@@ -214,10 +261,10 @@ static void* find_Allocation_Fct(void* fct)
 }
 // Reallocation ...
 #define GO(A)   \
-static uintptr_t my_Reallocation_fct_##A = 0;                                           \
-static void* my_Reallocation_##A(void* a, void* b, size_t c, size_t d, int e)           \
-{                                                                                       \
-    return (void*)RunFunction(my_context, my_Reallocation_fct_##A, 5, a, b, c, d, e);   \
+static uintptr_t my_Reallocation_fct_##A = 0;                                                   \
+static void* my_Reallocation_##A(void* a, void* b, size_t c, size_t d, int e)                   \
+{                                                                                               \
+    return (void*)RunFunctionFmt(my_Reallocation_fct_##A, "ppLLi", a, b, c, d, e);        \
 }
 SUPER()
 #undef GO
@@ -239,7 +286,7 @@ static void* find_Reallocation_Fct(void* fct)
 static uintptr_t my_Free_fct_##A = 0;                       \
 static void my_Free_##A(void* a, void* b)                   \
 {                                                           \
-    RunFunction(my_context, my_Free_fct_##A, 2, a, b);      \
+    RunFunctionFmt(my_Free_fct_##A, "pp", a, b);      \
 }
 SUPER()
 #undef GO
@@ -258,10 +305,10 @@ static void* find_Free_Fct(void* fct)
 }
 // InternalAllocNotification ...
 #define GO(A)   \
-static uintptr_t my_InternalAllocNotification_fct_##A = 0;                          \
-static void my_InternalAllocNotification_##A(void* a, size_t b, int c, int d)       \
-{                                                                                   \
-    RunFunction(my_context, my_InternalAllocNotification_fct_##A, 4, a, b, c, d);   \
+static uintptr_t my_InternalAllocNotification_fct_##A = 0;                                  \
+static void my_InternalAllocNotification_##A(void* a, size_t b, int c, int d)               \
+{                                                                                           \
+    RunFunctionFmt(my_InternalAllocNotification_fct_##A, "pLii", a, b, c, d);         \
 }
 SUPER()
 #undef GO
@@ -280,10 +327,10 @@ static void* find_InternalAllocNotification_Fct(void* fct)
 }
 // InternalFreeNotification ...
 #define GO(A)   \
-static uintptr_t my_InternalFreeNotification_fct_##A = 0;                           \
-static void my_InternalFreeNotification_##A(void* a, size_t b, int c, int d)        \
-{                                                                                   \
-    RunFunction(my_context, my_InternalFreeNotification_fct_##A, 4, a, b, c, d);    \
+static uintptr_t my_InternalFreeNotification_fct_##A = 0;                                   \
+static void my_InternalFreeNotification_##A(void* a, size_t b, int c, int d)                \
+{                                                                                           \
+    RunFunctionFmt(my_InternalFreeNotification_fct_##A, "pLii", a, b, c, d);          \
 }
 SUPER()
 #undef GO
@@ -302,10 +349,10 @@ static void* find_InternalFreeNotification_Fct(void* fct)
 }
 // DebugReportCallbackEXT ...
 #define GO(A)   \
-static uintptr_t my_DebugReportCallbackEXT_fct_##A = 0;                                                                             \
-static int my_DebugReportCallbackEXT_##A(int a, int b, uint64_t c, size_t d, int e, void* f, void* g, void* h)                      \
-{                                                                                                                                   \
-    return RunFunction(my_context, my_DebugReportCallbackEXT_fct_##A, 8, a, b, c, d, e, f, g, h);    \
+static uintptr_t my_DebugReportCallbackEXT_fct_##A = 0;                                                         \
+static int my_DebugReportCallbackEXT_##A(int a, int b, uint64_t c, size_t d, int e, void* f, void* g, void* h)  \
+{                                                                                                               \
+    return RunFunctionFmt(my_DebugReportCallbackEXT_fct_##A, "iiULippp", a, b, c, d, e, f, g, h);         \
 }
 SUPER()
 #undef GO
@@ -320,6 +367,28 @@ static void* find_DebugReportCallbackEXT_Fct(void* fct)
     SUPER()
     #undef GO
     printf_log(LOG_NONE, "Warning, no more slot for Vulkan DebugReportCallbackEXT callback\n");
+    return NULL;
+}
+// DebugUtilsMessengerCallback ...
+#define GO(A)   \
+static uintptr_t my_DebugUtilsMessengerCallback_fct_##A = 0;                            \
+static int my_DebugUtilsMessengerCallback_##A(int a, int b, void* c, void* d)           \
+{                                                                                       \
+    return RunFunctionFmt(my_DebugUtilsMessengerCallback_fct_##A, "iipp", a, b, c, d);  \
+}
+SUPER()
+#undef GO
+static void* find_DebugUtilsMessengerCallback_Fct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_DebugUtilsMessengerCallback_fct_##A == (uintptr_t)fct) return my_DebugUtilsMessengerCallback_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_DebugUtilsMessengerCallback_fct_##A == 0) {my_DebugUtilsMessengerCallback_fct_##A = (uintptr_t)fct; return my_DebugUtilsMessengerCallback_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for Vulkan DebugUtilsMessengerCallback callback\n");
     return NULL;
 }
 
@@ -350,13 +419,15 @@ void fillVulkanProcWrapper(box64context_t* context)
     cnt = sizeof(vulkansymbolmap)/sizeof(map_onesymbol_t);
     for (int i=0; i<cnt; ++i) {
         k = kh_put(symbolmap, symbolmap, vulkansymbolmap[i].name, &ret);
-        kh_value(symbolmap, k) = vulkansymbolmap[i].w;
+        kh_value(symbolmap, k).w = vulkansymbolmap[i].w;
+        kh_value(symbolmap, k).resolved = 0;
     }
     // and the my_ symbols map
     cnt = sizeof(MAPNAME(mysymbolmap))/sizeof(map_onesymbol_t);
     for (int i=0; i<cnt; ++i) {
         k = kh_put(symbolmap, symbolmap, vulkanmysymbolmap[i].name, &ret);
-        kh_value(symbolmap, k) = vulkanmysymbolmap[i].w;
+        kh_value(symbolmap, k).w = vulkanmysymbolmap[i].w;
+        kh_value(symbolmap, k).resolved = 0;
     }
     context->vkwrappers = symbolmap;
     // my_* map
@@ -364,7 +435,8 @@ void fillVulkanProcWrapper(box64context_t* context)
     cnt = sizeof(MAPNAME(mysymbolmap))/sizeof(map_onesymbol_t);
     for (int i=0; i<cnt; ++i) {
         k = kh_put(symbolmap, symbolmap, vulkanmysymbolmap[i].name, &ret);
-        kh_value(symbolmap, k) = vulkanmysymbolmap[i].w;
+        kh_value(symbolmap, k).w = vulkanmysymbolmap[i].w;
+        kh_value(symbolmap, k).resolved = 0;
     }
     context->vkmymap = symbolmap;
 }
@@ -450,10 +522,46 @@ EXPORT int my_vkCreateGraphicsPipelines(x64emu_t* emu, void* device, uint64_t pi
 CREATE(vkCreateImage)
 CREATE(vkCreateImageView)
 
+#define VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT 1000011000
+#define VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT 1000128004
 EXPORT int my_vkCreateInstance(x64emu_t* emu, void* pCreateInfos, my_VkAllocationCallbacks_t* pAllocator, void* pInstance)
 {
     my_VkAllocationCallbacks_t my_alloc;
-    return my->vkCreateInstance(pCreateInfos, find_VkAllocationCallbacks(&my_alloc, pAllocator), pInstance);
+    my_VkStruct_t *p = (my_VkStruct_t*)pCreateInfos;
+    void* old[20] = {0};
+    int old_i = 0;
+    while(p) {
+        if(p->sType==VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT) {
+            my_VkDebugReportCallbackCreateInfoEXT_t* vk = (my_VkDebugReportCallbackCreateInfoEXT_t*)p;
+            old[old_i] = vk->pfnCallback;
+            vk->pfnCallback = find_DebugReportCallbackEXT_Fct(old[old_i]);
+            old_i++;
+        } else if(p->sType==VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT) {
+            my_VkDebugUtilsMessengerCreateInfoEXT_t* vk = (my_VkDebugUtilsMessengerCreateInfoEXT_t*)p;
+            old[old_i] = vk->pfnUserCallback;
+            vk->pfnUserCallback = find_DebugUtilsMessengerCallback_Fct(old[old_i]);
+            old_i++;
+        }
+        p = p->pNext;
+    }
+    int ret = my->vkCreateInstance(pCreateInfos, find_VkAllocationCallbacks(&my_alloc, pAllocator), pInstance);
+    if(old_i) {// restore, just in case it's re-used?
+        p = (my_VkStruct_t*)pCreateInfos;
+        old_i = 0;
+        while(p) {
+            if(p->sType==VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT) {
+                my_VkDebugReportCallbackCreateInfoEXT_t* vk = (my_VkDebugReportCallbackCreateInfoEXT_t*)p;
+                vk->pfnCallback = old[old_i];
+                old_i++;
+            } else if(p->sType==VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT) {
+                my_VkDebugUtilsMessengerCreateInfoEXT_t* vk = (my_VkDebugUtilsMessengerCreateInfoEXT_t*)p;
+                vk->pfnUserCallback = old[old_i];
+                old_i++;
+            }
+            p = p->pNext;
+        }
+    }
+    return ret;
 }
 
 CREATE(vkCreatePipelineCache)
@@ -531,7 +639,17 @@ DESTROY64(vkDestroySwapchainKHR)
 
 DESTROY64(vkFreeMemory)
 
-CREATE(vkCreateDebugUtilsMessengerEXT)
+EXPORT int my_vkCreateDebugUtilsMessengerEXT(x64emu_t* emu, void* device, my_VkDebugUtilsMessengerCreateInfoEXT_t* pAllocateInfo, my_VkAllocationCallbacks_t* pAllocator, void* p)
+{
+    #define VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT 1000128004
+    my_VkAllocationCallbacks_t my_alloc;
+    my_VkDebugUtilsMessengerCreateInfoEXT_t* info = pAllocateInfo;
+    while(info && info->sType==VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT) {
+        info->pfnUserCallback = find_DebugUtilsMessengerCallback_Fct(info->pfnUserCallback);
+        info = (my_VkDebugUtilsMessengerCreateInfoEXT_t*)info->pNext;
+    }
+    return my->vkCreateDebugUtilsMessengerEXT(device, pAllocateInfo, find_VkAllocationCallbacks(&my_alloc, pAllocator), p); 
+}
 DESTROY(vkDestroyDebugUtilsMessengerEXT)
 
 DESTROY64(vkDestroySurfaceKHR)
@@ -618,26 +736,18 @@ EXPORT void my_vkGetPhysicalDeviceMemoryProperties(x64emu_t* emu, void* device, 
     my->vkGetPhysicalDeviceMemoryProperties(device, pProps);
 }
 
-EXPORT void my_vkCmdPipelineBarrier(x64emu_t* emu, void* device, int src, int dst, int dep, 
+EXPORT void my_vkCmdPipelineBarrier(x64emu_t* emu, void* device, int src, int dst, int dep,
     uint32_t barrierCount, void* pBarriers, uint32_t bufferCount, void* pBuffers, uint32_t imageCount, void* pImages)
 {
     my->vkCmdPipelineBarrier(device, src, dst, dep, barrierCount, pBarriers, bufferCount, pBuffers, imageCount, pImages);
 }
 
-typedef struct my_VkDebugReportCallbackCreateInfoEXT_s {
-    int         sType;
-    void*       pNext;
-    uint32_t    flags;
-    void*       pfnCallback;
-    void*       pUserData;
-} my_VkDebugReportCallbackCreateInfoEXT_t;
-
-EXPORT int my_vkCreateDebugReportCallbackEXT(x64emu_t* emu, void* instance, 
-                                             my_VkDebugReportCallbackCreateInfoEXT_t* create, 
+EXPORT int my_vkCreateDebugReportCallbackEXT(x64emu_t* emu, void* instance,
+                                             my_VkDebugReportCallbackCreateInfoEXT_t* create,
                                              my_VkAllocationCallbacks_t* alloc, void* callback)
 {
     my_VkDebugReportCallbackCreateInfoEXT_t dbg = *create;
-    my_VkAllocationCallbacks_t my_alloc; 
+    my_VkAllocationCallbacks_t my_alloc;
     dbg.pfnCallback = find_DebugReportCallbackEXT_Fct(dbg.pfnCallback);
     return my->vkCreateDebugReportCallbackEXT(instance, &dbg, find_VkAllocationCallbacks(&my_alloc, alloc), callback);
 }

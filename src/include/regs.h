@@ -17,7 +17,7 @@ enum {
 #define _DI _RDI
 
 enum {
-    _CS, _DS, _SS, _ES, _FS, _GS
+    _ES, _CS, _SS, _DS, _FS, _GS
 };
 
 
@@ -139,7 +139,13 @@ typedef enum {
 	d_inc16i,
 	d_inc32i,
 	d_inc64i,
-	d_unknown	//95
+	d_shrd16,
+	d_shrd32,
+	d_shrd64,
+	d_shld16,
+	d_shld32,
+	d_shld64,
+	d_unknown	//101
 } deferred_flags_t;
 
 #pragma pack(push, 1)
@@ -353,6 +359,44 @@ typedef union {
 #define R_ES emu->segs[_ES]
 #define R_FS emu->segs[_FS]
 #define R_GS emu->segs[_GS]
+#define S_RAX emu->regs[_AX].sq[0]
+#define S_RBX emu->regs[_BX].sq[0]
+#define S_RCX emu->regs[_CX].sq[0]
+#define S_RDX emu->regs[_DX].sq[0]
+#define S_RDI emu->regs[_DI].sq[0]
+#define S_RSI emu->regs[_SI].sq[0]
+#define S_RSP emu->regs[_SP].sq[0]
+#define S_RBP emu->regs[_BP].sq[0]
+#define S_R8 emu->regs[_R8].sq[0]
+#define S_R9 emu->regs[_R9].sq[0]
+#define S_R10 emu->regs[_R10].sq[0]
+#define S_R11 emu->regs[_R11].sq[0]
+#define S_R12 emu->regs[_R12].sq[0]
+#define S_R13 emu->regs[_R13].sq[0]
+#define S_R14 emu->regs[_R14].sq[0]
+#define S_R15 emu->regs[_R15].sq[0]
+#define S_EAX emu->regs[_AX].sdword[0]
+#define S_EBX emu->regs[_BX].sdword[0]
+#define S_ECX emu->regs[_CX].sdword[0]
+#define S_EDX emu->regs[_DX].sdword[0]
+#define S_EDI emu->regs[_DI].sdword[0]
+#define S_ESI emu->regs[_SI].sdword[0]
+#define S_ESP emu->regs[_SP].sdword[0]
+#define S_EBP emu->regs[_BP].sdword[0]
+#define S_R8d emu->regs[_R8].sdword[0]
+#define S_R9d emu->regs[_R9].sdword[0]
+#define S_R10d emu->regs[_R10].sdword[0]
+#define S_AX emu->regs[_AX].sword[0]
+#define S_BX emu->regs[_BX].sword[0]
+#define S_CX emu->regs[_CX].sword[0]
+#define S_DX emu->regs[_DX].sword[0]
+#define S_DI emu->regs[_DI].sword[0]
+#define S_SI emu->regs[_SI].sword[0]
+#define S_SP emu->regs[_SP].sword[0]
+#define S_BP emu->regs[_BP].sword[0]
+#define S_AL emu->regs[_AX].sbyte[0]
+#define S_AH emu->regs[_AX].sbyte[1]
+#define S_CL emu->regs[_CX].sbyte[0]
 
 #define ACCESS_FLAG(F)  emu->eflags.f._##F
 #define SET_FLAG(F)     emu->eflags.f._##F = 1

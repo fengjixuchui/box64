@@ -31,6 +31,15 @@ typedef union sse_cache_s {
         uint8_t     single:1;
     };
 } sse_cache_t;
+typedef union sse_old_s {
+    int8_t      v;
+    struct {
+        uint8_t     changed:1;
+        uint8_t     purged:1;
+        uint8_t     reg:4;
+        uint8_t     single:1;
+    };
+} sse_old_t;
 typedef struct extcache_s {
     // ext cache
     ext_cache_t         extcache[24];
@@ -43,6 +52,7 @@ typedef struct extcache_s {
     uint8_t             swapped;        // the combined reg were swapped
     uint8_t             barrier;        // is there a barrier at instruction epilog?
     uint32_t            news;           // bitmask, wich neoncache are new for this opcode
+    sse_old_t           olds[16];       // SSE regs has changed or has been removed
     // fpu cache
     int8_t              x87cache[8];    // cache status for the 8 x87 register behind the fpu stack
     int8_t              x87reg[8];      // reg used for x87cache entry
@@ -69,8 +79,8 @@ typedef struct instruction_rv64_s {
     int                 size2;      // size of the arm emitted instrucion after pass2
     int                 pred_sz;    // size of predecessor list
     int                 *pred;      // predecessor array
-    uintptr_t           mark, mark2, mark3;
-    uintptr_t           markf;
+    uintptr_t           mark[3];
+    uintptr_t           markf[2];
     uintptr_t           markseg;
     uintptr_t           marklock;
     int                 pass2choice;// value for choices that are fixed on pass2 for pass3
@@ -125,14 +135,14 @@ uintptr_t get_closest_next(dynarec_rv64_t *dyn, uintptr_t addr);
 int is_nops(dynarec_rv64_t *dyn, uintptr_t addr, int n);
 int is_instructions(dynarec_rv64_t *dyn, uintptr_t addr, int n);
 
-int Table64(dynarec_rv64_t *dyn, uint64_t val, int pass);  // add a value to etable64 (if needed) and gives back the imm19 to use in LDR_literal
+int Table64(dynarec_rv64_t *dyn, uint64_t val, int pass);  // add a value to table64 (if needed) and gives back the imm19 to use in LDR_literal
 
 void CreateJmpNext(void* addr, void* next);
 
-#define GO_TRACE(A, B)      \
+#define GO_TRACE(A, B, s0)  \
     GETIP(addr);            \
     MV(A1, xRIP);           \
-    STORE_XEMU_CALL();      \
+    STORE_XEMU_CALL(s0);    \
     MOV64x(A2, B);          \
     CALL(A, -1);            \
     LOAD_XEMU_CALL()

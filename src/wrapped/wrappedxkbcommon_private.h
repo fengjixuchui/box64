@@ -33,7 +33,7 @@ GO(xkb_context_set_log_level, vFpi)
 GO(xkb_context_set_log_verbosity, vFpi)
 GO(xkb_context_set_user_data, vFpp)
 GO(xkb_context_unref, vFp)
-//GO(xkb_keymap_get_as_string, 
+GO(xkb_keymap_get_as_string, pFpi)
 GO(xkb_keymap_key_by_name, uFpp)
 //GOM(xkb_keymap_key_for_each, vFEppp)
 GO(xkb_keymap_key_get_name, pFpu)
@@ -49,7 +49,7 @@ GO(xkb_keymap_mod_get_index, uFpp)
 GO(xkb_keymap_mod_get_name, pFpu)
 GO(xkb_keymap_new_from_buffer, pFppLii)
 //GO(xkb_keymap_new_from_file, 
-//GO(xkb_keymap_new_from_names, 
+GO(xkb_keymap_new_from_names, pFppi)
 GO(xkb_keymap_new_from_string, pFppii)
 GO(xkb_keymap_num_layouts, uFp)
 GO(xkb_keymap_num_layouts_for_key, uFpu)

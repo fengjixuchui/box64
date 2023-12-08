@@ -22,13 +22,14 @@
 #define NEW_INST \
         ++dyn->size;                            \
         if(dyn->size+3>=dyn->cap) {             \
-                dyn->insts = (instruction_native_t*)customRealloc(dyn->insts, sizeof(instruction_native_t)*dyn->cap*2);\
+                dyn->insts = (instruction_native_t*)dynaRealloc(dyn->insts, sizeof(instruction_native_t)*dyn->cap*2);\
                 memset(&dyn->insts[dyn->cap], 0, sizeof(instruction_native_t)*dyn->cap);   \
                 dyn->cap *= 2;                  \
         }                                       \
         dyn->insts[ninst].x64.addr = ip;        \
         dyn->e.combined1 = dyn->e.combined2 = 0;\
         dyn->e.swapped = 0; dyn->e.barrier = 0; \
+        for(int i=0; i<16; ++i) dyn->e.olds[i].v = 0;\
         dyn->insts[ninst].f_entry = dyn->f;     \
         if(ninst) {dyn->insts[ninst-1].x64.size = dyn->insts[ninst].x64.addr - dyn->insts[ninst-1].x64.addr;}
 
@@ -40,9 +41,10 @@
 #define DEFAULT                         \
         --dyn->size;                    \
         *ok = -1;                       \
-        if(box64_dynarec_log>=LOG_INFO) {\
-        dynarec_log(LOG_NONE, "%p: Dynarec stopped because of Opcode %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X", \
-        (void*)ip, PKip(0),             \
+        if(box64_dynarec_log>=LOG_INFO || box64_dynarec_dump || box64_dynarec_missing) {\
+        dynarec_log(LOG_NONE, "%p: Dynarec stopped because of %sOpcode %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X", \
+        (void*)ip, rex.is32bits?"32bits ":"",\
+        PKip(0),                        \
         PKip(1), PKip(2), PKip(3),      \
         PKip(4), PKip(5), PKip(6),      \
         PKip(7), PKip(8), PKip(9),      \

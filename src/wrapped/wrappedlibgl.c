@@ -23,7 +23,7 @@ static library_t* my_lib = NULL;
 
 // FIXME: old wrapped* type of file, cannot use generated/wrappedlibgltypes.h
 
-EXPORT void* my_glXGetProcAddress(x64emu_t* emu, void* name) 
+EXPORT void* my_glXGetProcAddress(x64emu_t* emu, void* name)
 {
     khint_t k;
     const char* rname = (const char*)name;
@@ -33,6 +33,7 @@ EXPORT void* my_glXGetProcAddressARB(x64emu_t* emu, void* name) __attribute__((a
 
 typedef int  (*iFi_t)(int);
 typedef void (*vFpp_t)(void*, void*);
+typedef void (*vFppi_t)(void*, void*, int);
 typedef void*(*pFp_t)(void*);
 typedef void (*debugProc_t)(int32_t, int32_t, uint32_t, int32_t, int32_t, void*, void*);
 
@@ -58,7 +59,7 @@ GO(4)
 static uintptr_t my_debug_callback_fct_##A = 0;                                                                         \
 static void my_debug_callback_##A(int32_t a, int32_t b, uint32_t c, int32_t d, int32_t e, const char* f, const void* g) \
 {                                                                                                                       \
-    RunFunction(my_context, my_debug_callback_fct_##A, 7, a, b, c, d, e, f, g);                                         \
+    RunFunctionFmt(my_debug_callback_fct_##A, "iiuiipp", a, b, c, d, e, f, g);                                    \
 }
 SUPER()
 #undef GO
@@ -80,7 +81,7 @@ static void* find_debug_callback_Fct(void* fct)
 static uintptr_t my_program_callback_fct_##A = 0;                   \
 static void my_program_callback_##A(int32_t a, void* b)             \
 {                                                                   \
-    RunFunction(my_context, my_program_callback_fct_##A, 2, a, b);  \
+    RunFunctionFmt(my_program_callback_fct_##A, "ip", a, b);  \
 }
 SUPER()
 #undef GO
@@ -201,9 +202,15 @@ static int my_glXSwapIntervalMESA_##A(int interval)     \
 }
 SUPER()
 #undef GO
+
+static int my_dummy_glXSwapIntervalMESA(int interval)
+{
+    return 5; // GLX_BAD_CONTEXT
+}
+
 static void* find_glXSwapIntervalMESA_Fct(void* fct)
 {
-    if(!fct) return fct;
+    if(!fct) return my_dummy_glXSwapIntervalMESA;
     #define GO(A) if(my_glXSwapIntervalMESA_fct_##A == (iFi_t)fct) return my_glXSwapIntervalMESA_##A;
     SUPER()
     #undef GO
@@ -213,6 +220,34 @@ static void* find_glXSwapIntervalMESA_Fct(void* fct)
     printf_log(LOG_NONE, "Warning, no more slot for libGL glXSwapIntervalMESA callback\n");
     return NULL;
 }
+
+// glXSwapIntervalEXT ...
+#define GO(A)                                                                   \
+static vFppi_t my_glXSwapIntervalEXT_fct_##A = NULL;                            \
+static void my_glXSwapIntervalEXT_##A(void* dpy, void* drawable, int interval)  \
+{                                                                               \
+    if (!my_glXSwapIntervalEXT_fct_##A)                                         \
+        return;                                                                 \
+    my_glXSwapIntervalEXT_fct_##A(dpy, drawable, interval);                     \
+}
+SUPER()
+#undef GO
+
+static void my_dummy_glXSwapIntervalEXT(void* dpy, void* drawable, int interval) {}
+
+static void* find_glXSwapIntervalEXT_Fct(void* fct)
+{
+    if(!fct) return my_dummy_glXSwapIntervalEXT;
+    #define GO(A) if(my_glXSwapIntervalEXT_fct_##A == (vFppi_t)fct) return my_glXSwapIntervalEXT_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_glXSwapIntervalEXT_fct_##A == 0) {my_glXSwapIntervalEXT_fct_##A = (vFppi_t)fct; return my_glXSwapIntervalEXT_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for libGL glXSwapIntervalEXT callback\n");
+    return NULL;
+}
+
 // glProgramCallbackMESA ...
 #define GO(A)                                                               \
 static vFpp_t my_glProgramCallbackMESA_fct_##A = NULL;                      \
@@ -264,8 +299,29 @@ static void* find_glGetVkProcAddrNV_Fct(void* fct)
 
 #define PRE_INIT if(box64_libGL) {lib->w.lib = dlopen(box64_libGL, RTLD_LAZY | RTLD_GLOBAL); lib->path = strdup(box64_libGL);} else
 #define CUSTOM_INIT \
-    my_lib = lib;   \
-    lib->w.priv = dlsym(lib->w.lib, "glXGetProcAddress"); \
+    my_lib = lib;                                                               \
+    lib->w.priv = dlsym(lib->w.lib, "glXGetProcAddress");                       \
+    void* symb = dlsym(lib->w.lib, "glDebugMessageCallback");                   \
+    if(symb) {                                                                  \
+        k = kh_get(symbolmap, lib->w.mysymbolmap, "glDebugMessageCallback");    \
+        symbol1_t *s = &kh_value(lib->w.mysymbolmap, k);                        \
+        s->resolved = 1;                                                        \
+        s->addr = (uintptr_t)find_glDebugMessageCallback_Fct(symb);             \
+    }                                                                           \
+    symb = dlsym(lib->w.lib, "glXSwapIntervalMESA");                            \
+    if(symb) {                                                                  \
+        k = kh_get(symbolmap, lib->w.mysymbolmap, "glXSwapIntervalMESA");       \
+        symbol1_t *s = &kh_value(lib->w.mysymbolmap, k);                        \
+        s->resolved = 1;                                                        \
+        s->addr = (uintptr_t)find_glXSwapIntervalMESA_Fct(symb);                \
+    }                                                                           \
+    symb = dlsym(lib->w.lib, "glXSwapIntervalEXT");                             \
+    if(symb) {                                                                  \
+        k = kh_get(symbolmap, lib->w.mysymbolmap, "glXSwapIntervalEXT");        \
+        symbol1_t *s = &kh_value(lib->w.mysymbolmap, k);                        \
+        s->resolved = 1;                                                        \
+        s->addr = (uintptr_t)find_glXSwapIntervalEXT_Fct(symb);                 \
+    }                                                                           \
 
 #include "wrappedlib_init.h"
 
@@ -275,6 +331,7 @@ static void* find_glGetVkProcAddrNV_Fct(void* fct)
  GO(vFpp_t, glDebugMessageCallbackAMD)  \
  GO(vFpp_t, glDebugMessageCallbackKHR)  \
  GO(iFi_t, glXSwapIntervalMESA)         \
+ GO(vFppi_t, glXSwapIntervalEXT)        \
  GO(vFpp_t, glProgramCallbackMESA)      \
  GO(pFp_t, glGetVkProcAddrNV)           \
 
@@ -297,20 +354,23 @@ gl_wrappers_t* getGLProcWrapper(box64context_t* context, glprocaddress_t procadd
     cnt = sizeof(libglsymbolmap)/sizeof(map_onesymbol_t);
     for (int i=0; i<cnt; ++i) {
         k = kh_put(symbolmap, wrappers->glwrappers, libglsymbolmap[i].name, &ret);
-        kh_value(wrappers->glwrappers, k) = libglsymbolmap[i].w;
+        kh_value(wrappers->glwrappers, k).w = libglsymbolmap[i].w;
+        kh_value(wrappers->glwrappers, k).resolved = 0;
     }
     // and the my_ symbols map
     cnt = sizeof(MAPNAME(mysymbolmap))/sizeof(map_onesymbol_t);
     for (int i=0; i<cnt; ++i) {
         k = kh_put(symbolmap, wrappers->glwrappers, libglmysymbolmap[i].name, &ret);
-        kh_value(wrappers->glwrappers, k) = libglmysymbolmap[i].w;
+        kh_value(wrappers->glwrappers, k).w = libglmysymbolmap[i].w;
+        kh_value(wrappers->glwrappers, k).resolved = 0;
     }
     // my_* map
     wrappers->glmymap = kh_init(symbolmap);
     cnt = sizeof(MAPNAME(mysymbolmap))/sizeof(map_onesymbol_t);
     for (int i=0; i<cnt; ++i) {
         k = kh_put(symbolmap, wrappers->glmymap, libglmysymbolmap[i].name, &ret);
-        kh_value(wrappers->glmymap, k) = libglmysymbolmap[i].w;
+        kh_value(wrappers->glmymap, k).w = libglmysymbolmap[i].w;
+        kh_value(wrappers->glmymap, k).resolved = 0;
     }
     return wrappers;
 }
@@ -359,7 +419,7 @@ void* getGLProcAddress(x64emu_t* emu, glprocaddress_t procaddr, const char* rnam
         }
         #undef GO
         #undef SUPER
-    } else 
+    } else
         symbol = procaddr(rname);
     if(!symbol) {
         printf_dlsym(LOG_DEBUG, "%p\n", NULL);
@@ -371,7 +431,7 @@ void* getGLProcAddress(x64emu_t* emu, glprocaddress_t procaddr, const char* rnam
         printf_dlsym(LOG_DEBUG, "%p\n", (void*)ret);
         return (void*)ret; // already bridged
     }
-    // get wrapper    
+    // get wrapper
     k = kh_get(symbolmap, wrappers->glwrappers, rname);
     if(k==kh_end(wrappers->glwrappers) && strstr(rname, "ARB")==NULL) {
         // try again, adding ARB at the end if not present
@@ -392,9 +452,14 @@ void* getGLProcAddress(x64emu_t* emu, glprocaddress_t procaddr, const char* rnam
         printf_dlsym(LOG_INFO, "Warning, no wrapper for %s\n", rname);
         return NULL;
     }
-    const char* constname = kh_key(wrappers->glwrappers, k);
-    AddOffsetSymbol(emu->context->maplib, symbol, rname);
-    ret = AddBridge(emu->context->system, kh_value(wrappers->glwrappers, k), symbol, 0, constname);
+    symbol1_t* s = &kh_value(wrappers->glwrappers, k);
+    if(!s->resolved) {
+        const char* constname = kh_key(wrappers->glwrappers, k);
+        AddOffsetSymbol(emu->context->maplib, symbol, rname);
+        s->addr = AddBridge(emu->context->system, s->w, symbol, 0, constname);
+        s->resolved = 1;
+    }
+    ret = s->addr;
     printf_dlsym(LOG_DEBUG, "%p\n", (void*)ret);
     return (void*)ret;
 }

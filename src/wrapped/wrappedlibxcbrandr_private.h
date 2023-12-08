@@ -88,12 +88,12 @@ GO(xcb_randr_get_crtc_info_unchecked, pFpppu)
 //GO(xcb_randr_get_crtc_transform_reply, 
 //GO(xcb_randr_get_crtc_transform_sizeof, 
 //GO(xcb_randr_get_crtc_transform_unchecked, 
-//GO(xcb_randr_get_monitors, 
-//GO(xcb_randr_get_monitors_monitors_iterator, 
-//GO(xcb_randr_get_monitors_monitors_length, 
-//GO(xcb_randr_get_monitors_reply, 
-//GO(xcb_randr_get_monitors_sizeof, 
-//GO(xcb_randr_get_monitors_unchecked, 
+GO(xcb_randr_get_monitors, pFppuC)
+GO(xcb_randr_get_monitors_monitors_iterator, pFpp)
+GO(xcb_randr_get_monitors_monitors_length, iFp)
+GO(xcb_randr_get_monitors_reply, pFpup)
+GO(xcb_randr_get_monitors_sizeof, iFp)
+GO(xcb_randr_get_monitors_unchecked, pFppuC)
 GO(xcb_randr_get_output_info, pFpppu)
 //GO(xcb_randr_get_output_info_clones, 
 //GO(xcb_randr_get_output_info_clones_end, 
@@ -156,15 +156,15 @@ GO(xcb_randr_get_output_property_reply, pFpup)
 //GO(xcb_randr_get_providers_reply, 
 //GO(xcb_randr_get_providers_sizeof, 
 //GO(xcb_randr_get_providers_unchecked, 
-//GO(xcb_randr_get_screen_info, 
-//GO(xcb_randr_get_screen_info_rates_iterator, 
-//GO(xcb_randr_get_screen_info_rates_length, 
-//GO(xcb_randr_get_screen_info_reply, 
+GO(xcb_randr_get_screen_info, pFppu)
+GO(xcb_randr_get_screen_info_rates_iterator, pFpp)
+GO(xcb_randr_get_screen_info_rates_length, iFp)
+GO(xcb_randr_get_screen_info_reply, pFpup)
 //GO(xcb_randr_get_screen_info_sizeof, 
-//GO(xcb_randr_get_screen_info_sizes, 
-//GO(xcb_randr_get_screen_info_sizes_iterator, 
-//GO(xcb_randr_get_screen_info_sizes_length, 
-//GO(xcb_randr_get_screen_info_unchecked, 
+GO(xcb_randr_get_screen_info_sizes, pFp)
+GO(xcb_randr_get_screen_info_sizes_iterator, pFpp)
+GO(xcb_randr_get_screen_info_sizes_length, iFp)
+GO(xcb_randr_get_screen_info_unchecked, pFppu)
 GO(xcb_randr_get_screen_resources, pFppu)
 //GO(xcb_randr_get_screen_resources_crtcs, 
 //GO(xcb_randr_get_screen_resources_crtcs_end, 
@@ -219,12 +219,12 @@ DATA(xcb_randr_id, 8)
 //GO(xcb_randr_mode_info_end, 
 GO(xcb_randr_mode_info_next, vFp)
 //GO(xcb_randr_mode_next, 
-//GO(xcb_randr_monitor_info_end, 
-//GO(xcb_randr_monitor_info_next, 
-//GO(xcb_randr_monitor_info_outputs, 
-//GO(xcb_randr_monitor_info_outputs_end, 
-//GO(xcb_randr_monitor_info_outputs_length, 
-//GO(xcb_randr_monitor_info_sizeof, 
+GO(xcb_randr_monitor_info_end, pFpp)
+GO(xcb_randr_monitor_info_next, vFp)
+GO(xcb_randr_monitor_info_outputs, pFp)
+GO(xcb_randr_monitor_info_outputs_end, pFpp)
+GO(xcb_randr_monitor_info_outputs_length, iFp)
+GO(xcb_randr_monitor_info_sizeof, iFp)
 //GO(xcb_randr_notify_data_end, 
 //GO(xcb_randr_notify_data_next, 
 //GO(xcb_randr_output_change_end, 

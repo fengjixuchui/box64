@@ -17,7 +17,12 @@
 #include "librarian.h"
 #include "myalign.h"
 
-const char* pulseName = "libpulse.so.0";
+#ifdef ANDROID
+    const char* pulseName = "libpulse.so";
+#else
+    const char* pulseName = "libpulse.so.0";
+#endif
+
 #define LIBNAME pulse
 
 // TODO: check my_pa_proplist_setf (not using generated/...)
@@ -49,7 +54,7 @@ typedef void (*vFipippV_t)(int, void*, int, void*, void*, va_list);
 #else
 typedef void (*vFipippV_t)(int, void*, int, void*, void*, void*);
 #endif
-    GO(pa_log_level_meta, vFipippV_t)           
+    GO(pa_log_level_meta, vFipippV_t)
 #endif
 
 #define ADDED_FUNCTIONS() \
@@ -61,11 +66,7 @@ typedef void (*vFipippV_t)(int, void*, int, void*, void*, void*);
 
 // TODO: change that static for a map ptr2ptr?
 static my_pa_mainloop_api_t my_mainloop_api = {0};
-static my_pa_mainloop_api_t my_mainloop_native = {0};
-static int mainloop_inited = 0;
-static my_pa_mainloop_api_t* my_mainloop_ref = NULL;
-static my_pa_mainloop_api_t* my_mainloop_orig = NULL;
-
+static void UpdateautobridgeMainloopAPI(x64emu_t* emu, bridge_t* bridge, my_pa_mainloop_api_t* api);
 
 // utility functions
 #define SUPER() \
@@ -91,7 +92,7 @@ GO(15)  \
 static uintptr_t my_free_fct_##A = 0;   \
 static void my_free_##A(void* data)     \
 {                                       \
-    RunFunction(my_context, my_free_fct_##A, 1, data);\
+    RunFunctionFmt(my_free_fct_##A, "p", data);\
 }
 SUPER()
 #undef GO
@@ -113,7 +114,7 @@ static void* findFreeFct(void* fct)
 static uintptr_t my_free_api_fct_##A = 0;   \
 static void my_free_api_##A(my_pa_mainloop_api_t* api, void* p, void* data)     \
 {                                       \
-    RunFunction(my_context, my_free_api_fct_##A, 3, api, p, data);\
+    RunFunctionFmt(my_free_api_fct_##A, "ppp", api, p, data);\
 }
 SUPER()
 #undef GO
@@ -131,12 +132,12 @@ static void* findFreeAPIFct(void* fct)
     return NULL;
 }
 
-#define GO(A)   \
-static uintptr_t my_io_event_fct_##A = 0;   \
+#define GO(A)                                                                                       \
+static uintptr_t my_io_event_fct_##A = 0;                                                           \
 static void my_io_event_##A(my_pa_mainloop_api_t* api, void* e, int fd, int events, void* data)     \
-{                                       \
-    if(api==my_mainloop_orig) api=my_mainloop_ref;                  \
-    RunFunction(my_context, my_io_event_fct_##A, 5, api, e, fd, events, data);  \
+{                                                                                                   \
+    UpdateautobridgeMainloopAPI(thread_get_emu(), my_lib->w.bridge, api);                           \
+    RunFunctionFmt(my_io_event_fct_##A, "ppiip", api, e, fd, events, data);                         \
 }
 SUPER()
 #undef GO
@@ -154,12 +155,12 @@ static void* findIOEventFct(void* fct)
     return NULL;
 }
 
-#define GO(A)   \
-static uintptr_t my_time_event_fct_##A = 0;   \
+#define GO(A)                                                                               \
+static uintptr_t my_time_event_fct_##A = 0;                                                 \
 static void my_time_event_##A(my_pa_mainloop_api_t* api, void* e, void* tv, void* data)     \
-{                                       \
-    if(api==my_mainloop_orig) api=my_mainloop_ref;                  \
-    RunFunction(my_context, my_time_event_fct_##A, 4, api, e, tv, data);  \
+{                                                                                           \
+    UpdateautobridgeMainloopAPI(thread_get_emu(), my_lib->w.bridge, api);                   \
+    RunFunctionFmt(my_time_event_fct_##A, "pppp", api, e, tv, data);                        \
 }
 SUPER()
 #undef GO
@@ -178,12 +179,12 @@ static void* findTimeEventFct(void* fct)
     return NULL;
 }
 
-#define GO(A)   \
-static uintptr_t my_defer_event_fct_##A = 0;   \
-static void my_defer_event_##A(my_pa_mainloop_api_t* api, void* e, void* data)     \
-{                                       \
-    if(api==my_mainloop_orig) api=my_mainloop_ref;                  \
-    RunFunction(my_context, my_defer_event_fct_##A, 3, api, e, data);  \
+#define GO(A)                                                                       \
+static uintptr_t my_defer_event_fct_##A = 0;                                        \
+static void my_defer_event_##A(my_pa_mainloop_api_t* api, void* e, void* data)      \
+{                                                                                   \
+    UpdateautobridgeMainloopAPI(thread_get_emu(), my_lib->w.bridge, api);           \
+    RunFunctionFmt(my_defer_event_fct_##A, "ppp", api, e, data);                    \
 }
 SUPER()
 #undef GO
@@ -206,7 +207,7 @@ static void* findDeferEventFct(void* fct)
 static uintptr_t my_poll_fct_##A = 0;   \
 static int my_poll_##A(void* ufds, unsigned long nfds, int timeout, void* data)         \
 {                                       \
-    return (int)RunFunction(my_context, my_poll_fct_##A, 4, ufds, nfds, timeout, data); \
+    return (int)RunFunctionFmt(my_poll_fct_##A, "pLip", ufds, nfds, timeout, data); \
 }
 SUPER()
 #undef GO
@@ -228,8 +229,8 @@ static void* find_poll_Fct(void* fct)
 static uintptr_t my_signal_fct_##A = 0;   \
 static void my_signal_##A(my_pa_mainloop_api_t* api, void* e, int sig, void *data)  \
 {                                                                                   \
-    if(api==my_mainloop_orig) api=my_mainloop_ref;                                  \
-    RunFunction(my_context, my_signal_fct_##A, 4, api, e, sig, data);               \
+    UpdateautobridgeMainloopAPI(thread_get_emu(), my_lib->w.bridge, api);           \
+    RunFunctionFmt(my_signal_fct_##A, "ppip", api, e, sig, data);                   \
 }
 SUPER()
 #undef GO
@@ -251,8 +252,8 @@ static void* find_signal_Fct(void* fct)
 static uintptr_t my_signal_destroy_fct_##A = 0;   \
 static void my_signal_destroy_##A(my_pa_mainloop_api_t* api, void* e, void *data)   \
 {                                                                                   \
-    if(api==my_mainloop_orig) api=my_mainloop_ref;                                  \
-    RunFunction(my_context, my_signal_destroy_fct_##A, 3, api, e, data);            \
+    UpdateautobridgeMainloopAPI(thread_get_emu(), my_lib->w.bridge, api);           \
+    RunFunctionFmt(my_signal_destroy_fct_##A, "ppp", api, e, data);                 \
 }
 SUPER()
 #undef GO
@@ -275,7 +276,7 @@ static void* find_signal_destroy_Fct(void* fct)
 static uintptr_t my_prefork_fct_##A = 0;            \
 static void my_prefork_##A()                        \
 {                                                   \
-    RunFunction(my_context, my_prefork_fct_##A, 0); \
+    RunFunctionFmt(my_prefork_fct_##A, ""); \
 }
 SUPER()
 #undef GO
@@ -297,7 +298,7 @@ static void* find_prefork_Fct(void* fct)
 static uintptr_t my_postfork_fct_##A = 0;           \
 static void my_postfork_##A()                       \
 {                                                   \
-    RunFunction(my_context, my_postfork_fct_##A, 0);\
+    RunFunctionFmt(my_postfork_fct_##A, "");\
 }
 SUPER()
 #undef GO
@@ -319,7 +320,7 @@ static void* find_postfork_Fct(void* fct)
 static uintptr_t my_atfork_fct_##A = 0;             \
 static void my_atfork_##A()                         \
 {                                                   \
-    RunFunction(my_context, my_atfork_fct_##A, 0);  \
+    RunFunctionFmt(my_atfork_fct_##A, "");  \
 }
 SUPER()
 #undef GO
@@ -342,7 +343,7 @@ static void* find_atfork_Fct(void* fct)
 static uintptr_t my_state_context_fct_##A = 0;                              \
 static void my_state_context_##A(void* context, void* data)                 \
 {                                                                           \
-    RunFunction(my_context, my_state_context_fct_##A, 2, context, data);    \
+    RunFunctionFmt(my_state_context_fct_##A, "pp", context, data);    \
 }
 SUPER()
 #undef GO
@@ -364,7 +365,7 @@ static void* find_state_context_Fct(void* fct)
 static uintptr_t my_notify_context_fct_##A = 0;                             \
 static void my_notify_context_##A(void* context, void* data)                \
 {                                                                           \
-    RunFunction(my_context, my_notify_context_fct_##A, 2, context, data);   \
+    RunFunctionFmt(my_notify_context_fct_##A, "pp", context, data);   \
 }
 SUPER()
 #undef GO
@@ -386,7 +387,7 @@ static void* find_notify_context_Fct(void* fct)
 static uintptr_t my_success_context_fct_##A = 0;                                    \
 static void my_success_context_##A(void* context, int success, void* data)          \
 {                                                                                   \
-    RunFunction(my_context, my_success_context_fct_##A, 3, context, success, data); \
+    RunFunctionFmt(my_success_context_fct_##A, "pip", context, success, data); \
 }
 SUPER()
 #undef GO
@@ -408,7 +409,7 @@ static void* find_success_context_Fct(void* fct)
 static uintptr_t my_event_context_fct_##A = 0;                                      \
 static void my_event_context_##A(void* context, void* name, void* p, void* data)    \
 {                                                                                   \
-    RunFunction(my_context, my_event_context_fct_##A, 4, context, name, p, data);   \
+    RunFunctionFmt(my_event_context_fct_##A, "pppp", context, name, p, data);   \
 }
 SUPER()
 #undef GO
@@ -430,7 +431,7 @@ static void* find_event_context_Fct(void* fct)
 static uintptr_t my_module_info_fct_##A = 0;                                    \
 static void my_module_info_##A(void* context, void* i, int eol, void* data)     \
 {                                                                               \
-    RunFunction(my_context, my_module_info_fct_##A, 4, context, i, eol, data);  \
+    RunFunctionFmt(my_module_info_fct_##A, "ppip", context, i, eol, data);  \
 }
 SUPER()
 #undef GO
@@ -452,7 +453,7 @@ static void* find_module_info_Fct(void* fct)
 static uintptr_t my_server_info_fct_##A = 0;                                \
 static void my_server_info_##A(void* context, void* i, void* data)          \
 {                                                                           \
-    RunFunction(my_context, my_server_info_fct_##A, 3, context, i, data);   \
+    RunFunctionFmt(my_server_info_fct_##A, "ppp", context, i, data);   \
 }
 SUPER()
 #undef GO
@@ -474,7 +475,7 @@ static void* find_server_info_Fct(void* fct)
 static uintptr_t my_client_info_fct_##A = 0;                                    \
 static void my_client_info_##A(void* context, void* i, int eol, void* data)     \
 {                                                                               \
-    RunFunction(my_context, my_client_info_fct_##A, 4, context, i, eol, data);  \
+    RunFunctionFmt(my_client_info_fct_##A, "ppip", context, i, eol, data);  \
 }
 SUPER()
 #undef GO
@@ -496,7 +497,7 @@ static void* find_client_info_Fct(void* fct)
 static uintptr_t my_context_index_fct_##A = 0;                                  \
 static void my_context_index_##A(void* context, uint32_t idx, void* data)       \
 {                                                                               \
-    RunFunction(my_context, my_context_index_fct_##A, 3, context, idx, data);   \
+    RunFunctionFmt(my_context_index_fct_##A, "pup", context, idx, data);   \
 }
 SUPER()
 #undef GO
@@ -518,7 +519,7 @@ static void* find_context_index_Fct(void* fct)
 static uintptr_t my_subscribe_context_fct_##A = 0;                                      \
 static void my_subscribe_context_##A(void* context, int evt, uint32_t idx, void* data)  \
 {                                                                                       \
-    RunFunction(my_context, my_subscribe_context_fct_##A, 4, context, evt, idx, data);  \
+    RunFunctionFmt(my_subscribe_context_fct_##A, "piup", context, evt, idx, data);  \
 }
 SUPER()
 #undef GO
@@ -541,7 +542,7 @@ static void* find_subscribe_context_Fct(void* fct)
 static uintptr_t my_stream_state_fct_##A = 0;                       \
 static void my_stream_state_##A(void* s, void* data)                \
 {                                                                   \
-    RunFunction(my_context, my_stream_state_fct_##A, 2, s, data);   \
+    RunFunctionFmt(my_stream_state_fct_##A, "pp", s, data);   \
 }
 SUPER()
 #undef GO
@@ -563,7 +564,7 @@ static void* find_stream_state_Fct(void* fct)
 static uintptr_t my_stream_success_fct_##A = 0;                                 \
 static void my_stream_success_##A(void* s, int success, void* data)             \
 {                                                                               \
-    RunFunction(my_context, my_stream_success_fct_##A, 3, s, success, data);    \
+    RunFunctionFmt(my_stream_success_fct_##A, "pip", s, success, data);    \
 }
 SUPER()
 #undef GO
@@ -585,7 +586,7 @@ static void* find_stream_success_Fct(void* fct)
 static uintptr_t my_stream_notify_fct_##A = 0;                      \
 static void my_stream_notify_##A(void* s, void* data)               \
 {                                                                   \
-    RunFunction(my_context, my_stream_notify_fct_##A, 2, s, data);  \
+    RunFunctionFmt(my_stream_notify_fct_##A, "pp", s, data);  \
 }
 SUPER()
 #undef GO
@@ -607,7 +608,7 @@ static void* find_stream_notify_Fct(void* fct)
 static uintptr_t my_stream_event_fct_##A = 0;                               \
 static void my_stream_event_##A(void* s, void* name, void* pl, void* data)  \
 {                                                                           \
-    RunFunction(my_context, my_stream_event_fct_##A, 4, s, name, pl, data); \
+    RunFunctionFmt(my_stream_event_fct_##A, "pppp", s, name, pl, data); \
 }
 SUPER()
 #undef GO
@@ -629,7 +630,7 @@ static void* find_stream_event_Fct(void* fct)
 static uintptr_t my_stream_request_fct_##A = 0;                             \
 static void my_stream_request_##A(void* s, size_t nbytes, void* data)       \
 {                                                                           \
-    RunFunction(my_context, my_stream_request_fct_##A, 3, s, nbytes, data); \
+    RunFunctionFmt(my_stream_request_fct_##A, "pLp", s, nbytes, data); \
 }
 SUPER()
 #undef GO
@@ -651,7 +652,7 @@ static void* find_stream_request_Fct(void* fct)
 static uintptr_t my_device_restore_read_device_formats_fct_##A = 0;                         \
 static void my_device_restore_read_device_formats_##A(void* a, void* b, int c, void* d)     \
 {                                                                                           \
-    RunFunction(my_context, my_device_restore_read_device_formats_fct_##A, 4, a, b, c, d);  \
+    RunFunctionFmt(my_device_restore_read_device_formats_fct_##A, "ppip", a, b, c, d);  \
 }
 SUPER()
 #undef GO
@@ -673,7 +674,7 @@ static void* find_device_restore_read_device_formats_Fct(void* fct)
 static uintptr_t my_card_info_fct_##A = 0;                         \
 static void my_card_info_##A(void* a, void* b, int c, void* d)     \
 {                                                                  \
-    RunFunction(my_context, my_card_info_fct_##A, 4, a, b, c, d);  \
+    RunFunctionFmt(my_card_info_fct_##A, "ppip", a, b, c, d);  \
 }
 SUPER()
 #undef GO
@@ -691,11 +692,11 @@ static void* find_card_info_Fct(void* fct)
     return NULL;
 }
 // source_output_info
-#define GO(A)                                                      \
+#define GO(A)                                                               \
 static uintptr_t my_source_output_info_fct_##A = 0;                         \
 static void my_source_output_info_##A(void* a, void* b, int c, void* d)     \
-{                                                                  \
-    RunFunction(my_context, my_source_output_info_fct_##A, 4, a, b, c, d);  \
+{                                                                           \
+    RunFunctionFmt(my_source_output_info_fct_##A, "ppip", a, b, c, d);      \
 }
 SUPER()
 #undef GO
@@ -717,7 +718,7 @@ static void* find_source_output_info_Fct(void* fct)
 static uintptr_t my_device_restore_subscribe_fct_##A = 0;                           \
 static void my_device_restore_subscribe_##A(void* a, int b, uint32_t c, void* d)    \
 {                                                                                   \
-    RunFunction(my_context, my_device_restore_subscribe_fct_##A, 4, a, b, c, d);    \
+    RunFunctionFmt(my_device_restore_subscribe_fct_##A, "piup", a, b, c, d);        \
 }
 SUPER()
 #undef GO
@@ -734,259 +735,324 @@ static void* find_device_restore_subscribe_Fct(void* fct)
     printf_log(LOG_NONE, "Warning, no more slot for pulse audio device_restore_subscribe callback\n");
     return NULL;
 }
+// mainloop_once
+#define GO(A)                                                               \
+static uintptr_t my_mainloop_once_fct_##A = 0;                              \
+static void my_mainloop_once_##A(void* api, void* b)                        \
+{                                                                           \
+    UpdateautobridgeMainloopAPI(thread_get_emu(), my_lib->w.bridge, api);   \
+    RunFunctionFmt(my_mainloop_once_fct_##A, "pp", api, b);                 \
+}
+SUPER()
+#undef GO
+static void* find_mainloop_once_Fct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_mainloop_once_fct_##A == (uintptr_t)fct) return my_mainloop_once_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_mainloop_once_fct_##A == 0) {my_mainloop_once_fct_##A = (uintptr_t)fct; return my_mainloop_once_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for pulse audio mainloop_once callback\n");
+    return NULL;
+}
+// io_new
+#define GO(A)                                                                                                                                           \
+static uintptr_t my_io_new_fct_##A = 0;                                                                                                                 \
+static void* my_io_new_##A(void* api, int fd, int events, void* cb, void* data)                                                                         \
+{                                                                                                                                                       \
+    return (void*)RunFunctionFmt(my_io_new_fct_##A, "piipp", api, fd, events, AddCheckBridge(my_lib->w.bridge, vFppiip, cb, 0, "my_io_new_cb"),data);   \
+}
+SUPER()
+#undef GO
+static void* find_io_new_Fct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_io_new_fct_##A == (uintptr_t)fct) return my_io_new_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_io_new_fct_##A == 0) {my_io_new_fct_##A = (uintptr_t)fct; return my_io_new_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for pulse audio io_new callback\n");
+    return NULL;
+}
+// io_enable
+#define GO(A)                                                   \
+static uintptr_t my_io_enable_fct_##A = 0;                      \
+static void* my_io_enable_##A(void* api, int events)            \
+{                                                               \
+    RunFunctionFmt(my_io_enable_fct_##A, "pi", api, events);    \
+}
+SUPER()
+#undef GO
+static void* find_io_enable_Fct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_io_enable_fct_##A == (uintptr_t)fct) return my_io_enable_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_io_enable_fct_##A == 0) {my_io_enable_fct_##A = (uintptr_t)fct; return my_io_enable_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for pulse audio io_enable callback\n");
+    return NULL;
+}
+// io_free
+#define GO(A)                                   \
+static uintptr_t my_io_free_fct_##A = 0;        \
+static void* my_io_free_##A(void* e)            \
+{                                               \
+    RunFunctionFmt(my_io_free_fct_##A, "p", e); \
+}
+SUPER()
+#undef GO
+static void* find_io_free_Fct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_io_free_fct_##A == (uintptr_t)fct) return my_io_free_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_io_free_fct_##A == 0) {my_io_free_fct_##A = (uintptr_t)fct; return my_io_free_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for pulse audio io_free callback\n");
+    return NULL;
+}
+// io_set_destroy
+#define GO(A)                                                                                                                   \
+static uintptr_t my_io_set_destroy_fct_##A = 0;                                                                                 \
+static void my_io_set_destroy_##A(void* e, void* cb)                                                                            \
+{                                                                                                                               \
+    RunFunctionFmt(my_io_set_destroy_fct_##A, "pp", e, AddCheckBridge(my_lib->w.bridge, vFppp, cb, 0, "my_io_set_destroy_cb")); \
+}
+SUPER()
+#undef GO
+static void* find_io_set_destroy_Fct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_io_set_destroy_fct_##A == (uintptr_t)fct) return my_io_set_destroy_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_io_set_destroy_fct_##A == 0) {my_io_set_destroy_fct_##A = (uintptr_t)fct; return my_io_set_destroy_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for pulse audio io_set_destroy callback\n");
+    return NULL;
+}
+// time_new
+#define GO(A)                                                                                                                                   \
+static uintptr_t my_time_new_fct_##A = 0;                                                                                                       \
+static void* my_time_new_##A(void* api, void* t, void* cb, void* data)                                                                          \
+{                                                                                                                                               \
+    return (void*)RunFunctionFmt(my_time_new_fct_##A, "pppp", api, t, AddCheckBridge(my_lib->w.bridge, vFpppp, cb, 0, "my_time_new_cb"), data); \
+}
+SUPER()
+#undef GO
+static void* find_time_new_Fct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_time_new_fct_##A == (uintptr_t)fct) return my_time_new_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_time_new_fct_##A == 0) {my_time_new_fct_##A = (uintptr_t)fct; return my_time_new_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for pulse audio time_new callback\n");
+    return NULL;
+}
+// time_restart
+#define GO(A)                                               \
+static uintptr_t my_time_restart_fct_##A = 0;               \
+static void* my_time_restart_##A(void* e, void* t)          \
+{                                                           \
+    RunFunctionFmt(my_time_restart_fct_##A, "pp", e, t);    \
+}
+SUPER()
+#undef GO
+static void* find_time_restart_Fct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_time_restart_fct_##A == (uintptr_t)fct) return my_time_restart_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_time_restart_fct_##A == 0) {my_time_restart_fct_##A = (uintptr_t)fct; return my_time_restart_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for pulse audio time_restart callback\n");
+    return NULL;
+}
+// time_free
+#define GO(A)                                       \
+static uintptr_t my_time_free_fct_##A = 0;          \
+static void* my_time_free_##A(void* e)              \
+{                                                   \
+    RunFunctionFmt(my_time_free_fct_##A, "p", e);   \
+}
+SUPER()
+#undef GO
+static void* find_time_free_Fct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_time_free_fct_##A == (uintptr_t)fct) return my_time_free_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_time_free_fct_##A == 0) {my_time_free_fct_##A = (uintptr_t)fct; return my_time_free_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for pulse audio time_free callback\n");
+    return NULL;
+}
+// time_set_destroy
+#define GO(A)                                                                                                                   \
+static uintptr_t my_time_set_destroy_fct_##A = 0;                                                                               \
+static void my_time_set_destroy_##A(void* e, void* cb)                                                                          \
+{                                                                                                                               \
+    RunFunctionFmt(my_time_set_destroy_fct_##A, "pp", e, AddCheckBridge(my_lib->w.bridge, vFppp, cb, 0, "my_time_set_destroy_cb")); \
+}
+SUPER()
+#undef GO
+static void* find_time_set_destroy_Fct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_time_set_destroy_fct_##A == (uintptr_t)fct) return my_time_set_destroy_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_time_set_destroy_fct_##A == 0) {my_time_set_destroy_fct_##A = (uintptr_t)fct; return my_time_set_destroy_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for pulse audio time_set_destroy callback\n");
+    return NULL;
+}
+// defer_new
+#define GO(A)                                                                                                                                   \
+static uintptr_t my_defer_new_fct_##A = 0;                                                                                                      \
+static void* my_defer_new_##A(void* api, void* cb, void* data)                                                                                  \
+{                                                                                                                                               \
+    return (void*)RunFunctionFmt(my_defer_new_fct_##A, "ppp", api, AddCheckBridge(my_lib->w.bridge, vFpppp, cb, 0, "my_defer_new_cb"), data);   \
+}
+SUPER()
+#undef GO
+static void* find_defer_new_Fct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_defer_new_fct_##A == (uintptr_t)fct) return my_defer_new_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_defer_new_fct_##A == 0) {my_defer_new_fct_##A = (uintptr_t)fct; return my_defer_new_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for pulse audio defer_new callback\n");
+    return NULL;
+}
+// defer_enable
+#define GO(A)                                               \
+static uintptr_t my_defer_enable_fct_##A = 0;               \
+static void* my_defer_enable_##A(void* e, int b)            \
+{                                                           \
+    RunFunctionFmt(my_defer_enable_fct_##A, "pi", e, b);    \
+}
+SUPER()
+#undef GO
+static void* find_defer_enable_Fct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_defer_enable_fct_##A == (uintptr_t)fct) return my_defer_enable_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_defer_enable_fct_##A == 0) {my_defer_enable_fct_##A = (uintptr_t)fct; return my_defer_enable_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for pulse audio defer_enable callback\n");
+    return NULL;
+}
+// defer_free
+#define GO(A)                                       \
+static uintptr_t my_defer_free_fct_##A = 0;         \
+static void* my_defer_free_##A(void* e)             \
+{                                                   \
+    RunFunctionFmt(my_defer_free_fct_##A, "p", e);  \
+}
+SUPER()
+#undef GO
+static void* find_defer_free_Fct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_defer_free_fct_##A == (uintptr_t)fct) return my_defer_free_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_defer_free_fct_##A == 0) {my_defer_free_fct_##A = (uintptr_t)fct; return my_defer_free_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for pulse audio defer_free callback\n");
+    return NULL;
+}
+// defer_set_destroy
+#define GO(A)                                                                                                                           \
+static uintptr_t my_defer_set_destroy_fct_##A = 0;                                                                                      \
+static void my_defer_set_destroy_##A(void* e, void* cb)                                                                                 \
+{                                                                                                                                       \
+    RunFunctionFmt(my_defer_set_destroy_fct_##A, "pp", e, AddCheckBridge(my_lib->w.bridge, vFppp, cb, 0, "my_defer_set_destroy_cb"));   \
+}
+SUPER()
+#undef GO
+static void* find_defer_set_destroy_Fct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_defer_set_destroy_fct_##A == (uintptr_t)fct) return my_defer_set_destroy_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_defer_set_destroy_fct_##A == 0) {my_defer_set_destroy_fct_##A = (uintptr_t)fct; return my_defer_set_destroy_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for pulse audio defer_set_destroy callback\n");
+    return NULL;
+}
+// quit
+#define GO(A)                                           \
+static uintptr_t my_quit_fct_##A = 0;                   \
+static void* my_quit_##A(void* e, int retval)           \
+{                                                       \
+    RunFunctionFmt(my_quit_fct_##A, "pi", e, retval);   \
+}
+SUPER()
+#undef GO
+static void* find_quit_Fct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_quit_fct_##A == (uintptr_t)fct) return my_quit_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_quit_fct_##A == 0) {my_quit_fct_##A = (uintptr_t)fct; return my_quit_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for pulse audio quit callback\n");
+    return NULL;
+}
 
 #undef SUPER
 
-
-// Mainloop functions
-//  but first, all cb from the pa_mainloop_api (serioulsy, how many callback and callback inside callback there is in pulse audio?!!!)
-
-// Native version of the mailoop_api. Called from x64 space
-
-static void* native_io_new(void* api, int fd, int events, void* cb, void *data)
-{
-    if(api==my_mainloop_ref) api=my_mainloop_orig;    // need native version
-    // need to wrap the callback!
-    void* c = findIOEventFct(cb);
-    return ((pFpiipp_t)my_mainloop_native.io_new)(api, fd, events, c, data);
-}
-static void native_io_enable(void* e, int events)
-{
-    return ((vFpi_t)my_mainloop_native.io_enable)(e, events);
-}
-static void native_io_free(void* e)
-{
-    return ((vFp_t)my_mainloop_native.io_free)(e);
-}
-static void native_io_set_destroy(void* e, void* cb)
-{
-    // need to wrap the callback!
-    void* c = findFreeAPIFct(cb);
-    return ((vFpp_t)my_mainloop_native.io_set_destroy)(e, c);
-}
-
-static void* native_time_new(void* api, void* tv, void* cb, void* data)
-{
-    if(api==my_mainloop_ref) api=my_mainloop_orig;    // need native version
-    // need to wrap the callback!
-    void* c = findTimeEventFct(cb);
-    return ((pFpppp_t)my_mainloop_native.time_new)(api, tv, c, data);
-}
-static void native_time_restart(void* e, void* tv)
-{
-    return ((vFpp_t)my_mainloop_native.time_restart)(e, tv);
-}
-static void native_time_free(void* e)
-{
-    return ((vFp_t)my_mainloop_native.time_free)(e);
-}
-static void native_time_set_destroy(void* e, void* cb)
-{
-    // need to wrap the callback!
-    void* c = findFreeAPIFct(cb);
-    return ((vFpp_t)my_mainloop_native.time_set_destroy)(e, c);
-}
-
-static void* native_defer_new(void* api, void* cb, void* data)
-{
-    if(api==my_mainloop_ref) api=my_mainloop_orig;    // need native version
-    // need to wrap the callback!
-    void* c = findDeferEventFct(cb);
-    return ((pFppp_t)my_mainloop_native.defer_new)(api, c, data);
-}
-static void native_defer_enable(void* e, int b)
-{
-    return ((vFpi_t)my_mainloop_native.defer_enable)(e, b);
-}
-static void native_defer_free(void* e)
-{
-    return ((vFp_t)my_mainloop_native.defer_free)(e);
-}
-static void native_defer_set_destroy(void* e, void* cb)
-{
-    // need to wrap the callback!
-    void* c = findFreeAPIFct(cb);
-    return ((vFpp_t)my_mainloop_native.defer_set_destroy)(e, c);
-}
-
-static void native_quit(void* api, int retval)
-{
-    if(api==my_mainloop_ref) api=my_mainloop_orig;    // need native version
-    return ((vFpi_t)my_mainloop_native.quit)(api, retval);
-}
-
-// Emulated version. Called from native space (meh, crossing stuff are hard to follow)
-static void* my_io_new(void* api, int fd, int events, void* cb, void *userdata)
-{
-    uintptr_t b = (uintptr_t)cb;
-    void* fnc = GetNativeFnc((uintptr_t)my_mainloop_ref->io_new);
-    if(fnc) {
-        if(fnc==native_io_new) fnc=my_mainloop_native.io_new;
-        if(api==my_mainloop_ref) api=my_mainloop_orig;    // need native version
-        return ((pFpiipp_t)fnc)(api, fd, events, cb, userdata);
-    }
-
-    bridge_t* bridge = my_lib->w.bridge;
-    if(cb)
-        b = AddCheckBridge(bridge, vFppiip, cb, 0, NULL);
-    if(api==my_mainloop_orig) api=my_mainloop_ref;    // need emulated version
-    return (void*)RunFunction(my_context, (uintptr_t)my_mainloop_ref->io_new, 5, api, fd, events, b, userdata);
-}
-static void my_io_enable(void* e, int events)
-{
-    void* fnc = GetNativeFnc((uintptr_t)my_mainloop_ref->io_enable);
-    if(fnc==native_io_enable) fnc=my_mainloop_native.io_enable;
-    if(fnc)
-        return ((vFpi_t)fnc)(e, events);
-
-    RunFunction(my_context, (uintptr_t)my_mainloop_ref->io_enable, 2, e, events);
-}
-static void my_io_free(void* e)
-{
-    void* fnc = GetNativeFnc((uintptr_t)my_mainloop_ref->io_free);
-    if(fnc==native_io_free) fnc=my_mainloop_native.io_free;
-    if(fnc)
-        return ((vFp_t)fnc)(e);
-
-    RunFunction(my_context, (uintptr_t)my_mainloop_ref->io_free, 1, e);
-}
-static void my_io_set_destroy(void* e, void* cb)
-{
-    void* fnc = GetNativeFnc((uintptr_t)my_mainloop_ref->io_set_destroy);
-    if(fnc==native_io_set_destroy) fnc=my_mainloop_native.io_set_destroy;
-    if(fnc)
-        return ((vFpp_t)fnc)(e, cb);
-
-    bridge_t* bridge = my_lib->w.bridge;
-    uintptr_t b = 0;
-    if(cb) {
-        b = CheckBridged(bridge, cb);
-        if(!b)
-            b = AddBridge(bridge, vFppp, cb, 0, NULL);
-    }
-    RunFunction(my_context, (uintptr_t)my_mainloop_ref->io_set_destroy, 2, e, b);
-}
-
-static void* my_time_new(void* api, void* tv, void* cb, void* data)
-{
-    uintptr_t b = (uintptr_t)cb;
-    void* fnc = GetNativeFnc((uintptr_t)my_mainloop_ref->time_new);
-    if(fnc) {
-        if(fnc==native_time_new) fnc=my_mainloop_native.time_new;
-        if(api==my_mainloop_ref) api=my_mainloop_orig;    // need native version
-        return ((pFpppp_t)fnc)(api, tv, (void*)b, data);
-    }
-
-    // need to bridge the callback!
-    bridge_t* bridge = my_lib->w.bridge;
-    if(cb)
-        b = AddCheckBridge(bridge, vFpppp, cb, 0, NULL);
-    if(api==my_mainloop_orig) api=my_mainloop_ref;    // need emulated version
-    return (void*)RunFunction(my_context, (uintptr_t)my_mainloop_ref->time_new, 4, api, tv, b, data);
-}
-static void my_time_restart(void* e, void* tv)
-{
-    void* fnc = GetNativeFnc((uintptr_t)my_mainloop_ref->time_restart);
-    if(fnc==native_time_restart) fnc=my_mainloop_native.time_restart;
-    if(fnc)
-        return ((vFpp_t)fnc)(e, tv);
-
-    RunFunction(my_context, (uintptr_t)my_mainloop_ref->time_restart, 2, e, tv);
-}
-static void my_time_free(void* e)
-{
-    void* fnc = GetNativeFnc((uintptr_t)my_mainloop_ref->time_free);
-    if(fnc==native_time_free) fnc=my_mainloop_native.time_free;
-    if(fnc)
-        return ((vFp_t)fnc)(e);
-
-    RunFunction(my_context, (uintptr_t)my_mainloop_ref->time_free, 1, e);
-}
-static void my_time_set_destroy(void* e, void* cb)
-{
-    void* fnc = GetNativeFnc((uintptr_t)my_mainloop_ref->time_set_destroy);
-    if(fnc==native_time_set_destroy) fnc=my_mainloop_native.time_set_destroy;
-    if(fnc)
-        return ((vFpp_t)fnc)(e, cb);
-
-    bridge_t* bridge = my_lib->w.bridge;
-    uintptr_t b = 0;
-    if(cb)
-            b = AddCheckBridge(bridge, vFppp, cb, 0, NULL);
-    RunFunction(my_context, (uintptr_t)my_mainloop_ref->time_set_destroy, 2, e, b);
-}
-
-static void* my_defer_new(void* api, void* cb, void* data)
-{
-    uintptr_t b = (uintptr_t)cb;
-    void* fnc = GetNativeFnc((uintptr_t)my_mainloop_ref->defer_new);
-    if(fnc) {
-        if(api==my_mainloop_ref) api=my_mainloop_orig;    // need native version
-        if(fnc==native_defer_new) fnc=my_mainloop_native.defer_new;
-        return ((pFppp_t)fnc)(api, cb, data);
-    }
-
-    // need to bridge the callback!
-    bridge_t* bridge = my_lib->w.bridge;
-    if(cb) {
-        b = CheckBridged(bridge, cb);
-        if(!b)
-            b = AddBridge(bridge, vFppp, cb, 0, NULL);
-    }
-    if(api==my_mainloop_orig) api=my_mainloop_ref;    // need emulated version
-    return (void*)RunFunction(my_context, (uintptr_t)my_mainloop_ref->defer_new, 3, api, b, data);
-}
-static void my_defer_enable(void* e, int b)
-{
-    void* fnc = GetNativeFnc((uintptr_t)my_mainloop_ref->defer_enable);
-    if(fnc==native_defer_enable) fnc=my_mainloop_native.defer_enable;
-    if(fnc)
-        return ((vFpi_t)fnc)(e, b);
-
-    RunFunction(my_context, (uintptr_t)my_mainloop_ref->defer_enable, 2, e, b);
-}
-static void my_defer_free(void* e)
-{
-    void* fnc = GetNativeFnc((uintptr_t)my_mainloop_ref->defer_free);
-    if(fnc==native_defer_free) fnc=my_mainloop_native.defer_free;
-    if(fnc)
-        return ((vFp_t)fnc)(e);
-
-    RunFunction(my_context, (uintptr_t)my_mainloop_ref->defer_free, 1, e);
-}
-static void my_defer_set_destroy(void* e, void* cb)
-{
-    void* fnc = GetNativeFnc((uintptr_t)my_mainloop_ref->defer_set_destroy);
-    if(fnc==native_defer_set_destroy) fnc=my_mainloop_native.defer_set_destroy;
-    if(fnc)
-        return ((vFpp_t)fnc)(e, cb);
-
-    bridge_t* bridge = my_lib->w.bridge;
-    uintptr_t b = 0;
-    if(cb)
-        b = AddCheckBridge(bridge, vFppp, cb, 0, NULL);
-    RunFunction(my_context, (uintptr_t)my_mainloop_ref->defer_set_destroy, 2, e, b);
-}
-
-static void my_quit(void* api, int retval)
-{
-    void* fnc = GetNativeFnc((uintptr_t)my_mainloop_ref->quit);
-    if(fnc) {
-        if(fnc==native_quit) fnc=my_mainloop_native.quit;
-        if(api==my_mainloop_ref) api=my_mainloop_orig;    // need native version
-        return ((vFpi_t)fnc)(api, retval);
-    }
-
-    if(api==my_mainloop_orig) api=my_mainloop_ref;    // need emulated version
-    RunFunction(my_context, (uintptr_t)my_mainloop_ref->quit, 2, api, retval);
-}
-
-static void bridgeMainloopAPI(bridge_t* bridge, my_pa_mainloop_api_t* api)
+static void UpdateautobridgeMainloopAPI(x64emu_t* emu, bridge_t* bridge, my_pa_mainloop_api_t* api)
 {
     if(!api) {
         return;
     }
-    #define GO(A, W) my_mainloop_native.A = api->A; if(api->A) {my_mainloop_api.A = (void*)AddCheckBridge(bridge, W, native_##A, 0, NULL); api->A=my_##A;} else my_mainloop_api.A = NULL
+    #define GO(A, W) if(api->A!=my_mainloop_api.A) {api->A=find_##A##_Fct(api->A); AddAutomaticBridge(emu, bridge, W, api->A, 0, NULL);}
     GO(io_new, pFpiipp);
     GO(io_enable, vFpi);
     GO(io_free, vFp);
@@ -1001,9 +1067,31 @@ static void bridgeMainloopAPI(bridge_t* bridge, my_pa_mainloop_api_t* api)
     GO(defer_set_destroy, vFpp);
     GO(quit, vFpi);
     #undef GO
-    my_mainloop_api.data = api->data;
-    my_mainloop_orig = api;
-    my_mainloop_ref = &my_mainloop_api;
+    memcpy(&my_mainloop_api, api, sizeof(my_mainloop_api));
+    return;
+}
+
+static void autobridgeMainloopAPI(x64emu_t* emu, bridge_t* bridge, my_pa_mainloop_api_t* api)
+{
+    if(!api) {
+        return;
+    }
+    #define GO(A, W) if(api->A) AddAutomaticBridge(emu, bridge, W, api->A, 0, NULL)
+    GO(io_new, pFpiipp);
+    GO(io_enable, vFpi);
+    GO(io_free, vFp);
+    GO(io_set_destroy, vFpp);
+    GO(time_new, pFpppp);
+    GO(time_restart, vFpp);
+    GO(time_free, vFp);
+    GO(time_set_destroy, vFpp);
+    GO(defer_new, pFppp);
+    GO(defer_enable, vFpi);
+    GO(defer_free, vFp);
+    GO(defer_set_destroy, vFpp);
+    GO(quit, vFpi);
+    #undef GO
+    memcpy(&my_mainloop_api, api, sizeof(my_mainloop_api));
     return;
 }
 /*static my_pa_mainloop_api_t* backMainloopAPI(my_pa_mainloop_api_t* mainloop)
@@ -1021,45 +1109,41 @@ static void bridgeMainloopAPI(bridge_t* bridge, my_pa_mainloop_api_t* api)
 EXPORT void my_pa_mainloop_free(x64emu_t* emu, void* mainloop)
 {
     my->pa_mainloop_free(mainloop);
-    mainloop_inited = 0;
-    /*my_mainloop_ref =*/ my_mainloop_orig = NULL;
 }
 EXPORT void* my_pa_mainloop_get_api(x64emu_t* emu, void* mainloop)
 {
     my_pa_mainloop_api_t* api = my->pa_mainloop_get_api(mainloop);
-    bridgeMainloopAPI(my_lib->w.bridge, api);
-    return my_mainloop_ref;
+    autobridgeMainloopAPI(emu, my_lib->w.bridge, api);
+    return api;
 }
 
 EXPORT void my_pa_threaded_mainloop_free(x64emu_t* emu, void* mainloop)
 {
     my->pa_threaded_mainloop_free(mainloop);
-    mainloop_inited = 0;
-    /*my_mainloop_ref =*/ my_mainloop_orig = NULL;
 }
 EXPORT void* my_pa_threaded_mainloop_get_api(x64emu_t* emu, void* mainloop)
 {
     my_pa_mainloop_api_t* api = my->pa_threaded_mainloop_get_api(mainloop);
-    bridgeMainloopAPI(my_lib->w.bridge, api);
-    return my_mainloop_ref;
+    autobridgeMainloopAPI(emu, my_lib->w.bridge, api);
+    return api;
 }
 
 // Context functions
 EXPORT void* my_pa_context_new(x64emu_t* emu, my_pa_mainloop_api_t* mainloop, void* name)
 {
-    if(mainloop==my_mainloop_ref) mainloop=my_mainloop_orig;    // need native version
+    UpdateautobridgeMainloopAPI(emu, my_lib->w.bridge, mainloop);
     return my->pa_context_new(mainloop, name);
 }
 
 EXPORT void* my_pa_context_new_with_proplist(x64emu_t* emu, my_pa_mainloop_api_t* mainloop, void* name, void* proplist)
 {
-    if(mainloop==my_mainloop_ref) mainloop=my_mainloop_orig;    // need native version
+    UpdateautobridgeMainloopAPI(emu, my_lib->w.bridge, mainloop);
     return my->pa_context_new_with_proplist(mainloop, name, proplist);
 }
 
 EXPORT int my_pa_signal_init(x64emu_t* emu, my_pa_mainloop_api_t* mainloop)
 {
-    if(mainloop==my_mainloop_ref) mainloop=my_mainloop_orig;    // need native version
+    UpdateautobridgeMainloopAPI(emu, my_lib->w.bridge, mainloop);
     return my->pa_signal_init(mainloop);
 }
 
@@ -1479,6 +1563,18 @@ EXPORT void* my_pa_context_get_source_output_info(x64emu_t* emu, void* c, uint32
 {
     return my->pa_context_get_source_output_info(c, idx, find_source_output_info_Fct(cb), data);
 }
+
+EXPORT void* my_pa_context_rttime_new(x64emu_t* emu, void* c, uint64_t usec, void* cb, void* data)
+{
+    return my->pa_context_rttime_new(c, usec, findTimeEventFct(cb) ,data);
+}
+
+EXPORT void my_pa_mainloop_api_once(x64emu_t* emu, void* mainloop, void* cb, void* data)
+{
+    UpdateautobridgeMainloopAPI(emu, my_lib->w.bridge, mainloop);
+    my->pa_mainloop_api_once(mainloop, find_mainloop_once_Fct(cb), data);
+}
+
 #define PRE_INIT        \
     if(box64_nopulse)   \
         return -1;

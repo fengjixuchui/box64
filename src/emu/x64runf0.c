@@ -48,12 +48,15 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
     #endif
 
     opcode = F8;
+    while(opcode==0x2E) // ignoring CS: prefix
+        opcode = F8;
     // REX prefix before the F0 are ignored
     rex.rex = 0;
-    while(opcode>=0x40 && opcode<=0x4f) {
-        rex.rex = opcode;
-        opcode = F8;
-    }
+    if(!rex.is32bits)
+        while(opcode>=0x40 && opcode<=0x4f) {
+            rex.rex = opcode;
+            opcode = F8;
+        }
 
     switch(opcode) {
 #if defined(DYNAREC) && !defined(TEST_INTERPRETER)
@@ -115,15 +118,15 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
             nextop = F8;                                            \
             GETEB(0);                                               \
             GETGB;                                                  \
-            pthread_mutex_lock(&emu->context->mutex_lock);          \
+            pthread_mutex_lock(&my_context->mutex_lock);          \
             EB->byte[0] = OP##8(emu, EB->byte[0], GB);              \
-            pthread_mutex_unlock(&emu->context->mutex_lock);        \
+            pthread_mutex_unlock(&my_context->mutex_lock);        \
             break;                                                  \
         case B+1:                                                   \
             nextop = F8;                                            \
             GETED(0);                                               \
             GETGD;                                                  \
-            pthread_mutex_lock(&emu->context->mutex_lock);          \
+            pthread_mutex_lock(&my_context->mutex_lock);          \
             if(rex.w)                                               \
                 ED->q[0] = OP##64(emu, ED->q[0], GD->q[0]);         \
             else                                                    \
@@ -131,39 +134,39 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                     ED->q[0] = OP##32(emu, ED->dword[0], GD->dword[0]);     \
                 else                                                        \
                     ED->dword[0] = OP##32(emu, ED->dword[0], GD->dword[0]); \
-            pthread_mutex_unlock(&emu->context->mutex_lock);        \
+            pthread_mutex_unlock(&my_context->mutex_lock);        \
             break;                                                  \
         case B+2:                                                   \
             nextop = F8;                                            \
             GETEB(0);                                               \
             GETGB;                                                  \
-            pthread_mutex_lock(&emu->context->mutex_lock);          \
+            pthread_mutex_lock(&my_context->mutex_lock);          \
             GB = OP##8(emu, GB, EB->byte[0]);                       \
-            pthread_mutex_unlock(&emu->context->mutex_lock);        \
+            pthread_mutex_unlock(&my_context->mutex_lock);        \
             break;                                                  \
         case B+3:                                                   \
             nextop = F8;                                            \
             GETED(0);                                               \
             GETGD;                                                  \
-            pthread_mutex_lock(&emu->context->mutex_lock);          \
+            pthread_mutex_lock(&my_context->mutex_lock);          \
             if(rex.w)                                               \
                 GD->q[0] = OP##64(emu, GD->q[0], ED->q[0]);         \
             else                                                    \
                 GD->q[0] = OP##32(emu, GD->dword[0], ED->dword[0]); \
-            pthread_mutex_unlock(&emu->context->mutex_lock);        \
+            pthread_mutex_unlock(&my_context->mutex_lock);        \
             break;                                                  \
         case B+4:                                                   \
-            pthread_mutex_lock(&emu->context->mutex_lock);          \
+            pthread_mutex_lock(&my_context->mutex_lock);          \
             R_AL = OP##8(emu, R_AL, F8);                            \
-            pthread_mutex_unlock(&emu->context->mutex_lock);        \
+            pthread_mutex_unlock(&my_context->mutex_lock);        \
             break;                                                  \
         case B+5:                                                   \
-            pthread_mutex_lock(&emu->context->mutex_lock);          \
+            pthread_mutex_lock(&my_context->mutex_lock);          \
             if(rex.w)                                               \
                 R_RAX = OP##64(emu, R_RAX, F32S64);                 \
             else                                                    \
                 R_RAX = OP##32(emu, R_EAX, F32);                    \
-            pthread_mutex_unlock(&emu->context->mutex_lock);        \
+            pthread_mutex_unlock(&my_context->mutex_lock);        \
             break;
 #endif
         GO(0x00, add)                   /* ADD 0x00 -> 0x05 */
@@ -244,7 +247,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                         } while(tmp32s);
                 }
 #else
-                pthread_mutex_lock(&emu->context->mutex_lock);
+                pthread_mutex_lock(&my_context->mutex_lock);
                 if(rex.w) {
                     tmp8u&=63;
                     if(ED->q[0] & (1LL<<tmp8u))
@@ -264,7 +267,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                     if(MODREG)
                         ED->dword[1] = 0;
                 }
-                pthread_mutex_unlock(&emu->context->mutex_lock);
+                pthread_mutex_unlock(&my_context->mutex_lock);
 #endif
                 break;
 
@@ -285,14 +288,14 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                         }
                     } while(tmp32s);
 #else
-                    pthread_mutex_lock(&emu->context->mutex_lock);
+                    pthread_mutex_lock(&my_context->mutex_lock);
                     cmp8(emu, R_AL, EB->byte[0]);
                     if(ACCESS_FLAG(F_ZF)) {
                         EB->byte[0] = GB;
                     } else {
                         R_AL = EB->byte[0];
                     }
-                    pthread_mutex_unlock(&emu->context->mutex_lock);
+                    pthread_mutex_unlock(&my_context->mutex_lock);
 #endif
                     break;
                 case 0xB1:                      /* CMPXCHG Ed,Gd */
@@ -327,22 +330,37 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                                 }
                             } while(tmp32s);
                     else {
-                        do {
-                            tmp32u = native_lock_read_d(ED);
-                            cmp32(emu, R_EAX, tmp32u);
-                            if(ACCESS_FLAG(F_ZF)) {
-                                tmp32s = native_lock_write_d(ED, GD->dword[0]);
-                            } else {
-                                R_EAX = tmp32u;
-                                tmp32s = 0;
-                            }
-                        } while(tmp32s);
+                        if(((uintptr_t)ED)&3) {
+                            do {
+                                tmp32u = ED->q[0] & ~0xffLL;
+                                tmp32u |= native_lock_read_b(ED);
+                                cmp64(emu, R_RAX, tmp32u);
+                                if(ACCESS_FLAG(F_ZF)) {
+                                    tmp32s = native_lock_write_b(ED, GD->dword[0]&0xff);
+                                    if(!tmp32s)
+                                        ED->dword[0] = GD->dword[0];
+                                } else {
+                                    R_EAX = tmp32u;
+                                    tmp32s = 0;
+                                }
+                            } while(tmp32s);
+                        } else
+                            do {
+                                tmp32u = native_lock_read_d(ED);
+                                cmp32(emu, R_EAX, tmp32u);
+                                if(ACCESS_FLAG(F_ZF)) {
+                                    tmp32s = native_lock_write_d(ED, GD->dword[0]);
+                                } else {
+                                    R_EAX = tmp32u;
+                                    tmp32s = 0;
+                                }
+                            } while(tmp32s);
                         emu->regs[_AX].dword[1] = 0;
                         if(MODREG)
                             ED->dword[1] = 0;
                     }
 #else
-                    pthread_mutex_lock(&emu->context->mutex_lock);
+                    pthread_mutex_lock(&my_context->mutex_lock);
                     if(rex.w) {
                         cmp64(emu, R_RAX, ED->q[0]);
                         if(ACCESS_FLAG(F_ZF)) {
@@ -361,7 +379,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                         if(MODREG)
                             ED->dword[1] = 0;
                     }
-                    pthread_mutex_unlock(&emu->context->mutex_lock);
+                    pthread_mutex_unlock(&my_context->mutex_lock);
 #endif
                     break;
 
@@ -415,7 +433,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                             ED->dword[1] = 0;
                     }
 #else
-                    pthread_mutex_lock(&emu->context->mutex_lock);
+                    pthread_mutex_lock(&my_context->mutex_lock);
                     if(rex.w) {
                         if(ED->q[0] & (1<<tmp8u)) {
                             SET_FLAG(F_CF);
@@ -431,7 +449,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                         if(MODREG)
                             ED->dword[1] = 0;
                     }
-                    pthread_mutex_unlock(&emu->context->mutex_lock);
+                    pthread_mutex_unlock(&my_context->mutex_lock);
 #endif
                     break;
 
@@ -489,7 +507,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                                     } while(tmp32s);
                                 }
 #else
-                                pthread_mutex_lock(&emu->context->mutex_lock);
+                                pthread_mutex_lock(&my_context->mutex_lock);
                                 if(rex.w) {
                                     tmp8u&=63;
                                     if(ED->q[0] & (1LL<<tmp8u)) {
@@ -507,7 +525,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                                         CLEAR_FLAG(F_CF);
                                     }
                                 }
-                                pthread_mutex_unlock(&emu->context->mutex_lock);
+                                pthread_mutex_unlock(&my_context->mutex_lock);
 #endif
                                 break;
                             case 6:             /* BTR Ed, Ib */
@@ -543,7 +561,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                                     } while(tmp32s);
                                 }
 #else
-                                pthread_mutex_lock(&emu->context->mutex_lock);
+                                pthread_mutex_lock(&my_context->mutex_lock);
                                 if(rex.w) {
                                     tmp8u&=63;
                                     if(ED->q[0] & (1LL<<tmp8u)) {
@@ -559,7 +577,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                                     } else
                                         CLEAR_FLAG(F_CF);
                                 }
-                                pthread_mutex_unlock(&emu->context->mutex_lock);
+                                pthread_mutex_unlock(&my_context->mutex_lock);
 #endif
                                 break;
                             case 7:             /* BTC Ed, Ib */
@@ -591,7 +609,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                                     } while(tmp32s);
                                 }
 #else
-                                pthread_mutex_lock(&emu->context->mutex_lock);
+                                pthread_mutex_lock(&my_context->mutex_lock);
                                 if(rex.w) {
                                     tmp8u&=63;
                                     if(ED->q[0] & (1LL<<tmp8u))
@@ -607,7 +625,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                                         CLEAR_FLAG(F_CF);
                                     ED->dword[0] ^= (1<<tmp8u);
                                 }
-                                pthread_mutex_unlock(&emu->context->mutex_lock);
+                                pthread_mutex_unlock(&my_context->mutex_lock);
 #endif
                                 break;
 
@@ -627,11 +645,11 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                     } while(native_lock_write_b(EB, tmp8u2));
                     GB = tmp8u;
 #else
-                    pthread_mutex_lock(&emu->context->mutex_lock);
+                    pthread_mutex_lock(&my_context->mutex_lock);
                     tmp8u = add8(emu, EB->byte[0], GB);
                     GB = EB->byte[0];
                     EB->byte[0] = tmp8u;
-                    pthread_mutex_unlock(&emu->context->mutex_lock);
+                    pthread_mutex_unlock(&my_context->mutex_lock);
 #endif
                     break;
                 case 0xC1:                      /* XADD Gd,Ed */
@@ -664,20 +682,22 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                             ED->dword[1] = 0;
                     }
 #else
-                    pthread_mutex_lock(&emu->context->mutex_lock);
+                    pthread_mutex_lock(&my_context->mutex_lock);
                     if(rex.w) {
-                        tmp64u = add64(emu, ED->q[0], GD->q[0]);
-                        GD->q[0] = ED->q[0];
-                        ED->q[0] = tmp64u;
+                        tmp64u = ED->q[0];
+                        tmp64u2 = add64(emu, tmp64u, GD->q[0]);
+                        GD->q[0] = tmp64u;
+                        ED->q[0] = tmp64u2;
                     } else {
-                        tmp32u = add32(emu, ED->dword[0], GD->dword[0]);
-                        GD->q[0] = ED->dword[0];
+                        tmp32u = ED->dword[0];
+                        tmp32u2 = add32(emu, tmp32u, GD->dword[0]);
+                        GD->q[0] = tmp32u;
                         if(MODREG)
-                            ED->q[0] = tmp32u;
+                            ED->q[0] = tmp32u2;
                         else
-                            ED->dword[0] = tmp32u;
+                            ED->dword[0] = tmp32u2;
                     }
-                    pthread_mutex_unlock(&emu->context->mutex_lock);
+                    pthread_mutex_unlock(&my_context->mutex_lock);
 #endif
                     break;
 
@@ -716,7 +736,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                                     }
                                 } while(tmp32s);
 #else
-                            pthread_mutex_lock(&emu->context->mutex_lock);
+                            pthread_mutex_lock(&my_context->mutex_lock);
                             if(rex.w) {
                                 #ifdef TEST_INTERPRETER
                                 test->memsize = 16;
@@ -748,7 +768,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                                     R_RDX = tmp32u2;
                                 }
                             }
-                            pthread_mutex_unlock(&emu->context->mutex_lock);
+                            pthread_mutex_unlock(&my_context->mutex_lock);
 #endif
                             break;
                         default:
@@ -784,7 +804,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                 case 7:               cmp8(emu, EB->byte[0], tmp8u); break;
             }
 #else
-            pthread_mutex_lock(&emu->context->mutex_lock);
+            pthread_mutex_lock(&my_context->mutex_lock);
             switch((nextop>>3)&7) {
                 case 0: EB->byte[0] = add8(emu, EB->byte[0], tmp8u); break;
                 case 1: EB->byte[0] =  or8(emu, EB->byte[0], tmp8u); break;
@@ -795,7 +815,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                 case 6: EB->byte[0] = xor8(emu, EB->byte[0], tmp8u); break;
                 case 7:               cmp8(emu, EB->byte[0], tmp8u); break;
             }
-            pthread_mutex_unlock(&emu->context->mutex_lock);
+            pthread_mutex_unlock(&my_context->mutex_lock);
 #endif
             break;
         case 0x81:              /* GRP Ed,Id */
@@ -844,7 +864,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                     }
             }
 #else
-            pthread_mutex_lock(&emu->context->mutex_lock);
+            pthread_mutex_lock(&my_context->mutex_lock);
             if(rex.w) {
                 switch((nextop>>3)&7) {
                     case 0: ED->q[0] = add64(emu, ED->q[0], tmp64u); break;
@@ -880,7 +900,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                         case 7:                cmp32(emu, ED->dword[0], tmp64u); break;
                     }
             }
-            pthread_mutex_unlock(&emu->context->mutex_lock);
+            pthread_mutex_unlock(&my_context->mutex_lock);
 #endif
             break;
 
@@ -903,12 +923,12 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
             GETEB(0);
             GETGB;
             if(!MODREG)
-                pthread_mutex_lock(&emu->context->mutex_lock); // XCHG always LOCK (but when accessing memory only)
+                pthread_mutex_lock(&my_context->mutex_lock); // XCHG always LOCK (but when accessing memory only)
             tmp8u = GB;
             GB = EB->byte[0];
             EB->byte[0] = tmp8u;
             if(!MODREG)
-                pthread_mutex_unlock(&emu->context->mutex_lock);
+                pthread_mutex_unlock(&my_context->mutex_lock);
 #endif                
             break;
         case 0x87:                      /* XCHG Ed,Gd */
@@ -928,7 +948,18 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                 }
             } else {
                 if(rex.w) {
-                    GD->q[0] = native_lock_xchg_dd(ED, GD->q[0]);
+                    if((uintptr_t)ED&7) {
+                        // unaligned
+                        do {
+                            tmp64u = ED->q[0] & 0xffffffffffffff00LL;
+                            tmp64u |= native_lock_read_b(ED);
+                            
+                        } while(native_lock_write_b(ED, GD->byte[0]));
+                        ED->q[0] = GD->q[0];
+                        GD->q[0] = tmp64u;
+                    } else {
+                        GD->q[0] = native_lock_xchg_dd(ED, GD->q[0]);
+                    }
                 } else {
                     GD->dword[0] = native_lock_xchg_d(ED, GD->dword[0]);
                 }
@@ -936,7 +967,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
 #else
             GETED(0);
             GETGD;
-            pthread_mutex_lock(&emu->context->mutex_lock);
+            pthread_mutex_lock(&my_context->mutex_lock);
             if(rex.w) {
                 tmp64u = GD->q[0];
                 GD->q[0] = ED->q[0];
@@ -949,7 +980,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                 else
                     ED->dword[0] = tmp32u;
             }
-            pthread_mutex_unlock(&emu->context->mutex_lock);
+            pthread_mutex_unlock(&my_context->mutex_lock);
 #endif
             break;            
 
@@ -965,9 +996,9 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                         tmp8u2 = not8(emu, tmp8u2);
                     } while(native_lock_write_b(EB, tmp8u2));
 #else
-                    pthread_mutex_lock(&emu->context->mutex_lock);
+                    pthread_mutex_lock(&my_context->mutex_lock);
                     EB->byte[0] = not8(emu, EB->byte[0]);
-                    pthread_mutex_unlock(&emu->context->mutex_lock);
+                    pthread_mutex_unlock(&my_context->mutex_lock);
 #endif
                     break;
                 default:
@@ -985,9 +1016,9 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                         tmp8u = native_lock_read_b(ED);
                     } while(native_lock_write_b(ED, inc8(emu, tmp8u)));
 #else
-                    pthread_mutex_lock(&emu->context->mutex_lock);
+                    pthread_mutex_lock(&my_context->mutex_lock);
                     ED->byte[0] = inc8(emu, ED->byte[0]);
-                    pthread_mutex_unlock(&emu->context->mutex_lock);
+                    pthread_mutex_unlock(&my_context->mutex_lock);
 #endif
                     break;
                 case 1:                 /* DEC Ed */
@@ -996,9 +1027,9 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                         tmp8u = native_lock_read_b(ED);
                     } while(native_lock_write_b(ED, dec8(emu, tmp8u)));
 #else
-                    pthread_mutex_lock(&emu->context->mutex_lock);
+                    pthread_mutex_lock(&my_context->mutex_lock);
                     ED->byte[0] = dec8(emu, ED->byte[0]);
-                    pthread_mutex_unlock(&emu->context->mutex_lock);
+                    pthread_mutex_unlock(&my_context->mutex_lock);
 #endif
                     break;
                 default:
@@ -1046,7 +1077,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                         if(MODREG) ED->dword[1] = 0;
                     }
 #else
-                    pthread_mutex_lock(&emu->context->mutex_lock);
+                    pthread_mutex_lock(&my_context->mutex_lock);
                     if(rex.w) {
                         ED->q[0] = inc64(emu, ED->q[0]);
                     } else {
@@ -1055,7 +1086,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                         else
                             ED->dword[0] = inc32(emu, ED->dword[0]);
                     }
-                    pthread_mutex_unlock(&emu->context->mutex_lock);
+                    pthread_mutex_unlock(&my_context->mutex_lock);
 #endif
                     break;
                 case 1:                 /* DEC Ed */
@@ -1081,7 +1112,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                         if(MODREG) ED->dword[1] = 0;
                     }
 #else
-                    pthread_mutex_lock(&emu->context->mutex_lock);
+                    pthread_mutex_lock(&my_context->mutex_lock);
                     if(rex.w) {
                         ED->q[0] = dec64(emu, ED->q[0]);
                     } else {
@@ -1090,7 +1121,7 @@ uintptr_t RunF0(x64emu_t *emu, rex_t rex, uintptr_t addr)
                         else
                             ED->dword[0] = dec32(emu, ED->dword[0]);
                     }
-                    pthread_mutex_unlock(&emu->context->mutex_lock);
+                    pthread_mutex_unlock(&my_context->mutex_lock);
 #endif
                     break;
                 default:

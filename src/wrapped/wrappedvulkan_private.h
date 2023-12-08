@@ -197,7 +197,7 @@ GO(vkGetPhysicalDeviceExternalFenceProperties, vFppp)
 GO(vkGetPhysicalDeviceExternalSemaphoreProperties, vFppp)
 GO(vkGetPhysicalDeviceFeatures2, vFpp)
 GO(vkGetPhysicalDeviceFormatProperties2, vFpip)
-GO(vkGetPhysicalDeviceImageFormatProperties2, vFppp)
+GO(vkGetPhysicalDeviceImageFormatProperties2, iFppp)
 GO(vkGetPhysicalDeviceMemoryProperties2, vFpp)
 GO(vkGetPhysicalDeviceProperties2, vFpp)
 GO(vkGetPhysicalDeviceQueueFamilyProperties2, vFppp)    //VkQueueFamilyProperties2 seems OK
@@ -267,7 +267,7 @@ GO(vkDebugReportMessageEXT, vFpiiULipp)
 GOM(vkDestroyDebugReportCallbackEXT, iFEppp)
 
 //VK_EXT_debug_utils
-GO(vkCmdBeginDebugUtilsLabelEXT, vFpp)  //TODO: Cehck alignement of this extension
+GO(vkCmdBeginDebugUtilsLabelEXT, vFpp)  //TODO: Check alignement of this extension
 GO(vkCmdEndDebugUtilsLabelEXT, vFp)
 GO(vkCmdInsertDebugUtilsLabelEXT, vFpp)
 GOM(vkCreateDebugUtilsMessengerEXT, iFEpppp)
@@ -277,7 +277,7 @@ GO(vkQueueEndDebugUtilsLabelEXT, vFp)
 GO(vkQueueInsertDebugUtilsLabelEXT, vFpp)
 GO(vkSetDebugUtilsObjectNameEXT, iFpp)
 GO(vkSetDebugUtilsObjectTagEXT, iFpp)
-//GOM(vkSubmitDebugUtilsMessageEXT, vFEpppp)    // callback in last arguments
+GO(vkSubmitDebugUtilsMessageEXT, vFpppp)
 
 // VK_KHR_external_memory_capabilities
 GO(vkGetPhysicalDeviceExternalBufferPropertiesKHR, vFppp)
@@ -805,3 +805,40 @@ GO(vkCmdSetShadingRateImageEnableNV, vFpi)
 GO(vkCmdSetTessellationDomainOriginEXT, vFpi)
 GO(vkCmdSetViewportSwizzleNV, vFpuup)
 GO(vkCmdSetViewportWScalingEnableNV, vFpi)
+
+// VK_KHR_external_memory_win32
+GO(vkGetMemoryWin32HandleKHR, iFppp)
+GO(vkGetMemoryWin32HandlePropertiesKHR, iFpipp)
+
+// VK_EXT_swapchain_maintenance1
+GO(vkReleaseSwapchainImagesEXT, iFpp)
+
+// VK_VALVE_descriptor_set_host_mapping
+GO(vkGetDescriptorSetHostMappingVALVE, vFppp)
+GO(vkGetDescriptorSetLayoutHostMappingInfoVALVE, vFppp)
+
+// VK_EXT_descriptor_buffer
+GO(vkCmdBindDescriptorBufferEmbeddedSamplersEXT, vFppUu)
+GO(vkCmdBindDescriptorBuffersEXT, vFpup)
+GO(vkCmdSetDescriptorBufferOffsetsEXT, vFppUuupp)
+GO(vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT, vFppp)
+GO(vkGetBufferOpaqueCaptureDescriptorDataEXT, vFppp)
+GO(vkGetDescriptorEXT, vFppLp)
+GO(vkGetDescriptorSetLayoutBindingOffsetEXT, vFpUup)
+GO(vkGetDescriptorSetLayoutSizeEXT, vFpUp)
+GO(vkGetImageOpaqueCaptureDescriptorDataEXT, vFppp)
+GO(vkGetImageViewOpaqueCaptureDescriptorDataEXT, vFppp)
+GO(vkGetSamplerOpaqueCaptureDescriptorDataEXT, vFppp)
+
+// VK_KHR_cooperative_matrix
+GO(vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR, iFppp)
+
+// VK_KHR_maintenance5
+GO(vkCmdBindIndexBuffer2KHR, vFpUUUi)
+GO(vkGetDeviceImageSubresourceLayoutKHR, vFppp)
+GO(vkGetImageSubresourceLayout2KHR, vFpUpp)
+GO(vkGetRenderingAreaGranularityKHR, vFppp)
+
+// VK_NV_memory_decompression
+GO(vkCmdDecompressMemoryIndirectCountNV, vFpUUu)
+GO(vkCmdDecompressMemoryNV, vFpup)

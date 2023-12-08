@@ -28,9 +28,9 @@ GO(drmAuthMagic, iFiu)
 //GO(drmClose, 
 //GO(drmCloseOnce, 
 //GO(drmCommandNone, 
-//GO(drmCommandRead, 
-//GO(drmCommandWrite, 
-//GO(drmCommandWriteRead, 
+GO(drmCommandRead, iFiLpL)
+GO(drmCommandWrite, iFiLpL)
+GO(drmCommandWriteRead, iFiLpL)
 //GO(drmCreateContext, 
 //GO(drmCreateDrawable, 
 //GO(drmCrtcGetSequence, 
@@ -73,12 +73,12 @@ GO(drmGetDevices2, iFupi)
 GO(drmGetMagic, iFip)
 //GO(drmGetMap, 
 GO(drmGetNodeTypeFromFd, iFi)
-//GO(drmGetPrimaryDeviceNameFromFd, 
+GO(drmGetPrimaryDeviceNameFromFd, pFi)
 //GO(drmGetRenderDeviceNameFromFd, 
 //GO(drmGetReservedContextList, 
 //GO(drmGetStats, 
 GO(drmGetVersion, pFi)
-//GO(drmHandleEvent, 
+GO(drmHandleEvent, iFip)    //warning, p is *drmHandleEvent that needs wrapping, plenty of function pointer there
 GO(drmHashCreate, pFv)
 GO(drmHashDelete, iFpL)
 GO(drmHashDestroy, iFp)
@@ -92,7 +92,7 @@ GO(drmIoctl, iFiLp)
 //GO(drmMap, 
 //GO(drmMapBufs, 
 //GO(drmMarkBufs, 
-//GO(drmModeAddFB, 
+GO(drmModeAddFB, iFiuuCCuup)
 //GO(drmModeAddFB2, 
 //GO(drmModeAddFB2WithModifiers, 
 //GO(drmModeAtomicAddProperty, 
@@ -112,9 +112,9 @@ GO(drmIoctl, iFiLp)
 //GO(drmModeDestroyPropertyBlob, 
 //GO(drmModeDetachMode, 
 //GO(drmModeDirtyFB, 
-//GO(drmModeFreeConnector, 
-//GO(drmModeFreeCrtc, 
-//GO(drmModeFreeEncoder, 
+GO(drmModeFreeConnector, vFp)
+GO(drmModeFreeCrtc, vFp)
+GO(drmModeFreeEncoder, vFp)
 //GO(drmModeFreeFB, 
 //GO(drmModeFreeModeInfo, 
 //GO(drmModeFreeObjectProperties, 
@@ -122,31 +122,31 @@ GO(drmIoctl, iFiLp)
 //GO(drmModeFreePlaneResources, 
 //GO(drmModeFreeProperty, 
 //GO(drmModeFreePropertyBlob, 
-//GO(drmModeFreeResources, 
-//GO(drmModeGetConnector, 
+GO(drmModeFreeResources, vFp)
+GO(drmModeGetConnector, pFiu)
 //GO(drmModeGetConnectorCurrent, 
-//GO(drmModeGetCrtc, 
-//GO(drmModeGetEncoder, 
+GO(drmModeGetCrtc, pFiu)
+GO(drmModeGetEncoder, pFiu)
 //GO(drmModeGetFB, 
 //GO(drmModeGetLease, 
 //GO(drmModeGetPlane, 
 //GO(drmModeGetPlaneResources, 
 //GO(drmModeGetProperty, 
 //GO(drmModeGetPropertyBlob, 
-//GO(drmModeGetResources, 
+GO(drmModeGetResources, pFi)
 //GO(drmModeListLessees, 
 //GO(drmModeMoveCursor, 
 //GO(drmModeObjectGetProperties, 
 //GO(drmModeObjectSetProperty, 
-//GO(drmModePageFlip, 
+GO(drmModePageFlip, iFiuuup)
 //GO(drmModePageFlipTarget, 
 //GO(drmModeRevokeLease, 
-//GO(drmModeRmFB, 
-//GO(drmModeSetCrtc, 
+GO(drmModeRmFB, iFiu)
+GO(drmModeSetCrtc, iFiuuuupip)
 //GO(drmModeSetCursor, 
 //GO(drmModeSetCursor2, 
 //GO(drmModeSetPlane, 
-//GO(drmMsg, 
+GOM(drmMsg, vFEpV)
 //GO(drmOpen, 
 //GO(drmOpenControl, 
 //GO(drmOpenOnce, 
@@ -178,19 +178,20 @@ GO(drmPrimeHandleToFD, iFiuup)
 //GO(drmSLLookupNeighbors, 
 //GO(drmSLNext, 
 //GO(drmSwitchToContext, 
-//GO(drmSyncobjCreate, 
-//GO(drmSyncobjDestroy, 
-//GO(drmSyncobjExportSyncFile, 
-//GO(drmSyncobjFDToHandle, 
-//GO(drmSyncobjHandleToFD, 
-//GO(drmSyncobjImportSyncFile, 
-//GO(drmSyncobjQuery, 
-//GO(drmSyncobjReset, 
-//GO(drmSyncobjSignal, 
-//GO(drmSyncobjTimelineSignal, 
-//GO(drmSyncobjTimelineWait, 
-//GO(drmSyncobjTransfer, 
-//GO(drmSyncobjWait, 
+GO(drmSyncobjCreate, iFiup)
+GO(drmSyncobjDestroy, iFiu)
+GO(drmSyncobjExportSyncFile, iFiup)
+GO(drmSyncobjFDToHandle, iFiip)
+GO(drmSyncobjHandleToFD, iFiup)
+GO(drmSyncobjImportSyncFile, iFiui)
+GO(drmSyncobjQuery, iFippu)
+GO(drmSyncobjQuery2, iFippuu)
+GO(drmSyncobjReset, iFipu)
+GO(drmSyncobjSignal, iFipu)
+GO(drmSyncobjTimelineSignal, iFippu)
+GO(drmSyncobjTimelineWait, iFippuIup)
+GO(drmSyncobjTransfer, iFiuUuUu)
+GO(drmSyncobjWait, iFipuIup)
 //GO(drmUnlock, 
 //GO(drmUnmap, 
 //GO(drmUnmapBufs, 

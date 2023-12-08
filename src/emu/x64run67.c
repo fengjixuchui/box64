@@ -39,6 +39,13 @@ uintptr_t Run67(x64emu_t *emu, rex_t rex, int rep, uintptr_t addr)
     #ifdef TEST_INTERPRETER
     x64emu_t* emu = test->emu;
     #endif
+    if(rex.is32bits)
+    #ifdef TEST_INTERPRETER
+        return Test67_32(test, rex, rep, addr);
+    #else
+        return Run67_32(emu, rex, rep, addr);
+    #endif
+
     opcode = F8;
 
     while(opcode==0x67)
@@ -151,6 +158,19 @@ uintptr_t Run67(x64emu_t *emu, rex_t rex, int rep, uintptr_t addr)
             cmp32(emu, R_EAX, F32);
         break;
 
+    case 0x63:                      /* MOVSXD Gd,Ed */
+        nextop = F8;
+        GETED32(0);
+        GETGD;
+        if(rex.w)
+            GD->sq[0] = ED->sdword[0];
+        else
+            if(MODREG)
+                GD->q[0] = ED->dword[0];    // not really a sign extension
+            else
+                GD->sdword[0] = ED->sdword[0];  // meh?
+        break;
+
     case 0x66:
         #ifdef TEST_INTERPRETER
         return Test6766(test, rex, rep, addr);
@@ -259,7 +279,7 @@ uintptr_t Run67(x64emu_t *emu, rex_t rex, int rep, uintptr_t addr)
 
     case 0x8D:                      /* LEA Gd,M */
         nextop = F8;
-        GETED32(0);
+        _GETED32(0);
         GETGD;
         if(rex.w)
             GD->q[0] = (uint64_t)ED;
@@ -348,7 +368,7 @@ uintptr_t Run67(x64emu_t *emu, rex_t rex, int rep, uintptr_t addr)
 
     case 0xE8:                      /* CALL Id */
         tmp32s = F32S; // call is relative
-        Push(emu, addr);
+        Push64(emu, addr);
         addr += tmp32s;
         break;
 

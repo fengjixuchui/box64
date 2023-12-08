@@ -58,17 +58,6 @@ uint32_t* GetParityTab()
     return x86emu_parity_tab;
 }
 
-void PushExit(x64emu_t* emu)
-{
-    uintptr_t endMarker = AddCheckBridge(my_context->system, NULL, NULL, 0, "ExitEmulation");
-    Push(emu, endMarker);
-}
-
-void* GetExit()
-{
-    return (void*)AddCheckBridge(my_context->system, NULL, NULL, 0, "ExitEmulation");
-}
-
 static void internalX64Setup(x64emu_t* emu, box64context_t *context, uintptr_t start, uintptr_t stack, int stacksize, int ownstack)
 {
     emu->context = context;
@@ -86,9 +75,9 @@ static void internalX64Setup(x64emu_t* emu, box64context_t *context, uintptr_t s
     R_RIP = start;
     R_RSP = (stack + stacksize) & ~7;   // align stack start, always
     // fake init of segments...
-    emu->segs[_CS] = 0x73;
-    emu->segs[_DS] = emu->segs[_ES] = emu->segs[_SS] = 0x7b;
-    emu->segs[_FS] = 0x33;
+    emu->segs[_CS] = 0x33;
+    emu->segs[_DS] = emu->segs[_ES] = emu->segs[_SS] = 0x2b;
+    emu->segs[_FS] = 0x43;
     emu->segs[_GS] = default_gs;
     // setup fpu regs
     reset_fpu(emu);
@@ -117,10 +106,18 @@ x64emu_t *NewX64EmuFromStack(x64emu_t* emu, box64context_t *context, uintptr_t s
 }
 
 EXPORTDYN
-void SetupX64Emu(x64emu_t *emu)
+void SetupX64Emu(x64emu_t *emu, x64emu_t *ref)
 {
     printf_log(LOG_DEBUG, "Setup X86_64 Emu\n");
-    (void)emu;  // Not doing much here...
+    if(ref) {
+        // save RIP and RSP
+        uintptr_t old_rip = R_RIP;
+        uintptr_t old_rsp = R_RSP;
+        CloneEmu(emu, ref);
+        // restore RIP and RSP
+        R_RIP = old_rip;
+        R_RSP = old_rsp;
+    }
 }
 
 #ifdef HAVE_TRACE
@@ -398,11 +395,13 @@ void ResetFlags(x64emu_t *emu)
     emu->df = d_none;
 }
 
-const char* DumpCPURegs(x64emu_t* emu, uintptr_t ip)
+const char* DumpCPURegs(x64emu_t* emu, uintptr_t ip, int is32bits)
 {
-    static char buff[1000];
+    static char buff[4096];
     static const char* regname[] = {"RAX", "RCX", "RDX", "RBX", "RSP", "RBP", "RSI", "RDI",
                                     " R8", " R9", "R10", "R11", "R12", "R13", "R14", "R15"};
+    static const char* regname32[]={"EAX", "ECX", "EDX", "EBX", "ESP", "EBP", "ESI", "EDI"};
+    static const char* segname[] = {"ES", "CS", "SS", "DS", "FS", "GS"};
     char tmp[160];
     buff[0] = '\0';
 #ifdef HAVE_TRACE
@@ -416,7 +415,7 @@ const char* DumpCPURegs(x64emu_t* emu, uintptr_t ip)
     }
     if(trace_xmm) {
         // do xmm reg if needed
-        for(int i=0; i<16; ++i) {
+        for(int i=0; i<(is32bits?8:16); ++i) {
             if (trace_regsdiff && (emu->old_xmm[i].q[0] != emu->xmm[i].q[0] || emu->old_xmm[i].q[1] != emu->xmm[i].q[1])) {
                 sprintf(tmp, "\e[1;35m%02d:%016lx-%016lx\e[m", i, emu->xmm[i].q[1], emu->xmm[i].q[0]);
                 emu->old_xmm[i].q[0] = emu->xmm[i].q[0];
@@ -441,21 +440,28 @@ const char* DumpCPURegs(x64emu_t* emu, uintptr_t ip)
         }
         strcat(buff, "\n");
     }
-    for (int i=_AX; i<=_R15; ++i) {
+    for (int i=0; i<6; ++i) {
+            sprintf(tmp, "%s=0x%04x", segname[i], emu->segs[i]);
+            strcat(buff, tmp);
+            if(i!=_GS)
+                strcat(buff, " ");
+    }
+    strcat(buff, "\n");
+    if(is32bits)
+        for (int i=_AX; i<=_RDI; ++i) {
 #ifdef HAVE_TRACE
-        if (trace_regsdiff && (emu->regs[i].q[0] != emu->oldregs[i].q[0])) {
-            sprintf(tmp, "\e[1;35m%s=%016lx\e[m ", regname[i], emu->regs[i].q[0]);
-            emu->oldregs[i].q[0] = emu->regs[i].q[0];
-        } else {
-            sprintf(tmp, "%s=%016lx ", regname[i], emu->regs[i].q[0]);
-        }
+            if (trace_regsdiff && (emu->regs[i].dword[0] != emu->oldregs[i].q[0])) {
+                sprintf(tmp, "\e[1;35m%s=%08x\e[m ", regname32[i], emu->regs[i].dword[0]);
+                emu->oldregs[i].q[0] = emu->regs[i].dword[0];
+            } else {
+                sprintf(tmp, "%s=%08x ", regname32[i], emu->regs[i].dword[0]);
+            }
 #else
-        sprintf(tmp, "%s=%016lx ", regname[i], emu->regs[i].q[0]);
+            sprintf(tmp, "%s=%08x ", regname[i], emu->regs[i].dword[0]);
 #endif
-        strcat(buff, tmp);
+            strcat(buff, tmp);
 
-        if (i%5==4) {
-            if(i==4) {
+            if(i==_RBX) {
                 if(emu->df) {
 #define FLAG_CHAR(f) (ACCESS_FLAG(F_##f##F)) ? #f : "?"
                     sprintf(tmp, "flags=%s%s%s%s%s%s%s\n", FLAG_CHAR(O), FLAG_CHAR(D), FLAG_CHAR(S), FLAG_CHAR(Z), FLAG_CHAR(A), FLAG_CHAR(P), FLAG_CHAR(C));
@@ -467,22 +473,54 @@ const char* DumpCPURegs(x64emu_t* emu, uintptr_t ip)
                     strcat(buff, tmp);
 #undef FLAG_CHAR
                 }
-            } else {
-                strcat(buff, "\n");
             }
-        } 
+        }
+    else
+        for (int i=_AX; i<=_R15; ++i) {
+#ifdef HAVE_TRACE
+            if (trace_regsdiff && (emu->regs[i].q[0] != emu->oldregs[i].q[0])) {
+                sprintf(tmp, "\e[1;35m%s=%016lx\e[m ", regname[i], emu->regs[i].q[0]);
+                emu->oldregs[i].q[0] = emu->regs[i].q[0];
+            } else {
+                sprintf(tmp, "%s=%016lx ", regname[i], emu->regs[i].q[0]);
+            }
+#else
+            sprintf(tmp, "%s=%016lx ", regname[i], emu->regs[i].q[0]);
+#endif
+            strcat(buff, tmp);
+
+            if (i%5==4) {
+                if(i==4) {
+                    if(emu->df) {
+#define FLAG_CHAR(f) (ACCESS_FLAG(F_##f##F)) ? #f : "?"
+                        sprintf(tmp, "flags=%s%s%s%s%s%s%s\n", FLAG_CHAR(O), FLAG_CHAR(D), FLAG_CHAR(S), FLAG_CHAR(Z), FLAG_CHAR(A), FLAG_CHAR(P), FLAG_CHAR(C));
+                        strcat(buff, tmp);
+#undef FLAG_CHAR
+                    } else {
+#define FLAG_CHAR(f) (ACCESS_FLAG(F_##f##F)) ? #f : "-"
+                        sprintf(tmp, "FLAGS=%s%s%s%s%s%s%s\n", FLAG_CHAR(O), FLAG_CHAR(D), FLAG_CHAR(S), FLAG_CHAR(Z), FLAG_CHAR(A), FLAG_CHAR(P), FLAG_CHAR(C));
+                        strcat(buff, tmp);
+#undef FLAG_CHAR
+                    }
+                } else {
+                    strcat(buff, "\n");
+                }
+            } 
     }
-    sprintf(tmp, "RIP=%016lx ", ip);
+    if(is32bits)
+        sprintf(tmp, "EIP=%08lx ", ip);
+    else
+        sprintf(tmp, "RIP=%016lx ", ip);
     strcat(buff, tmp);
     return buff;
 }
 
-void StopEmu(x64emu_t* emu, const char* reason)
+void StopEmu(x64emu_t* emu, const char* reason, int is32bits)
 {
     emu->quit = 1;
     printf_log(LOG_NONE, "%s", reason);
     // dump stuff...
-    printf_log(LOG_NONE, "==== CPU Registers ====\n%s\n", DumpCPURegs(emu, R_RIP));
+    printf_log(LOG_NONE, "==== CPU Registers ====\n%s\n", DumpCPURegs(emu, R_RIP, is32bits));
     printf_log(LOG_NONE, "======== Stack ========\nStack is from %lX to %lX\n", R_RBP, R_RSP);
     if (R_RBP == R_RSP) {
         printf_log(LOG_NONE, "RBP = RSP: leaf function detected; next 128 bytes should be either data or random.\n");
@@ -497,13 +535,13 @@ void StopEmu(x64emu_t* emu, const char* reason)
 #endif
 }
 
-void UnimpOpcode(x64emu_t* emu)
+void UnimpOpcode(x64emu_t* emu, int is32bits)
 {
     R_RIP = emu->old_ip;
 
     int tid = syscall(SYS_gettid);
-    printf_log(LOG_NONE, "%04d|%p: Unimplemented Opcode (%02X %02X %02X %02X) %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n", 
-        tid, (void*)emu->old_ip,
+    printf_log(LOG_NONE, "%04d|%p: Unimplemented %sOpcode (%02X %02X %02X %02X) %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n", 
+        tid, (void*)emu->old_ip, is32bits?"32bits ":"",
         Peek(emu, -4), Peek(emu, -3), Peek(emu, -2), Peek(emu, -1),
         Peek(emu, 0), Peek(emu, 1), Peek(emu, 2), Peek(emu, 3),
         Peek(emu, 4), Peek(emu, 5), Peek(emu, 6), Peek(emu, 7),
@@ -529,9 +567,9 @@ void EmuCall(x64emu_t* emu, uintptr_t addr)
     Run(emu, 0);
     emu->quit = 0;  // reset Quit flags...
     emu->df = d_none;
-    if(emu->quitonlongjmp && emu->longjmp) {
-        if(emu->quitonlongjmp==1)
-            emu->longjmp = 0;   // don't change anything because of the longjmp
+    if(emu->flags.quitonlongjmp && emu->flags.longjmp) {
+        if(emu->flags.quitonlongjmp==1)
+            emu->flags.longjmp = 0;   // don't change anything because of the longjmp
     } else {
         R_RBX = old_rbx;
         R_RDI = old_rdi;

@@ -40,10 +40,11 @@ uintptr_t Run6664(x64emu_t *emu, rex_t rex, int seg, uintptr_t addr)
     opcode = F8;
     // REX prefix before the F0 are ignored
     rex.rex = 0;
-    while(opcode>=0x40 && opcode<=0x4f) {
-        rex.rex = opcode;
-        opcode = F8;
-    }
+    if(!rex.is32bits)
+        while(opcode>=0x40 && opcode<=0x4f) {
+            rex.rex = opcode;
+            opcode = F8;
+        }
 
     switch(opcode) {
 
@@ -91,7 +92,7 @@ uintptr_t Run6664(x64emu_t *emu, rex_t rex, int seg, uintptr_t addr)
             }
             break;
 
-        case 0x89:                              /* MOV Ew,Gw */
+        case 0x89:                              /* MOV FS:Ew,Gw */
             nextop = F8;
             GETEW_OFFS(0, tlsdata);
             GETGW;
@@ -100,8 +101,7 @@ uintptr_t Run6664(x64emu_t *emu, rex_t rex, int seg, uintptr_t addr)
             else
                 EW->word[0] = GW->word[0];
             break;
-
-        case 0x8B:                      /* MOV Gd,Ed */
+        case 0x8B:                      /* MOV Gw,FS:Ew */
             nextop = F8;
             GETEW_OFFS(0, tlsdata);
             GETGW;
@@ -110,7 +110,14 @@ uintptr_t Run6664(x64emu_t *emu, rex_t rex, int seg, uintptr_t addr)
             else
                 GW->word[0] = EW->word[0];
             break;
-
+        case 0xC7:                      /* MOV FS:Ew,Iw */
+            nextop = F8;
+            GETEW_OFFS(2, tlsdata);
+            if(rex.w)
+                EW->q[0] = F16S;
+            else
+                EW->word[0] = F16;
+            break;
        default:
             return 0;
     }

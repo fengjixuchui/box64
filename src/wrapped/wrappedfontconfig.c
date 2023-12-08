@@ -18,7 +18,12 @@
 #include "emu/x64emu_private.h"
 #include "myalign.h"
 
-const char* fontconfigName = "libfontconfig.so.1";
+#ifdef ANDROID
+    const char* fontconfigName = "libfontconfig.so";
+#else
+    const char* fontconfigName = "libfontconfig.so.1";
+#endif
+
 #define LIBNAME fontconfig
 
 #define ADDED_FUNCTIONS()                   \
@@ -45,7 +50,10 @@ EXPORT void* my_FcObjectSetBuild(x64emu_t* emu, void* first, uint64_t* b)
 }
 
 #define CUSTOM_INIT \
-    getMy(lib);
+    getMy(lib);                     \
+    setNeededLibs(lib, 2,           \
+        "libexpat.so.1",            \
+        "libfreetype.so.6");
 
 #define CUSTOM_FINI \
     freeMy();

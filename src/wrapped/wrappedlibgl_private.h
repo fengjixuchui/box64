@@ -3046,7 +3046,7 @@ GO(glXWaitForMscOML, iFppIIIppp)
 GO(glXWaitForSbcOML, iFppIppp)
 
 //GLX_EXT_swap_control
-GO(glXSwapIntervalEXT,pFppi)
+GOM(glXSwapIntervalEXT,vFppi)
 //GLX_EXT_swap_control_tear
 //nothing
 
@@ -3407,6 +3407,16 @@ GO(glClipPlanef,vFup)
 GO(glFrustumf,vFffffff)
 GO(glGetClipPlanef,vFup)
 GO(glOrthof,vFffffff)
+GO(glActiveShaderProgramEXT, vFuu)
+GO(glBindProgramPipelineEXT, vFu)
+GO(glCreateShaderProgramvEXT, uFilp)
+GO(glDeleteProgramPipelinesEXT, vFilu)
+GO(glGenProgramPipelinesEXT, vFlp)
+GO(glGetProgramPipelineInfoLogEXT, vFulpp)
+GO(glGetProgramPipelineivEXT, vFuip)
+GO(glIsProgramPipelineEXT, iFu)
+GO(glUseProgramStagesEXT, vFuuu)
+GO(glValidateProgramPipelineEXT, vFu)
 
 // GL_EXT_window_rectangles
 GO(glWindowRectanglesEXT, vFuip)

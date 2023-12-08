@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
-#include <pthread.h>
 #include <errno.h>
 
 #include "debug.h"
@@ -35,7 +34,7 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
     int v0, v1;
     int q0;
     int d0, d1;
-    int64_t fixedaddress;
+    int64_t fixedaddress, gdoffset;
     int unscaled;
 
     MAYUSE(d0);
@@ -82,11 +81,11 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
         case 0x12:
             INST_NAME("MOVDDUP Gx, Ex");
             nextop = F8;
-            GETGX(x1);
+            GETGX();
             GETEX(x2, 0);
             LD(x3, wback, fixedaddress+0);
-            SD(x3, gback, 0);
-            SD(x3, gback, 8);
+            SD(x3, gback, gdoffset+0);
+            SD(x3, gback, gdoffset+8);
             break;
         case 0x2A:
             INST_NAME("CVTSI2SD Gx, Ed");
@@ -105,7 +104,7 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             GETGD;
             GETEXSD(v0, 0);
             if(!box64_dynarec_fastround) {
-                FSFLAGSI(xZR);  // // reset all bits
+                FSFLAGSI(0);  // // reset all bits
             }
             FCVTLDxw(gd, v0, RD_RTZ);
             if(!rex.w)
@@ -127,7 +126,7 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             GETGD;
             GETEXSD(v0, 0);
             if(!box64_dynarec_fastround) {
-                FSFLAGSI(xZR);  // // reset all bits
+                FSFLAGSI(0);  // // reset all bits
             }
             u8 = sse_setround(dyn, ninst, x2, x3);
             FCVTLDxw(gd, v0, RD_DYN);
@@ -147,33 +146,6 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             opcode = F8;
             switch(opcode) {
 
-                case 0xF0:
-                    INST_NAME("(unsupported) CRC32 Gd, Eb)");
-                    nextop = F8;
-                    addr = fakeed(dyn, addr, ninst, nextop);
-                    SETFLAGS(X_ALL, SF_SET);    // Hack to set flags in "don't care" state
-                    GETIP(ip);
-                    STORE_XEMU_CALL();
-                    CALL(native_ud, -1);
-                    LOAD_XEMU_CALL();
-                    jump_to_epilog(dyn, 0, xRIP, ninst);
-                    *need_epilog = 0;
-                    *ok = 0;
-                    break;
-                case 0xF1:
-                    INST_NAME("(unsupported) CRC32 Gd, Ed)");
-                    nextop = F8;
-                    addr = fakeed(dyn, addr, ninst, nextop);
-                    SETFLAGS(X_ALL, SF_SET);    // Hack to set flags in "don't care" state
-                    GETIP(ip);
-                    STORE_XEMU_CALL();
-                    CALL(native_ud, -1);
-                    LOAD_XEMU_CALL();
-                    jump_to_epilog(dyn, 0, xRIP, ninst);
-                    *need_epilog = 0;
-                    *ok = 0;
-                    break;
-
                 default:
                     DEFAULT;
             }
@@ -184,8 +156,9 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             GETEXSD(d0, 0);
             GETGXSD_empty(d1);
             if(!box64_dynarec_fastnan) {
-                FMVDX(d1, xZR);
-                FLTD(x3, d0, d1);
+                v0 = fpu_get_scratch(dyn);  // need a scratch in case d0 == d1
+                FMVDX(v0, xZR);
+                FLTD(x3, d0, v0);
             }
             FSQRTD(d1, d0);
             if(!box64_dynarec_fastnan) {
@@ -275,7 +248,7 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
         case 0x70: // TODO: Optimize this!
             INST_NAME("PSHUFLW Gx, Ex, Ib");
             nextop = F8;
-            GETGX(x1);
+            GETGX();
             GETEX(x2, 1);
             u8 = F8;
             int32_t idx;
@@ -289,14 +262,14 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             idx = (u8>>(3*2))&3;
             LHU(x6, wback, fixedaddress+idx*2);
 
-            SH(x3, gback, 0*2);
-            SH(x4, gback, 1*2);
-            SH(x5, gback, 2*2);
-            SH(x6, gback, 3*2);
+            SH(x3, gback, gdoffset+0*2);
+            SH(x4, gback, gdoffset+1*2);
+            SH(x5, gback, gdoffset+2*2);
+            SH(x6, gback, gdoffset+3*2);
 
             if (!(MODREG && (gd==ed))) {
                 LD(x3, wback, fixedaddress+8);
-                SD(x3, gback, 8);
+                SD(x3, gback, gdoffset+8);
             }
             break;
         case 0xC2:
@@ -334,7 +307,7 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                 }
                 case 7: break;                                      // Not NaN
                 }
-                
+
                 MARK2;
                 if ((u8&7) == 5 || (u8&7) == 6) {
                     MOV32w(x2, 1);
@@ -347,7 +320,7 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
         case 0xE6:
             INST_NAME("CVTPD2DQ Gx, Ex");
             nextop = F8;
-            GETGX(x1);
+            GETGX();
             GETEX(x2, 0);
             d0 = fpu_get_scratch(dyn);
             u8 = sse_setround(dyn, ninst, x6, x4);
@@ -358,10 +331,17 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                 SUB(x5, x5, x3);
                 BEQZ(x5, 8);
                 LUI(x3, 0x80000); // INT32_MIN
-                SW(x3, gback, 4*i);
+                SW(x3, gback, gdoffset+4*i);
             }
             x87_restoreround(dyn, ninst, u8);
-            SD(xZR, gback, 8);
+            SD(xZR, gback, gdoffset+8);
+            break;
+        case 0xF0:
+            INST_NAME("LDDQU Gx,Ex");
+            nextop = F8;
+            GETGX();
+            GETEX(x2, 0);
+            SSE_LOOP_MV_Q(x3);
             break;
         default:
             DEFAULT;

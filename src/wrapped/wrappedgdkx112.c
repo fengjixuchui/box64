@@ -37,10 +37,10 @@ GO(3)
 
 // GdkFilterFunc
 #define GO(A)   \
-static uintptr_t my_filter_fct_##A = 0;   \
-static int my_filter_##A(void* xevent, void* event, void* data)     \
-{                                       \
-    return (int)RunFunction(my_context, my_filter_fct_##A, 3, xevent, event, data);\
+static uintptr_t my_filter_fct_##A = 0;                                                    \
+static int my_filter_##A(void* xevent, void* event, void* data)                            \
+{                                                                                          \
+    return (int)RunFunctionFmt(my_filter_fct_##A, "ppp", xevent, event, data); \
 }
 SUPER()
 #undef GO
@@ -57,11 +57,56 @@ static void* findFilterFct(void* fct)
     printf_log(LOG_NONE, "Warning, no more slot for gtk-2 GdkFilterFunc callback\n");
     return NULL;
 }
+// GSourceFunc
+#define GO(A)   \
+static uintptr_t my_GSourceFunc_fct_##A = 0;                                \
+static int my_GSourceFunc_##A(void* a)                                      \
+{                                                                           \
+    return (int)RunFunctionFmt(my_GSourceFunc_fct_##A, "p", a);       \
+}
+SUPER()
+#undef GO
+static void* findGSourceFunc(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_GSourceFunc_fct_##A == (uintptr_t)fct) return my_GSourceFunc_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_GSourceFunc_fct_##A == 0) {my_GSourceFunc_fct_##A = (uintptr_t)fct; return my_GSourceFunc_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for gdk2 GSourceFunc callback\n");
+    return NULL;
+}
+// GDestroyNotify
+#define GO(A)   \
+static uintptr_t my_GDestroyNotify_fct_##A = 0;                         \
+static void my_GDestroyNotify_##A(void* data)                           \
+{                                                                       \
+    RunFunctionFmt(my_GDestroyNotify_fct_##A, "p", data);         \
+}
+SUPER()
+#undef GO
+static void* findGDestroyNotifyFct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_GDestroyNotify_fct_##A == (uintptr_t)fct) return my_GDestroyNotify_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_GDestroyNotify_fct_##A == 0) {my_GDestroyNotify_fct_##A = (uintptr_t)fct; return my_GDestroyNotify_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for gdk2 GDestroyNotify callback\n");
+    return NULL;
+}
 
+#undef SUPER
 
 static void my_event_handler(void* event, my_signal_t* sig)
 {
-    RunFunction(my_context, sig->c_handler, 2, event, sig->data);
+    RunFunctionFmt(sig->c_handler, "pp", event, sig->data);
 }
 
 EXPORT void my_gdk_event_handler_set(x64emu_t* emu, void* func, void* data, void* notify)
@@ -76,7 +121,7 @@ EXPORT void my_gdk_event_handler_set(x64emu_t* emu, void* func, void* data, void
 
 static void my_input_function(my_signal_t* sig, int source, int condition)
 {
-    RunFunction(my_context, sig->c_handler, 3, sig->data, source, condition);
+    RunFunctionFmt(sig->c_handler, "pii", sig->data, source, condition);
 }
 
 EXPORT int my_gdk_input_add(x64emu_t* emu, int source, int condition, void* f, void* data)
@@ -92,7 +137,7 @@ EXPORT int my_gdk_input_add_full(x64emu_t* emu, int source, int condition, void*
 {
     if(!f)
         return my->gdk_input_add_full(source, condition, f, data, notify);
-    
+
     my_signal_t* sig = new_mysignal(f, data, notify);
     return my->gdk_input_add_full(source, condition, my_input_function, sig, my_signal_delete);
 }
@@ -118,6 +163,11 @@ EXPORT void my_gdk_window_add_filter(x64emu_t* emu, void* window, void* f, void*
 EXPORT void my_gdk_window_remove_filter(x64emu_t* emu, void* window, void* f, void* data)
 {
     my->gdk_window_remove_filter(window, findFilterFct(f), data);
+}
+
+EXPORT uint32_t my_gdk_threads_add_timeout_full(x64emu_t* emu, int priotity, uint32_t interval, void* f, void* data, void* d)
+{
+    return my->gdk_threads_add_timeout_full(priotity, interval, findGSourceFunc(f), data, findGDestroyNotifyFct(d));
 }
 
 #define PRE_INIT    \

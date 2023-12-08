@@ -9,13 +9,14 @@ typedef struct instsize_s instsize_t;
 
 #define BARRIER_MAYBE   8
 
-#define NEON_CACHE_NONE 0
-#define NEON_CACHE_ST_D 1
-#define NEON_CACHE_ST_F 2
-#define NEON_CACHE_MM   3
-#define NEON_CACHE_XMMW 4
-#define NEON_CACHE_XMMR 5
-#define NEON_CACHE_SCR  6
+#define NEON_CACHE_NONE     0
+#define NEON_CACHE_ST_D     1
+#define NEON_CACHE_ST_F     2
+#define NEON_CACHE_ST_I64   3
+#define NEON_CACHE_MM       4
+#define NEON_CACHE_XMMW     5
+#define NEON_CACHE_XMMR     6
+#define NEON_CACHE_SCR      7
 typedef union neon_cache_s {
     int8_t           v;
     struct {
@@ -69,15 +70,15 @@ typedef struct instruction_arm64_s {
     int                 pred_sz;    // size of predecessor list
     int                 *pred;      // predecessor array
     uintptr_t           mark, mark2, mark3;
-    uintptr_t           markf;
+    uintptr_t           markf, markf2;
     uintptr_t           markseg;
     uintptr_t           marklock;
     int                 pass2choice;// value for choices that are fixed on pass2 for pass3
     uintptr_t           natcall;
     int                 retn;
     int                 barrier_maybe;
-    flagcache_t         f_exit;     // flags status at end of intruction
-    neoncache_t         n;          // neoncache at end of intruction (but before poping)
+    flagcache_t         f_exit;     // flags status at end of instruction
+    neoncache_t         n;          // neoncache at end of instruction (but before poping)
     flagcache_t         f_entry;    // flags status before the instruction begin
 } instruction_arm64_t;
 
@@ -86,12 +87,12 @@ typedef struct dynarec_arm_s {
     int32_t             size;
     int32_t             cap;
     uintptr_t           start;      // start of the block
-    uint32_t            isize;      // size in byte of x64 instructions included
+    uint32_t            isize;      // size in bytes of x64 instructions included
     void*               block;      // memory pointer where next instruction is emitted
     uintptr_t           native_start;  // start of the arm code
     size_t              native_size;   // size of emitted arm code
     uintptr_t           last_ip;    // last set IP in RIP (or NULL if unclean state) TODO: move to a cache something
-    uint64_t*           table64;   // table of 64bits value
+    uint64_t*           table64;    // table of 64bits values
     int                 table64size;// size of table (will be appended at end of executable code)
     int                 table64cap;
     uintptr_t           tablestart;
@@ -105,7 +106,7 @@ typedef struct dynarec_arm_s {
     dynablock_t*        dynablock;
     instsize_t*         instsize;
     size_t              insts_size; // size of the instruction size array (calculated)
-    uint8_t             smread;    // for strongmem model emulation
+    uint8_t             smread;     // for strongmem model emulation
     uint8_t             smwrite;    // for strongmem model emulation
     uintptr_t           forward;    // address of the last end of code while testing forward
     uintptr_t           forward_to; // address of the next jump to (to check if everything is ok)
@@ -121,11 +122,11 @@ uintptr_t get_closest_next(dynarec_arm_t *dyn, uintptr_t addr);
 int is_nops(dynarec_arm_t *dyn, uintptr_t addr, int n);
 int is_instructions(dynarec_arm_t *dyn, uintptr_t addr, int n);
 
-int Table64(dynarec_arm_t *dyn, uint64_t val, int pass);  // add a value to etable64 (if needed) and gives back the imm19 to use in LDR_literal
+int Table64(dynarec_arm_t *dyn, uint64_t val, int pass);  // add a value to table64 (if needed) and gives back the imm19 to use in LDR_literal
 
 void CreateJmpNext(void* addr, void* next);
 
-#define GO_TRACE(A, B)      \
+#define GO_TRACE(A, B, s0)  \
     GETIP(addr);            \
     MOVx_REG(x1, xRIP);     \
     STORE_XEMU_CALL(xRIP);  \

@@ -520,10 +520,8 @@ uint8_t rcl8(x64emu_t *emu, uint8_t d, uint8_t s)
 		CONDITIONAL_SET_FLAG(cf, F_CF);
         /* OVERFLOW is set *IFF* cnt==1, then it is the 
            xor of CF and the most significant bit.  Blecck. */
-        /* parenthesized this expression since it appears to
-           be causing OF to be misset */
-        CONDITIONAL_SET_FLAG(cnt == 1 && XOR2(cf + ((res >> 6) & 0x2)),
-							 F_OF);
+		if(cnt == 1)
+        	CONDITIONAL_SET_FLAG((cf ^ (res >> 7)) & 0x1, F_OF);
 
     }
 	return (uint8_t)res;
@@ -545,8 +543,8 @@ uint16_t rcl16(x64emu_t *emu, uint16_t d, uint8_t s)
 			res |= 1 << (cnt - 1);
 		}
 		CONDITIONAL_SET_FLAG(cf, F_CF);
-		CONDITIONAL_SET_FLAG(cnt == 1 && XOR2(cf + ((res >> 14) & 0x2)),
-							 F_OF);
+		if(cnt == 1)
+        	CONDITIONAL_SET_FLAG((cf ^ (res >> 15)) & 0x1, F_OF);
 	}
 	return (uint16_t)res;
 }
@@ -567,8 +565,8 @@ uint32_t rcl32(x64emu_t *emu, uint32_t d, uint8_t s)
 			res |= 1 << (cnt - 1);
 		}
 		CONDITIONAL_SET_FLAG(cf, F_CF);
-		CONDITIONAL_SET_FLAG(cnt == 1 && XOR2(cf + ((res >> 30) & 0x2)),
-							 F_OF);
+		if(cnt == 1)
+        	CONDITIONAL_SET_FLAG((cf ^ (res >> 31)) & 0x1, F_OF);
 	}
 	return res;
 }
@@ -589,8 +587,8 @@ uint64_t rcl64(x64emu_t *emu, uint64_t d, uint8_t s)
 			res |= 1LL << (cnt - 1);
 		}
 		CONDITIONAL_SET_FLAG(cf, F_CF);
-		CONDITIONAL_SET_FLAG(cnt == 1 && XOR2(cf + ((res >> 62) & 0x2)),
-							 F_OF);
+		if(cnt == 1)
+        	CONDITIONAL_SET_FLAG((cf ^ (res >> 63)) & 0x1, F_OF);
 	}
 	return res;
 }
@@ -641,6 +639,11 @@ uint8_t rcr8(x64emu_t *emu, uint8_t d, uint8_t s)
                (i.e. packed bit array or unpacked.)
              */
 			ocf = ACCESS_FLAG(F_CF) != 0;
+			/* OVERFLOW is set *IFF* cnt==1, then it is the 
+			xor of CF and the most significant bit.  Blecck. */
+			/* parenthesized... */
+			CONDITIONAL_SET_FLAG((ocf ^ (d >> 7)) & 0x1,
+								 F_OF);
         } else
             cf = (d >> (cnt - 1)) & 0x1;
 
@@ -669,13 +672,6 @@ uint8_t rcr8(x64emu_t *emu, uint8_t d, uint8_t s)
         }
         /* set the new carry flag, based on the variable "cf" */
 		CONDITIONAL_SET_FLAG(cf, F_CF);
-        /* OVERFLOW is set *IFF* cnt==1, then it is the 
-           xor of CF and the most significant bit.  Blecck. */
-        /* parenthesized... */
-		if (cnt == 1) {
-			CONDITIONAL_SET_FLAG(XOR2(ocf + ((d >> 6) & 0x2)),
-								 F_OF);
-		}
 	}
 	return (uint8_t)res;
 }
@@ -693,6 +689,8 @@ uint16_t rcr16(x64emu_t *emu, uint16_t d, uint8_t s)
 		if (cnt == 1) {
 			cf = d & 0x1;
 			ocf = ACCESS_FLAG(F_CF) != 0;
+			CONDITIONAL_SET_FLAG((ocf ^ (d >> 15)) & 0x1,
+								 F_OF);
 		} else
 			cf = (d >> (cnt - 1)) & 0x1;
 		mask = (1 << (16 - cnt)) - 1;
@@ -702,10 +700,6 @@ uint16_t rcr16(x64emu_t *emu, uint16_t d, uint8_t s)
 			res |= 1 << (16 - cnt);
 		}
 		CONDITIONAL_SET_FLAG(cf, F_CF);
-		if (cnt == 1) {
-			CONDITIONAL_SET_FLAG(XOR2(ocf + ((d >> 14) & 0x2)),
-								 F_OF);
-		}
 	}
 	return (uint16_t)res;
 }
@@ -723,6 +717,8 @@ uint32_t rcr32(x64emu_t *emu, uint32_t d, uint8_t s)
 		if (cnt == 1) {
 			cf = d & 0x1;
 			ocf = ACCESS_FLAG(F_CF) != 0;
+			CONDITIONAL_SET_FLAG((ocf ^ (d >> 31)) & 0x1,
+								 F_OF);
 		} else
 			cf = (d >> (cnt - 1)) & 0x1;
 		mask = (1 << (32 - cnt)) - 1;
@@ -733,10 +729,6 @@ uint32_t rcr32(x64emu_t *emu, uint32_t d, uint8_t s)
 			res |= 1 << (32 - cnt);
 		}
 		CONDITIONAL_SET_FLAG(cf, F_CF);
-		if (cnt == 1) {
-			CONDITIONAL_SET_FLAG(XOR2(ocf + ((d >> 30) & 0x2)),
-								 F_OF);
-		}
 	}
 	return res;
 }
@@ -754,6 +746,8 @@ uint64_t rcr64(x64emu_t *emu, uint64_t d, uint8_t s)
 		if (cnt == 1) {
 			cf = d & 0x1;
 			ocf = ACCESS_FLAG(F_CF) != 0;
+			CONDITIONAL_SET_FLAG((ocf ^ (d >> 63)) & 0x1,
+								 F_OF);
 		} else
 			cf = (d >> (cnt - 1)) & 0x1;
 		mask = (1LL << (64 - cnt)) - 1;
@@ -764,10 +758,6 @@ uint64_t rcr64(x64emu_t *emu, uint64_t d, uint8_t s)
 			res |= 1LL << (64 - cnt);
 		}
 		CONDITIONAL_SET_FLAG(cf, F_CF);
-		if (cnt == 1) {
-			CONDITIONAL_SET_FLAG(XOR2(ocf + ((d >> 62) & 0x2)),
-								 F_OF);
-		}
 	}
 	return res;
 }
@@ -985,8 +975,7 @@ uint16_t shld16 (x64emu_t *emu, uint16_t d, uint16_t fill, uint8_t s)
 			res = d;
 		}
 		if (cnt == 1) {
-			CONDITIONAL_SET_FLAG((((res & 0x8000) == 0x8000) ^
-								  (ACCESS_FLAG(F_CF) != 0)), F_OF);
+			CONDITIONAL_SET_FLAG(((res ^ d) >> 15)&1, F_OF);
 		} else {
 			CLEAR_FLAG(F_OF);
 		}
@@ -1023,8 +1012,7 @@ uint32_t shld32 (x64emu_t *emu, uint32_t d, uint32_t fill, uint8_t s)
 		res = d;
 	}
 	if (cnt == 1) {
-		CONDITIONAL_SET_FLAG((((res & 0x80000000) == 0x80000000) ^
-								(ACCESS_FLAG(F_CF) != 0)), F_OF);
+		CONDITIONAL_SET_FLAG(((res ^ d) >> 31)&1, F_OF);
 	} else {
 		CLEAR_FLAG(F_OF);
 	}
@@ -1049,8 +1037,7 @@ uint64_t shld64 (x64emu_t *emu, uint64_t d, uint64_t fill, uint8_t s)
 		res = d;
 	}
 	if (cnt == 1) {
-		CONDITIONAL_SET_FLAG((((res & 0x8000000000000000L) == 0x8000000000000000L) ^
-								(ACCESS_FLAG(F_CF) != 0)), F_OF);
+		CONDITIONAL_SET_FLAG(((res ^ d) >> 63)&1, F_OF);
 	} else {
 		CLEAR_FLAG(F_OF);
 	}
@@ -1081,7 +1068,7 @@ uint16_t shrd16 (x64emu_t *emu, uint16_t d, uint16_t fill, uint8_t s)
 		}
 
 		if (cnt == 1) {
-			CONDITIONAL_SET_FLAG(XOR2(res >> 14), F_OF);
+			CONDITIONAL_SET_FLAG(((res ^ d) >> 15)&1, F_OF);
         } else {
 			CLEAR_FLAG(F_OF);
         }
@@ -1123,7 +1110,7 @@ uint32_t shrd32 (x64emu_t *emu, uint32_t d, uint32_t fill, uint8_t s)
 		res = d;
 	}
 	if (cnt == 1) {
-		CONDITIONAL_SET_FLAG(XOR2(res >> 30), F_OF);
+		CONDITIONAL_SET_FLAG(((res ^ d) >> 31)&1, F_OF);
 	} else {
 		CLEAR_FLAG(F_OF);
 	}
@@ -1149,7 +1136,7 @@ uint64_t shrd64 (x64emu_t *emu, uint64_t d, uint64_t fill, uint8_t s)
 		res = d;
 	}
 	if (cnt == 1) {
-		CONDITIONAL_SET_FLAG(XOR2(res >> 62), F_OF);
+		CONDITIONAL_SET_FLAG(((res ^ d) >> 63)&1, F_OF);
 	} else {
 		CLEAR_FLAG(F_OF);
 	}

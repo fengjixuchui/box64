@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
-#include <pthread.h>
 #include <errno.h>
 
 #include "debug.h"
@@ -16,7 +15,6 @@
 #include "emu/x64run_private.h"
 #include "x64trace.h"
 #include "dynarec_native.h"
-#include "../tools/bridge_private.h"
 
 #include "rv64_printer.h"
 #include "dynarec_rv64_private.h"
@@ -108,8 +106,7 @@ void emit_cmp16(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int s4, 
     // It's a cmp, we can't store the result back to s1.
     SUB(s6, s1, s2);
     IFX(X_ALL) {
-        SLLI(s6, s6, 48);
-        SRLI(s6, s6, 48);
+        ZEXTH(s6, s6);
     }
     IFX_PENDOR0 {
         SH(s6, xEmu, offsetof(x64emu_t, res));

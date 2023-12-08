@@ -14,4 +14,7 @@
 const char* libformwName = "libformw.so.5";
 #define LIBNAME libformw
 
+#define CUSTOM_INIT \
+    SETALT(myw_);   \
+
 #include "wrappedlib_init.h"

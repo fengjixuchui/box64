@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <fenv.h>
 #include <string.h>
 #include <signal.h>
 #include <sys/types.h>
@@ -113,9 +114,13 @@ uintptr_t RunF20F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
                 GD->q[0] = 0x8000000000000000LL;
             else
                 switch(emu->mxcsr.f.MXCSR_RC) {
-                    case ROUND_Nearest:
+                    case ROUND_Nearest: {
+                        int round = fegetround();
+                        fesetround(FE_TONEAREST);
                         GD->sq[0] = nearbyint(EX->d[0]);
+                        fesetround(round);
                         break;
+                    }
                     case ROUND_Down:
                         GD->sq[0] = floor(EX->d[0]);
                         break;
@@ -131,9 +136,13 @@ uintptr_t RunF20F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
                 GD->dword[0] = 0x80000000;
             else
                 switch(emu->mxcsr.f.MXCSR_RC) {
-                    case ROUND_Nearest:
+                    case ROUND_Nearest: {
+                        int round = fegetround();
+                        fesetround(FE_TONEAREST);
                         GD->sdword[0] = nearbyint(EX->d[0]);
+                        fesetround(round);
                         break;
+                    }
                     case ROUND_Down:
                         GD->sdword[0] = floor(EX->d[0]);
                         break;
@@ -146,6 +155,44 @@ uintptr_t RunF20F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
                 }
             GD->dword[1] = 0;
         }
+        break;
+
+    case 0x38:  // more opcodes
+            opcode = F8;
+            switch(opcode) {
+
+                case 0xF0:  // CRC32 Gd, Eb
+                    nextop = F8;
+                    GETEB(0);
+                    GETGD;
+                    GD->dword[0] ^=  EB->byte[0];
+                    for (int i = 0; i < 8; i++) {
+                        if (GD->dword[0] & 1)
+                            GD->dword[0] = (GD->dword[0] >> 1) ^ 0x82f63b78;
+                        else
+                            GD->dword[0] = (GD->dword[0] >> 1);
+                    }
+                    GD->dword[1] = 0;
+                    break;
+                case 0xF1:  // CRC32 Gd, Ed
+                    nextop = F8;
+                    GETED(0);
+                    GETGD;
+                    for(int j=0; j<4*(rex.w+1); ++j) {
+                        GD->dword[0] ^=  ED->byte[j];
+                        for (int i = 0; i < 8; i++) {
+                            if (GD->dword[0] & 1)
+                                GD->dword[0] = (GD->dword[0] >> 1) ^ 0x82f63b78;
+                            else
+                                GD->dword[0] = (GD->dword[0] >> 1);
+                        }
+                    }
+                    GD->dword[1] = 0;
+                    break;
+
+                default:
+                    return 0;
+            }
         break;
         
     case 0x51:  /* SQRTSD Gx, Ex */
@@ -325,10 +372,14 @@ uintptr_t RunF20F(x64emu_t *emu, rex_t rex, uintptr_t addr, int *step)
         GETEX(0);
         GETGX;
         switch(emu->mxcsr.f.MXCSR_RC) {
-            case ROUND_Nearest:
+            case ROUND_Nearest: {
+                int round = fegetround();
+                fesetround(FE_TONEAREST);
                 tmp64s0 = nearbyint(EX->d[0]);
                 tmp64s1 = nearbyint(EX->d[1]);
+                fesetround(round);
                 break;
+            }
             case ROUND_Down:
                 tmp64s0 = floor(EX->d[0]);
                 tmp64s1 = floor(EX->d[1]);

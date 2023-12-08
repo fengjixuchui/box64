@@ -19,7 +19,12 @@
 #include "myalign.h"
 #include "gtkclass.h"
 
-const char* gtk3Name = "libgtk-3.so.0";
+#ifdef ANDROID
+    const char* gtk3Name = "libgtk-3.so";
+#else
+    const char* gtk3Name = "libgtk-3.so.0";
+#endif
+
 static char* libname = NULL;
 #define LIBNAME gtk3
 
@@ -33,6 +38,8 @@ typedef void*         (*pFpu_t)(void*, uint32_t);
 typedef void*         (*pFppi_t)(void*, void*, int);
 typedef void*         (*pFppp_t)(void*, void*, void*);
 typedef int           (*iFppp_t)(void*, void*, void*);
+typedef void          (*vFppp_t)(void*, void*, void*);
+typedef void          (*vFppA_t)(void*, void*, va_list);
 typedef void          (*vFpipV_t)(void*, int, void*, ...);
 
 #define ADDED_FUNCTIONS()                   \
@@ -42,10 +49,12 @@ GO(gtk_application_window_get_type, LFv_t)  \
 GO(gtk_bin_get_type, LFv_t)                 \
 GO(gtk_widget_get_type, LFv_t)              \
 GO(gtk_button_get_type, LFv_t)              \
+GO(gtk_menu_button_get_type, LFv_t)         \
 GO(gtk_container_get_type, LFv_t)           \
 GO(gtk_misc_get_type, LFv_t)                \
 GO(gtk_label_get_type, LFv_t)               \
 GO(gtk_list_box_get_type, LFv_t)            \
+GO(gtk_image_get_type, LFv_t)               \
 GO(gtk_list_box_row_get_type, LFv_t)        \
 GO(gtk_tree_view_get_type, LFv_t)           \
 GO(gtk_window_get_type, LFv_t)              \
@@ -77,6 +86,8 @@ GO(g_log, vFpipV_t)                         \
 GO(g_module_open, pFpu_t)                   \
 GO(g_module_close, vFp_t)                   \
 GO(gtk_tree_store_newv, pFup_t)             \
+GO(gtk_widget_style_get_valist, vFppA_t)    \
+GO(gtk_widget_style_get_property, vFppp_t)  \
 
 #include "generated/wrappedgtk3types.h"
 
@@ -99,10 +110,10 @@ GO(3)
 
 // GtkMenuDetachFunc
 #define GO(A)   \
-static uintptr_t my_menudetach_fct_##A = 0;   \
-static void my_menudetach_##A(void* widget, void* menu)     \
-{                                       \
-    RunFunction(my_context, my_menudetach_fct_##A, 2, widget, menu);\
+static uintptr_t my_menudetach_fct_##A = 0;                                 \
+static void my_menudetach_##A(void* widget, void* menu)                     \
+{                                                                           \
+    RunFunctionFmt(my_menudetach_fct_##A, "pp", widget, menu);        \
 }
 SUPER()
 #undef GO
@@ -122,10 +133,10 @@ static void* findMenuDetachFct(void* fct)
 
 // GtkMenuPositionFunc
 #define GO(A)   \
-static uintptr_t my_menuposition_fct_##A = 0;   \
-static void my_menuposition_##A(void* menu, void* x, void* y, void* push_in, void* data)     \
-{                                       \
-    RunFunction(my_context, my_menuposition_fct_##A, 5, menu, x, y, push_in, data);\
+static uintptr_t my_menuposition_fct_##A = 0;                                                   \
+static void my_menuposition_##A(void* menu, void* x, void* y, void* push_in, void* data)        \
+{                                                                                               \
+    RunFunctionFmt(my_menuposition_fct_##A, "ppppp", menu, x, y, push_in, data);          \
 }
 SUPER()
 #undef GO
@@ -145,10 +156,10 @@ static void* findMenuPositionFct(void* fct)
 
 // GtkFunction
 #define GO(A)   \
-static uintptr_t my3_gtkfunction_fct_##A = 0;   \
-static int my3_gtkfunction_##A(void* data)     \
-{                                       \
-    return RunFunction(my_context, my3_gtkfunction_fct_##A, 1, data);\
+static uintptr_t my3_gtkfunction_fct_##A = 0;                               \
+static int my3_gtkfunction_##A(void* data)                                  \
+{                                                                           \
+    return RunFunctionFmt(my3_gtkfunction_fct_##A, "p", data);        \
 }
 SUPER()
 #undef GO
@@ -168,10 +179,10 @@ static void* findGtkFunctionFct(void* fct)
 
 // GtkClipboardGetFunc
 #define GO(A)   \
-static uintptr_t my_clipboardget_fct_##A = 0;   \
-static void my_clipboardget_##A(void* clipboard, void* selection, uint32_t info, void* data)     \
-{                                       \
-    RunFunction(my_context, my_clipboardget_fct_##A, 4, clipboard, selection, info, data);\
+static uintptr_t my_clipboardget_fct_##A = 0;                                                       \
+static void my_clipboardget_##A(void* clipboard, void* selection, uint32_t info, void* data)        \
+{                                                                                                   \
+    RunFunctionFmt(my_clipboardget_fct_##A, "ppup", clipboard, selection, info, data);        \
 }
 SUPER()
 #undef GO
@@ -191,10 +202,10 @@ static void* findClipboadGetFct(void* fct)
 
 // GtkClipboardClearFunc
 #define GO(A)   \
-static uintptr_t my_clipboardclear_fct_##A = 0;   \
-static void my_clipboardclear_##A(void* clipboard, void* data)     \
-{                                       \
-    RunFunction(my_context, my_clipboardclear_fct_##A, 2, clipboard, data);\
+static uintptr_t my_clipboardclear_fct_##A = 0;                                     \
+static void my_clipboardclear_##A(void* clipboard, void* data)                      \
+{                                                                                   \
+    RunFunctionFmt(my_clipboardclear_fct_##A, "pp", clipboard, data);         \
 }
 SUPER()
 #undef GO
@@ -213,11 +224,11 @@ static void* findClipboadClearFct(void* fct)
 }
 
 // GtkCallback
-#define GO(A)   \
-static uintptr_t my3_gtkcallback_fct_##A = 0;   \
-static void my3_gtkcallback_##A(void* widget, void* data)     \
-{                                       \
-    RunFunction(my_context, my3_gtkcallback_fct_##A, 2, widget, data);\
+#define GO(A)                                                                   \
+static uintptr_t my3_gtkcallback_fct_##A = 0;                                   \
+static void my3_gtkcallback_##A(void* widget, void* data)                       \
+{                                                                               \
+    RunFunctionFmt(my3_gtkcallback_fct_##A, "pp", widget, data);          \
 }
 SUPER()
 #undef GO
@@ -237,10 +248,10 @@ static void* findGtkCallbackFct(void* fct)
 
 // GtkTextCharPredicate
 #define GO(A)   \
-static uintptr_t my_textcharpredicate_fct_##A = 0;   \
-static int my_textcharpredicate_##A(uint32_t ch, void* data)     \
-{                                       \
-    return (int)RunFunction(my_context, my_textcharpredicate_fct_##A, 2, ch, data);\
+static uintptr_t my_textcharpredicate_fct_##A = 0;                                          \
+static int my_textcharpredicate_##A(uint32_t ch, void* data)                                \
+{                                                                                           \
+    return (int)RunFunctionFmt(my_textcharpredicate_fct_##A, "up", ch, data);         \
 }
 SUPER()
 #undef GO
@@ -260,10 +271,10 @@ static void* findGtkTextCharPredicateFct(void* fct)
 
 // Toolbar
 #define GO(A)   \
-static uintptr_t my_toolbar_fct_##A = 0;   \
-static void my_toolbar_##A(void* widget, void* data)     \
-{                                       \
-    RunFunction(my_context, my_toolbar_fct_##A, 2, widget, data);\
+static uintptr_t my_toolbar_fct_##A = 0;                                \
+static void my_toolbar_##A(void* widget, void* data)                    \
+{                                                                       \
+    RunFunctionFmt(my_toolbar_fct_##A, "pp", widget, data);       \
 }
 SUPER()
 #undef GO
@@ -283,10 +294,10 @@ static void* findToolbarFct(void* fct)
 
 // Builder
 #define GO(A)   \
-static uintptr_t my_builderconnect_fct_##A = 0;   \
-static void my_builderconnect_##A(void* builder, void* object, void* signal, void* handler, void* connect, int flags, void* data)     \
-{                                       \
-    RunFunction(my_context, my_builderconnect_fct_##A, 7, builder, object, signal, handler, connect, flags, data);\
+static uintptr_t my_builderconnect_fct_##A = 0;                                                                                     \
+static void my_builderconnect_##A(void* builder, void* object, void* signal, void* handler, void* connect, int flags, void* data)   \
+{                                                                                                                                   \
+    RunFunctionFmt(my_builderconnect_fct_##A, "pppppip", builder, object, signal, handler, connect, flags, data);             \
 }
 SUPER()
 #undef GO
@@ -306,10 +317,10 @@ static void* findBuilderConnectFct(void* fct)
 
 // GtkTreeViewSearchEqualFunc
 #define GO(A)   \
-static uintptr_t my_GtkTreeViewSearchEqualFunc_fct_##A = 0;                                                     \
-static int my_GtkTreeViewSearchEqualFunc_##A(void* model, int column, void* key, void* iter, void* data)        \
-{                                                                                                               \
-    return RunFunction(my_context, my_GtkTreeViewSearchEqualFunc_fct_##A, 5, model, column, key, iter, data);   \
+static uintptr_t my_GtkTreeViewSearchEqualFunc_fct_##A = 0;                                                             \
+static int my_GtkTreeViewSearchEqualFunc_##A(void* model, int column, void* key, void* iter, void* data)                \
+{                                                                                                                       \
+    return RunFunctionFmt(my_GtkTreeViewSearchEqualFunc_fct_##A, "pippp", model, column, key, iter, data);        \
 }
 SUPER()
 #undef GO
@@ -328,10 +339,10 @@ static void* findGtkTreeViewSearchEqualFuncFct(void* fct)
 }
 // GtkTreeCellDataFunc
 #define GO(A)   \
-static uintptr_t my_GtkTreeCellDataFunc_fct_##A = 0;                                                \
-static void my_GtkTreeCellDataFunc_##A(void* tree, void* cell, void* model, void* iter, void* data) \
-{                                                                                                   \
-    RunFunction(my_context, my_GtkTreeCellDataFunc_fct_##A, 5, tree, cell, model, iter, data);      \
+static uintptr_t my_GtkTreeCellDataFunc_fct_##A = 0;                                                    \
+static void my_GtkTreeCellDataFunc_##A(void* tree, void* cell, void* model, void* iter, void* data)     \
+{                                                                                                       \
+    RunFunctionFmt(my_GtkTreeCellDataFunc_fct_##A, "ppppp", tree, cell, model, iter, data);       \
 }
 SUPER()
 #undef GO
@@ -351,10 +362,10 @@ static void* findGtkTreeCellDataFuncFct(void* fct)
 
 // GDestroyNotify
 #define GO(A)   \
-static uintptr_t my_GDestroyNotify_fct_##A = 0;                     \
-static void my_GDestroyNotify_##A(void* data)                       \
-{                                                                   \
-    RunFunction(my_context, my_GDestroyNotify_fct_##A, 1, data);    \
+static uintptr_t my_GDestroyNotify_fct_##A = 0;                         \
+static void my_GDestroyNotify_##A(void* data)                           \
+{                                                                       \
+    RunFunctionFmt(my_GDestroyNotify_fct_##A, "p", data);         \
 }
 SUPER()
 #undef GO
@@ -374,10 +385,10 @@ static void* findGDestroyNotifyFct(void* fct)
 
 // GtkTreeIterCompareFunc
 #define GO(A)   \
-static uintptr_t my_GtkTreeIterCompareFunc_fct_##A = 0;                                         \
-static int my_GtkTreeIterCompareFunc_##A(void* model, void* a, void* b, void* data)             \
-{                                                                                               \
-    return RunFunction(my_context, my_GtkTreeIterCompareFunc_fct_##A, 4, model, a, b, data);    \
+static uintptr_t my_GtkTreeIterCompareFunc_fct_##A = 0;                                                 \
+static int my_GtkTreeIterCompareFunc_##A(void* model, void* a, void* b, void* data)                     \
+{                                                                                                       \
+    return RunFunctionFmt(my_GtkTreeIterCompareFunc_fct_##A, "pppp", model, a, b, data);          \
 }
 SUPER()
 #undef GO
@@ -397,10 +408,10 @@ static void* findGtkTreeIterCompareFuncFct(void* fct)
 
 // GtkPrinterFunc
 #define GO(A)   \
-static uintptr_t my_GtkPrinterFunc_fct_##A = 0;                                     \
-static int my_GtkPrinterFunc_##A(void* printer, void* data)                         \
-{                                                                                   \
-    return RunFunction(my_context, my_GtkPrinterFunc_fct_##A, 2, printer, data);    \
+static uintptr_t my_GtkPrinterFunc_fct_##A = 0;                                         \
+static int my_GtkPrinterFunc_##A(void* printer, void* data)                             \
+{                                                                                       \
+    return RunFunctionFmt(my_GtkPrinterFunc_fct_##A, "pp", printer, data);        \
 }
 SUPER()
 #undef GO
@@ -420,10 +431,10 @@ static void* findGtkPrinterFuncFct(void* fct)
 
 // GtkPrintJobCompleteHunc
 #define GO(A)   \
-static uintptr_t my_GtkPrintJobCompleteHunc_fct_##A = 0;                                \
-static void my_GtkPrintJobCompleteHunc_##A(void* job, void* data, void* error)          \
-{                                                                                       \
-    RunFunction(my_context, my_GtkPrintJobCompleteHunc_fct_##A, 3, job, data, error);   \
+static uintptr_t my_GtkPrintJobCompleteHunc_fct_##A = 0;                                        \
+static void my_GtkPrintJobCompleteHunc_##A(void* job, void* data, void* error)                  \
+{                                                                                               \
+    RunFunctionFmt(my_GtkPrintJobCompleteHunc_fct_##A, "ppp", job, data, error);          \
 }
 SUPER()
 #undef GO
@@ -438,6 +449,30 @@ static void* findGtkPrintJobCompleteHuncFct(void* fct)
     SUPER()
     #undef GO
     printf_log(LOG_NONE, "Warning, no more slot for gtk-3 GtkPrintJobCompleteHunc callback\n");
+    return NULL;
+}
+
+
+// GtkClipboardTextReceivedFunc
+#define GO(A)   \
+static uintptr_t my_GtkClipboardTextReceivedFunc_fct_##A = 0;                                           \
+static void my_GtkClipboardTextReceivedFunc_##A(void* clipboard, void* text, void* data)                \
+{                                                                                                       \
+    RunFunctionFmt(my_GtkClipboardTextReceivedFunc_fct_##A, "ppp", clipboard, text, data);        \
+}
+SUPER()
+#undef GO
+static void* findGtkClipboardTextReceivedFuncFct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_GtkClipboardTextReceivedFunc_fct_##A == (uintptr_t)fct) return my_GtkClipboardTextReceivedFunc_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_GtkClipboardTextReceivedFunc_fct_##A == 0) {my_GtkClipboardTextReceivedFunc_fct_##A = (uintptr_t)fct; return my_GtkClipboardTextReceivedFunc_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for gtk-3 GtkClipboardTextReceivedFunc callback\n");
     return NULL;
 }
 
@@ -533,7 +568,7 @@ EXPORT int my3_gtk_clipboard_set_with_owner(x64emu_t* emu, void* clipboard, void
 
 static void* my_translate_func(void* path, my_signal_t* sig)
 {
-    return (void*)RunFunction(my_context, sig->c_handler, 2, path, sig->data);
+    return (void*)RunFunctionFmt(sig->c_handler, "pp", path, sig->data)       ;
 }
 
 EXPORT void my3_gtk_stock_set_translate_func(x64emu_t* emu, void* domain, void* f, void* data, void* notify)
@@ -639,7 +674,7 @@ typedef struct my_connectargs_s {
 //defined in gobject2...
 uintptr_t my_g_signal_connect_object(x64emu_t* emu, void* instance, void* detailed, void* c_handler, void* object, uint32_t flags);
 uintptr_t my_g_signal_connect_data(x64emu_t* emu, void* instance, void* detailed, void* c_handler, void* data, void* closure, uint32_t flags);
-static void my3_gtk_builder_connect_signals_default(void* builder, void* object, 
+static void my3_gtk_builder_connect_signals_default(void* builder, void* object,
                                                     char* signal_name, char* handler_name,
                                                     void* connect_object, uint32_t flags, my_connectargs_t* args)
 {
@@ -723,6 +758,33 @@ EXPORT void my3_gtk_container_foreach(x64emu_t* emu, void* container, void* cb, 
     my->gtk_container_foreach(container, findGtkCallbackFct(cb), data);
 }
 
+EXPORT void my3_gtk_clipboard_request_text(x64emu_t* emu, void* clipboard, void* f, void* data)
+{
+    my->gtk_clipboard_request_text(clipboard, findGtkClipboardTextReceivedFuncFct(f), data);
+}
+
+EXPORT void my3_gtk_style_context_get(x64emu_t* emu, void* context, uint32_t flags, uintptr_t* b)
+{
+    CREATE_VALIST_FROM_VAARG(b, emu->scratch, 2);
+    my->gtk_style_context_get_valist(context, flags, VARARGS);
+}
+
+EXPORT void my3_gtk_widget_style_get(x64emu_t* emu, void* widget, void* first, uintptr_t* b)
+{
+    #ifdef PREFER_CONVERT_VAARG
+    CREATE_VALIST_FROM_VAARG(b, emu->scratch, 2);
+    my->gtk_widget_style_get_valist(widget, first, VARARGS);
+    #else
+    void* prop = first;
+    int i=0;
+    do {
+        void* val = (void*)getVArgs(emu, 2, b, i++);
+        my->gtk_widget_style_get_property(widget, prop, val);
+        prop = (void*)getVArgs(emu, 2, b, i++);
+    } while (prop);
+    #endif
+}
+
 #define PRE_INIT    \
     if(box64_nogtk) \
         return -1;
@@ -733,9 +795,11 @@ EXPORT void my3_gtk_container_foreach(x64emu_t* emu, void* container, void* cb, 
     SETALT(my3_);                                               \
     SetGtkApplicationID(my->gtk_application_get_type());        \
     SetGtkWidget3ID(my->gtk_widget_get_type());                 \
+    SetGtkFixed3ID(my->gtk_fixed_get_type());                   \
     SetGtkContainer3ID(my->gtk_container_get_type());           \
     SetGtkBin3ID(my->gtk_bin_get_type());                       \
     SetGtkButton3ID(my->gtk_button_get_type());                 \
+    SetGtkMenuButton3ID(my->gtk_menu_button_get_type());        \
     SetGtkWindow3ID(my->gtk_window_get_type());                 \
     SetGtkApplicationWindowID(my->gtk_application_window_get_type());\
     SetGtkListBoxID(my->gtk_list_box_get_type());               \
@@ -744,6 +808,7 @@ EXPORT void my3_gtk_container_foreach(x64emu_t* emu, void* container, void* cb, 
     SetGtkGrid3ID(my->gtk_grid_get_type());                     \
     SetGtkMisc3ID(my->gtk_misc_get_type());                     \
     SetGtkLabel3ID(my->gtk_label_get_type());                   \
+    SetGtkImage3ID(my->gtk_image_get_type());                   \
     SetGtkEventControllerID(my->gtk_event_controller_get_type());\
     SetGtkGestureID(my->gtk_gesture_get_type());                \
     SetGtkGestureSingleID(my->gtk_gesture_single_get_type());   \

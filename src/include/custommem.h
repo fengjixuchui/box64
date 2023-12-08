@@ -32,10 +32,27 @@ int setJumpTableIfRef64(void* addr, void* jmp, void* ref); // return 1 if write 
 void setJumpTableDefault64(void* addr);
 void setJumpTableDefaultRef64(void* addr, void* jmp);
 int isJumpTableDefault64(void* addr);
-uintptr_t getJumpTable64();
+uintptr_t getJumpTable64(void);
 uintptr_t getJumpTableAddress64(uintptr_t addr);
 uintptr_t getJumpAddress64(uintptr_t addr);
 
+#ifdef SAVE_MEM
+#define JMPTABL_SHIFT4 16
+#define JMPTABL_SHIFT3 14
+#define JMPTABL_SHIFT2 12
+#define JMPTABL_SHIFT1 12
+#define JMPTABL_SHIFT0 10
+#define JMPTABL_START4 (JMPTABL_START3+JMPTABL_SHIFT3)
+#define JMPTABL_START3 (JMPTABL_START2+JMPTABL_SHIFT2)
+#define JMPTABL_START2 (JMPTABL_START1+JMPTABL_SHIFT1)
+#define JMPTABL_START1 (JMPTABL_START0+JMPTABL_SHIFT0)
+#define JMPTABL_START0 0
+#define JMPTABLE_MASK4 ((1<<JMPTABL_SHIFT4)-1)
+#define JMPTABLE_MASK3 ((1<<JMPTABL_SHIFT3)-1)
+#define JMPTABLE_MASK2 ((1<<JMPTABL_SHIFT2)-1)
+#define JMPTABLE_MASK1 ((1<<JMPTABL_SHIFT1)-1)
+#define JMPTABLE_MASK0 ((1<<JMPTABL_SHIFT0)-1)
+#else
 #define JMPTABL_SHIFT3 18
 #define JMPTABL_SHIFT2 18
 #define JMPTABL_SHIFT1 18
@@ -48,23 +65,25 @@ uintptr_t getJumpAddress64(uintptr_t addr);
 #define JMPTABLE_MASK2 ((1<<JMPTABL_SHIFT2)-1)
 #define JMPTABLE_MASK1 ((1<<JMPTABL_SHIFT1)-1)
 #define JMPTABLE_MASK0 ((1<<JMPTABL_SHIFT0)-1)
+#endif //SAVE_MEM
 #endif
 
 #define PROT_DYNAREC    0x80
 #define PROT_DYNAREC_R  0x40
 #define PROT_NOPROT     0x20
-#define PROT_MMAP       0x10
 #define PROT_DYN        (PROT_DYNAREC | PROT_DYNAREC_R | PROT_NOPROT)
-#define PROT_CUSTOM     (PROT_DYNAREC | PROT_DYNAREC_R | PROT_MMAP | PROT_NOPROT)
+#define PROT_CUSTOM     (PROT_DYNAREC | PROT_DYNAREC_R | PROT_NOPROT)
+#define PROT_WAIT       0xFF
 
 void updateProtection(uintptr_t addr, size_t size, uint32_t prot);
 void setProtection(uintptr_t addr, size_t size, uint32_t prot);
 void setProtection_mmap(uintptr_t addr, size_t size, uint32_t prot);
+void setProtection_elf(uintptr_t addr, size_t size, uint32_t prot);
 void freeProtection(uintptr_t addr, size_t size);
 void refreshProtection(uintptr_t addr);
 uint32_t getProtection(uintptr_t addr);
 int getMmapped(uintptr_t addr);
-void loadProtectionFromMap();
+void loadProtectionFromMap(void);
 #ifdef DYNAREC
 void protectDB(uintptr_t addr, size_t size);
 void unprotectDB(uintptr_t addr, size_t size, int mark);    // if mark==0, the blocks are not marked as potentially dirty
@@ -74,12 +93,14 @@ int AreaInHotPage(uintptr_t start, uintptr_t end);
 void AddHotPage(uintptr_t addr);
 #endif
 void* find32bitBlock(size_t size);
-void* find31bitBlockNearHint(void* hint, size_t size);
+void* find31bitBlockNearHint(void* hint, size_t size, uintptr_t mask);
 void* find47bitBlock(size_t size);
-void* find47bitBlockNearHint(void* hint, size_t size);
+void* find47bitBlockNearHint(void* hint, size_t size, uintptr_t mask); // mask can be 0 for default one (0xffff)
+void* find47bitBlockElf(size_t size, int mainbin, uintptr_t mask);
+int isBlockFree(void* hint, size_t size);
 
 // unlock mutex that are locked by current thread (for signal handling). Return a mask of unlock mutex
-int unlockCustommemMutex();
+int unlockCustommemMutex(void);
 // relock the muxtex that were unlocked
 void relockCustommemMutex(int locks);
 

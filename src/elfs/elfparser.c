@@ -247,8 +247,10 @@ elfheader_t* ParseElfHeader(FILE* f, const char* name, int exec)
                     printf_dump(LOG_DEBUG, "The DT_INIT_ARRAYSZ is %zu\n", h->initarray_sz);
                     break;
                 case DT_PREINIT_ARRAYSZ:
-                    if(val)
-                        printf_log(LOG_NONE, "Warning, PreInit Array (size=%d) present and ignored!\n", val);
+                    #ifndef ANDROID
+                        if(val)
+                            printf_log(LOG_NONE, "Warning, PreInit Array (size=%d) present and ignored!\n", val);
+                    #endif
                     break;
                 case DT_FINI: // Exit hook
                     h->finientry = ptr;
@@ -416,18 +418,6 @@ int GetVersionIndice(elfheader_t* h, const char* vername)
 {
     if(!vername)
         return 0;
-    if(h->VerNeed) {
-        Elf64_Verneed *ver = (Elf64_Verneed*)((uintptr_t)h->VerNeed + h->delta);
-        while(ver) {
-            Elf64_Vernaux *aux = (Elf64_Vernaux*)((uintptr_t)ver + ver->vn_aux);
-            for(int j=0; j<ver->vn_cnt; ++j) {
-                if(!strcmp(h->DynStr+aux->vna_name, vername)) 
-                    return aux->vna_other;
-                aux = (Elf64_Vernaux*)((uintptr_t)aux + aux->vna_next);
-            }
-            ver = ver->vn_next?((Elf64_Verneed*)((uintptr_t)ver + ver->vn_next)):NULL;
-        }
-    }
     if(h->VerDef) {
         Elf64_Verdef *def = (Elf64_Verdef*)((uintptr_t)h->VerDef + h->delta);
         while(def) {
@@ -436,6 +426,61 @@ int GetVersionIndice(elfheader_t* h, const char* vername)
                 return def->vd_ndx;
             def = def->vd_next?((Elf64_Verdef*)((uintptr_t)def + def->vd_next)):NULL;
         }
+    }
+    return 0;
+}
+
+int GetNeededVersionCnt(elfheader_t* h, const char* libname)
+{
+    if(!libname)
+        return 0;
+    if(h->VerNeed) {
+        Elf64_Verneed *ver = (Elf64_Verneed*)((uintptr_t)h->VerNeed + h->delta);
+        while(ver) {
+            char *filename = h->DynStr + ver->vn_file;
+            Elf64_Vernaux *aux = (Elf64_Vernaux*)((uintptr_t)ver + ver->vn_aux);
+            if(!strcmp(filename, libname))
+                return ver->vn_cnt;
+            ver = ver->vn_next?((Elf64_Verneed*)((uintptr_t)ver + ver->vn_next)):NULL;
+        }
+    }
+    return 0;
+}
+
+const char* GetNeededVersionString(elfheader_t* h, const char* libname, int idx)
+{
+    if(!libname)
+        return 0;
+    if(h->VerNeed) {
+        Elf64_Verneed *ver = (Elf64_Verneed*)((uintptr_t)h->VerNeed + h->delta);
+        while(ver) {
+            char *filename = h->DynStr + ver->vn_file;
+            Elf64_Vernaux *aux = (Elf64_Vernaux*)((uintptr_t)ver + ver->vn_aux);
+            if(!strcmp(filename, libname)) {
+                for(int j=0; j<ver->vn_cnt; ++j) {
+                    if(j==idx) 
+                        return h->DynStr+aux->vna_name;
+                    aux = (Elf64_Vernaux*)((uintptr_t)aux + aux->vna_next);
+                }
+                return NULL;    // idx out of bound, return NULL...
+           }
+            ver = ver->vn_next?((Elf64_Verneed*)((uintptr_t)ver + ver->vn_next)):NULL;
+        }
+    }
+    return NULL;
+}
+
+int GetNeededVersionForLib(elfheader_t* h, const char* libname, const char* ver)
+{
+    if(!libname || !ver)
+        return 0;
+    int n = GetNeededVersionCnt(h, libname);
+    if(!n)
+        return 0;
+    for(int i=0; i<n; ++i) {
+        const char* vername = GetNeededVersionString(h, libname, i);
+        if(vername && !strcmp(ver, vername))
+            return 1;
     }
     return 0;
 }

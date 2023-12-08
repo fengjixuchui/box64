@@ -33,28 +33,31 @@
 #define PKip(a)   *(uint8_t*)(ip+a)
 
 // Strong mem emulation helpers
-// Sequence of Read will trigger a DMB on "first" read if strongmem is 2
-// Squence of Write will trigger a DMB on "last" write if strongmem is 1
+#define SMREAD_MIN  2
+#define SMWRITE_MIN 1
+// Sequence of Read will trigger a DMB on "first" read if strongmem is >= SMREAD_MIN
+// Sequence of Write will trigger a DMB on "last" write if strongmem is >= 1
+// All Write operation that might use a lock all have a memory barrier if strongmem is >= SMWRITE_MIN
 // Opcode will read
-#define SMREAD()    if(!dyn->smread && box64_dynarec_strongmem>1) {SMDMB();}
+#define SMREAD()    if((dyn->smread==0) && (box64_dynarec_strongmem>SMREAD_MIN)) {SMDMB();} else dyn->smread=1
 // Opcode will read with option forced lock
-#define SMREADLOCK(lock)    if(lock || (!dyn->smread && box64_dynarec_strongmem>1)) {SMDMB();}
-// Opcode migh read (depend on nextop)
+#define SMREADLOCK(lock)    if((lock) || ((dyn->smread==0) && (box64_dynarec_strongmem>SMREAD_MIN))) {SMDMB();}
+// Opcode might read (depend on nextop)
 #define SMMIGHTREAD()   if(!MODREG) {SMREAD();}
 // Opcode has wrote
 #define SMWRITE()   dyn->smwrite=1
 // Opcode has wrote (strongmem>1 only)
-#define SMWRITE2()   if(box64_dynarec_strongmem>1) dyn->smwrite=1
+#define SMWRITE2()   if(box64_dynarec_strongmem>SMREAD_MIN) dyn->smwrite=1
 // Opcode has wrote with option forced lock
-#define SMWRITELOCK(lock)   if(lock) {SMDMB();} else dyn->smwrite=1
-// Opcode migh have wrote (depend on nextop)
+#define SMWRITELOCK(lock)   if(lock || (box64_dynarec_strongmem>SMWRITE_MIN)) {SMDMB();} else dyn->smwrite=1
+// Opcode might have wrote (depend on nextop)
 #define SMMIGHTWRITE()   if(!MODREG) {SMWRITE();}
 // Start of sequence
 #define SMSTART()   SMEND()
 // End of sequence
-#define SMEND()     if(dyn->smwrite && box64_dynarec_strongmem) {DMB_ISH();} dyn->smwrite=0; dyn->smread=0;
+#define SMEND()     if(dyn->smwrite && box64_dynarec_strongmem) {if(box64_dynarec_strongmem){DSB_ISH();}else{DMB_ISH();}} dyn->smwrite=0; dyn->smread=0;
 // Force a Data memory barrier (for LOCK: prefix)
-#define SMDMB()     DMB_ISH(); dyn->smwrite=0; dyn->smread=1
+#define SMDMB()     if(box64_dynarec_strongmem){DSB_ISH();}else{DMB_ISH();} dyn->smwrite=0; dyn->smread=1
 
 //LOCK_* define
 #define LOCK_LOCK   (int*)1
@@ -66,7 +69,7 @@
                     ed = xRAX+(nextop&7)+(rex.b<<3);    \
                     wback = 0;                          \
                 } else {                                \
-                    SMREAD()                            \
+                    SMREAD();                           \
                     addr = geted(dyn, addr, ninst, nextop, &wback, x2, &fixedaddress, &unscaled, 0xfff<<(2+rex.w), (1<<(2+rex.w))-1, rex, NULL, 0, D); \
                     LDxw(x1, wback, fixedaddress);      \
                     ed = x1;                            \
@@ -78,6 +81,15 @@
                     SMREAD();                           \
                     addr = geted(dyn, addr, ninst, nextop, &wback, x2, &fixedaddress, &unscaled, 0xfff<<3, 7, rex, NULL, 0, D); \
                     LDx(x1, wback, fixedaddress);       \
+                    ed = x1;                            \
+                }
+#define GETEDz(D)  if(MODREG) {                         \
+                    ed = xRAX+(nextop&7)+(rex.b<<3);    \
+                    wback = 0;                          \
+                } else {                                \
+                    SMREAD();                           \
+                    addr = geted(dyn, addr, ninst, nextop, &wback, x2, &fixedaddress, &unscaled, 0xfff<<(3-rex.is32bits), rex.is32bits?3:7, rex, NULL, 0, D); \
+                    LDz(x1, wback, fixedaddress);       \
                     ed = x1;                            \
                 }
 #define GETEDw(D)  if((nextop&0xC0)==0xC0) {            \
@@ -185,6 +197,16 @@
                     SMREAD();                           \
                     addr = geted(dyn, addr, ninst, nextop, &wback, x2, &fixedaddress, NULL, 0, 0, rex, NULL, 0, D); \
                     LDRx_REG(x1, wback, O);             \
+                    ed = x1;                            \
+                }
+//GETEDOz can use r1 for ed, and r2 for wback. wback is 0 if ed is xEAX..xEDI
+#define GETEDOz(O, D)  if(MODREG) {                     \
+                    ed = xRAX+(nextop&7)+(rex.b<<3);    \
+                    wback = 0;                          \
+                } else {                                \
+                    SMREAD();                           \
+                    addr = geted(dyn, addr, ninst, nextop, &wback, x2, &fixedaddress, NULL, 0, 0, rex, NULL, 0, D); \
+                    LDRz_REG(x1, wback, O);             \
                     ed = x1;                            \
                 }
 #define GETSEDOw(O, D)  if((nextop&0xC0)==0xC0) {       \
@@ -341,18 +363,18 @@
                         gb2 = 0;                \
                     } else {                    \
                         gd = (nextop&0x38)>>3;  \
-                        gb2 = ((gd&4)>>2);      \
+                        gb2 = ((gd&4)<<1);      \
                         gb1 = xRAX+(gd&3);      \
                     }                           \
                     gd = i;                     \
-                    UBFXx(gd, gb1, gb2*8, 8);
-//GETSGB signe extend GB, will use i for gd
+                    UBFXx(gd, gb1, gb2, 8);
+//GETSGB sign extend GB, will use i for gd
 #define GETSGB(i)   if(rex.rex) {               \
                         gb1 = xRAX+((nextop&0x38)>>3)+(rex.r<<3);     \
                         gb2 = 0;                \
                     } else {                    \
                         gd = (nextop&0x38)>>3;  \
-                        gb2 = ((gd&4)>>2);      \
+                        gb2 = ((gd&4)<<1);      \
                         gb1 = xRAX+(gd&3);      \
                     }                           \
                     gd = i;                     \
@@ -403,6 +425,9 @@
         VLD64(a, ed, fixedaddress);                                                                     \
     }
 
+// Get Ex as 64bits, not a quad (warning, x1 get used)
+#define GETEX64(a, w, D)    GETEXSD(a, w, D)
+
 // Get Ex as a single, not a quad (warning, x1 get used)
 #define GETEXSS(a, w, D)                                                                                \
     if(MODREG) {                                                                                        \
@@ -412,6 +437,20 @@
         a = fpu_get_scratch(dyn);                                                                       \
         addr = geted(dyn, addr, ninst, nextop, &ed, x1, &fixedaddress, &unscaled, 0xfff<<2, 3, rex, NULL, 0, D);   \
         VLD32(a, ed, fixedaddress);                                                                     \
+    }
+
+// Get Ex as 32bits, not a quad (warning, x1 get used)
+#define GETEX32(a, w, D)    GETEXSS(a, w, D)
+
+// Get Ex as 16bits, not a quad (warning, x1 get used)
+#define GETEX16(a, w, D)                                                                                \
+    if(MODREG) {                                                                                        \
+        a = sse_get_reg(dyn, ninst, x1, (nextop&7)+(rex.b<<3), w);                                      \
+    } else {                                                                                            \
+        SMREAD();                                                                                       \
+        a = fpu_get_scratch(dyn);                                                                       \
+        addr = geted(dyn, addr, ninst, nextop, &ed, x1, &fixedaddress, &unscaled, 0xfff<<1, 1, rex, NULL, 0, D);   \
+        VLD16(a, ed, fixedaddress);                                                                     \
     }
 
 // Get GM, might use x1, x2 and x3
@@ -445,6 +484,9 @@
     TSTw_mask(xFlags, 0b010110, 0); \
     CNEGx(r, r, cNE)
 
+#define ALIGNED_ATOMICxw ((fixedaddress && !(fixedaddress&((1<<(2+rex.w)-1)))) || box64_dynarec_aligned_atomics)
+#define ALIGNED_ATOMICH ((fixedaddress && !(fixedaddress&1)) || box64_dynarec_aligned_atomics)
+
 // CALL will use x7 for the call address. Return value can be put in ret (unless ret is -1)
 // R0 will not be pushed/popd if ret is -2
 #define CALL(F, ret) call_c(dyn, ninst, F, x7, ret, 1, 0)
@@ -455,17 +497,19 @@
 // R0 will not be pushed/popd if ret is -2. Flags are not save/restored
 #define CALL_S(F, ret) call_c(dyn, ninst, F, x7, ret, 0, 0)
 
-#define MARK    dyn->insts[ninst].mark = dyn->native_size
-#define GETMARK dyn->insts[ninst].mark
-#define MARK2   dyn->insts[ninst].mark2 = dyn->native_size
-#define GETMARK2 dyn->insts[ninst].mark2
-#define MARK3   dyn->insts[ninst].mark3 = dyn->native_size
-#define GETMARK3 dyn->insts[ninst].mark3
-#define MARKF   dyn->insts[ninst].markf = dyn->native_size
-#define GETMARKF dyn->insts[ninst].markf
-#define MARKSEG dyn->insts[ninst].markseg = dyn->native_size
-#define GETMARKSEG dyn->insts[ninst].markseg
-#define MARKLOCK dyn->insts[ninst].marklock = dyn->native_size
+#define MARK        dyn->insts[ninst].mark = dyn->native_size
+#define GETMARK     dyn->insts[ninst].mark
+#define MARK2       dyn->insts[ninst].mark2 = dyn->native_size
+#define GETMARK2    dyn->insts[ninst].mark2
+#define MARK3       dyn->insts[ninst].mark3 = dyn->native_size
+#define GETMARK3    dyn->insts[ninst].mark3
+#define MARKF       dyn->insts[ninst].markf = dyn->native_size
+#define GETMARKF    dyn->insts[ninst].markf
+#define MARKF2      dyn->insts[ninst].markf2 = dyn->native_size
+#define GETMARKF2   dyn->insts[ninst].markf2
+#define MARKSEG     dyn->insts[ninst].markseg = dyn->native_size
+#define GETMARKSEG  dyn->insts[ninst].markseg
+#define MARKLOCK    dyn->insts[ninst].marklock = dyn->native_size
 #define GETMARKLOCK dyn->insts[ninst].marklock
 
 // Branch to MARK if cond (use j64)
@@ -504,6 +548,10 @@
 #define B_MARK2_nocond              \
     j64 = GETMARK2-(dyn->native_size); \
     B(j64)
+// Branch to MARK2 if reg is 0 (use j64)
+#define CBZx_MARK2(reg)             \
+    j64 = GETMARK2-(dyn->native_size); \
+    CBZx(reg, j64)
 // Branch to MARK2 if reg is not 0 (use j64)
 #define CBNZx_MARK2(reg)            \
     j64 = GETMARK2-(dyn->native_size); \
@@ -717,8 +765,39 @@
     LDP_REGS(R12, R13);     \
     LDP_REGS(R14, R15)
 
-#define SET_DFNONE(S)    if(!dyn->f.dfnone) {MOVZw(S, d_none); STRw_U12(S, xEmu, offsetof(x64emu_t, df)); dyn->f.dfnone=1;}
-#define SET_DF(S, N)     if((N)!=d_none) {MOVZw(S, (N)); STRw_U12(S, xEmu, offsetof(x64emu_t, df)); dyn->f.dfnone=0;} else SET_DFNONE(S)
+#define X87_PUSH_OR_FAIL(var, dyn, ninst, scratch, t) \
+    if (dyn->n.stack == +8) {                         \
+        *ok = 0;                                      \
+        break;                                        \
+    }                                                 \
+    var = x87_do_push(dyn, ninst, scratch, t);
+
+#define X87_PUSH_EMPTY_OR_FAIL(dyn, ninst, scratch) \
+    if (dyn->n.stack == +8) {                       \
+        *ok = 0;                                    \
+        break;                                      \
+    }                                               \
+    x87_do_push_empty(dyn, ninst, scratch);
+
+#define X87_POP_OR_FAIL(dyn, ninst, scratch) \
+    if (dyn->n.stack == -8) {                \
+        *ok = 0;                             \
+        break;                               \
+    }                                        \
+    x87_do_pop(dyn, ninst, scratch);
+
+#define SET_DFNONE(S)    if(!dyn->f.dfnone) {STRw_U12(wZR, xEmu, offsetof(x64emu_t, df)); dyn->f.dfnone=1;}
+#define SET_DF(S, N)        \
+    if((N)!=d_none) {       \
+        MOVZw(S, (N));      \
+        STRw_U12(S, xEmu, offsetof(x64emu_t, df)); \
+        if(dyn->f.pending==SF_PENDING && dyn->insts[ninst].x64.need_after && !(dyn->insts[ninst].x64.need_after&X_PEND)) {  \
+            CALL_(UpdateFlags, -1, 0);              \
+            dyn->f.pending = SF_SET;                \
+            SET_NODF();     \
+        }                   \
+        dyn->f.dfnone=0;    \
+    } else SET_DFNONE(S)
 #define SET_NODF()          dyn->f.dfnone = 0
 #define SET_DFOK()          dyn->f.dfnone = 1
 
@@ -759,10 +838,10 @@
     } else dyn->f.pending = SF_SET
 #endif
 #ifndef JUMP
-#define JUMP(A, C) 
+#define JUMP(A, C) SMEND()
 #endif
 #ifndef BARRIER
-#define BARRIER(A) 
+#define BARRIER(A)
 #endif
 #ifndef BARRIER_NEXT
 #define BARRIER_NEXT(A)
@@ -832,7 +911,7 @@
 
 #define MODREG  ((nextop&0xC0)==0xC0)
 
-void arm64_epilog();
+void arm64_epilog(void);
 void* arm64_next(x64emu_t* emu, uintptr_t addr);
 
 #ifndef STEPNAME
@@ -849,6 +928,8 @@ void* arm64_next(x64emu_t* emu, uintptr_t addr);
 #define dynarec64_65       STEPNAME(dynarec64_65)
 #define dynarec64_66       STEPNAME(dynarec64_66)
 #define dynarec64_67       STEPNAME(dynarec64_67)
+#define dynarec64_67_32    STEPNAME(dynarec64_67_32)
+#define dynarec64_6764_32  STEPNAME(dynarec64_6764_32)
 #define dynarec64_D8       STEPNAME(dynarec64_D8)
 #define dynarec64_D9       STEPNAME(dynarec64_D9)
 #define dynarec64_DA       STEPNAME(dynarec64_DA)
@@ -859,6 +940,8 @@ void* arm64_next(x64emu_t* emu, uintptr_t addr);
 #define dynarec64_DF       STEPNAME(dynarec64_DF)
 #define dynarec64_F0       STEPNAME(dynarec64_F0)
 #define dynarec64_660F     STEPNAME(dynarec64_660F)
+#define dynarec64_66F20F   STEPNAME(dynarec64_66F20F)
+#define dynarec64_66F30F   STEPNAME(dynarec64_66F30F)
 #define dynarec64_6664     STEPNAME(dynarec64_6664)
 #define dynarec64_66F0     STEPNAME(dynarec64_66F0)
 #define dynarec64_F20F     STEPNAME(dynarec64_F20F)
@@ -940,16 +1023,38 @@ void* arm64_next(x64emu_t* emu, uintptr_t addr);
 #define emit_shr32      STEPNAME(emit_shr32)
 #define emit_shr32c     STEPNAME(emit_shr32c)
 #define emit_sar32c     STEPNAME(emit_sar32c)
+#define emit_shl8       STEPNAME(emit_shl8)
+#define emit_shl8c      STEPNAME(emit_shl8c)
+#define emit_shr8       STEPNAME(emit_shr8)
+#define emit_shr8c      STEPNAME(emit_shr8c)
+#define emit_sar8       STEPNAME(emit_sar8)
+#define emit_sar8c      STEPNAME(emit_sar8c)
+#define emit_shl16      STEPNAME(emit_shl16)
+#define emit_shl16c     STEPNAME(emit_shl16c)
+#define emit_shr16      STEPNAME(emit_shr16)
+#define emit_shr16c     STEPNAME(emit_shr16c)
+#define emit_sar16      STEPNAME(emit_sar16)
+#define emit_sar16c     STEPNAME(emit_sar16c)
 #define emit_rol32c     STEPNAME(emit_rol32c)
 #define emit_ror32c     STEPNAME(emit_ror32c)
+#define emit_rol8c      STEPNAME(emit_rol8c)
+#define emit_ror8c      STEPNAME(emit_ror8c)
+#define emit_rol16c     STEPNAME(emit_rol16c)
+#define emit_ror16c     STEPNAME(emit_ror16c)
 #define emit_shrd32c    STEPNAME(emit_shrd32c)
+#define emit_shrd32     STEPNAME(emit_shrd32)
 #define emit_shld32c    STEPNAME(emit_shld32c)
+#define emit_shld32     STEPNAME(emit_shld32)
+#define emit_shrd16c    STEPNAME(emit_shrd16c)
+#define emit_shrd16     STEPNAME(emit_shrd16)
+#define emit_shld16c    STEPNAME(emit_shld16c)
+#define emit_shld16     STEPNAME(emit_shld16)
 
 #define emit_pf         STEPNAME(emit_pf)
 
-#define x87_do_push     STEPNAME(x87_do_push)
-#define x87_do_push_empty STEPNAME(x87_do_push_empty)
-#define x87_do_pop      STEPNAME(x87_do_pop)
+#define x87_do_push         STEPNAME(x87_do_push)
+#define x87_do_push_empty   STEPNAME(x87_do_push_empty)
+#define x87_do_pop          STEPNAME(x87_do_pop)
 #define x87_get_current_cache   STEPNAME(x87_get_current_cache)
 #define x87_get_cache   STEPNAME(x87_get_cache)
 #define x87_get_neoncache STEPNAME(x87_get_neoncache)
@@ -959,6 +1064,7 @@ void* arm64_next(x64emu_t* emu, uintptr_t addr);
 #define x87_forget      STEPNAME(x87_forget)
 #define x87_reget_st    STEPNAME(x87_reget_st)
 #define x87_stackcount  STEPNAME(x87_stackcount)
+#define x87_unstackcount  STEPNAME(x87_unstackcount)
 #define x87_swapreg     STEPNAME(x87_swapreg)
 #define x87_setround    STEPNAME(x87_setround)
 #define x87_restoreround STEPNAME(x87_restoreround)
@@ -969,6 +1075,7 @@ void* arm64_next(x64emu_t* emu, uintptr_t addr);
 #define sse_get_reg_empty STEPNAME(sse_get_reg_empty)
 #define sse_forget_reg   STEPNAME(sse_forget_reg)
 #define sse_purge07cache STEPNAME(sse_purge07cache)
+#define sse_reflect_reg  STEPNAME(sse_reflect_reg)
 
 #define fpu_pushcache   STEPNAME(fpu_pushcache)
 #define fpu_popcache    STEPNAME(fpu_popcache)
@@ -996,8 +1103,8 @@ uintptr_t geted16(dynarec_arm_t* dyn, uintptr_t addr, int ninst, uint8_t nextop,
 // generic x64 helper
 void jump_to_epilog(dynarec_arm_t* dyn, uintptr_t ip, int reg, int ninst);
 void jump_to_next(dynarec_arm_t* dyn, uintptr_t ip, int reg, int ninst);
-void ret_to_epilog(dynarec_arm_t* dyn, int ninst);
-void retn_to_epilog(dynarec_arm_t* dyn, int ninst, int n);
+void ret_to_epilog(dynarec_arm_t* dyn, int ninst, rex_t rex);
+void retn_to_epilog(dynarec_arm_t* dyn, int ninst, rex_t rex, int n);
 void iret_to_epilog(dynarec_arm_t* dyn, int ninst, int is64bits);
 void call_c(dynarec_arm_t* dyn, int ninst, void* fnc, int reg, int ret, int saveflags, int save_reg);
 void call_n(dynarec_arm_t* dyn, int ninst, void* fnc, int w);
@@ -1010,7 +1117,7 @@ void emit_cmp16_0(dynarec_arm_t* dyn, int ninst, int s1, int s3, int s4);
 void emit_cmp32_0(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, int s3, int s4);
 void emit_test8(dynarec_arm_t* dyn, int ninst, int s1, int s2, int s3, int s4, int s5);
 void emit_test16(dynarec_arm_t* dyn, int ninst, int s1, int s2, int s3, int s4, int s5);
-void emit_test32(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4);
+void emit_test32(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4, int s5);
 void emit_add32(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4);
 void emit_add32c(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, int64_t c, int s3, int s4, int s5);
 void emit_add8(dynarec_arm_t* dyn, int ninst, int s1, int s2, int s3, int s4);
@@ -1067,16 +1174,40 @@ void emit_shl32c(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, i
 void emit_shr32(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3, int s4);
 void emit_shr32c(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4);
 void emit_sar32c(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4);
+void emit_shl8(dynarec_arm_t* dyn, int ninst, int s1, int s2, int s3, int s4);
+void emit_shl8c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s4);
+void emit_shr8(dynarec_arm_t* dyn, int ninst, int s1, int s2, int s3, int s4);
+void emit_shr8c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s4);
+void emit_sar8(dynarec_arm_t* dyn, int ninst, int s1, int s2, int s3, int s4);
+void emit_sar8c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s4);
+void emit_shl16(dynarec_arm_t* dyn, int ninst, int s1, int s2, int s3, int s4);
+void emit_shl16c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s4);
+void emit_shr16(dynarec_arm_t* dyn, int ninst, int s1, int s2, int s3, int s4);
+void emit_shr16c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s4);
+void emit_sar16(dynarec_arm_t* dyn, int ninst, int s1, int s2, int s3, int s4);
+void emit_sar16c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s4);
 void emit_rol32c(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4);
 void emit_ror32c(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4);
+void emit_rol8c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s4);
+void emit_ror8c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s4);
+void emit_rol16c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s4);
+void emit_ror16c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s4);
 void emit_shrd32c(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, int s2, uint32_t c, int s3, int s4);
 void emit_shld32c(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, int s2, uint32_t c, int s3, int s4);
+void emit_shrd32(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, int s2, int s5, int s3, int s4);
+void emit_shld32(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, int s2, int s5, int s3, int s4);
+void emit_shrd16c(dynarec_arm_t* dyn, int ninst, int s1, int s2, uint32_t c, int s3, int s4);
+void emit_shrd16(dynarec_arm_t* dyn, int ninst, int s1, int s2, int s5, int s3, int s4);
+void emit_shld16c(dynarec_arm_t* dyn, int ninst, int s1, int s2, uint32_t c, int s3, int s4);
+void emit_shld16(dynarec_arm_t* dyn, int ninst, int s1, int s2, int s5, int s3, int s4);
 
 void emit_pf(dynarec_arm_t* dyn, int ninst, int s1, int s3, int s4);
 
 // x87 helper
-// cache of the local stack counter, to avoid upadte at every call
-void x87_stackcount(dynarec_arm_t* dyn, int ninst, int scratch);
+// cache of the local stack counter, to avoid update at every call, return old internal stack counter
+int x87_stackcount(dynarec_arm_t* dyn, int ninst, int scratch);
+// revert local stack counter to previous version (return from x87_stackcount)
+void x87_unstackcount(dynarec_arm_t* dyn, int ninst, int scratch, int count);
 // fpu push. Return the Dd value to be used
 int x87_do_push(dynarec_arm_t* dyn, int ninst, int s1, int t);
 // fpu push. Do not allocate a cache register. Needs a scratch register to do x87stack synch (or 0 to not do it)
@@ -1121,16 +1252,19 @@ int neoncache_st_coherency(dynarec_arm_t* dyn, int ninst, int a, int b);
 
 #if STEP == 0
 #define ST_IS_F(A)          0
+#define ST_IS_I64(A)        0
 #define X87_COMBINE(A, B)   NEON_CACHE_ST_D
 #define X87_ST0             NEON_CACHE_ST_D
 #define X87_ST(A)           NEON_CACHE_ST_D
 #elif STEP == 1
 #define ST_IS_F(A) (neoncache_get_current_st(dyn, ninst, A)==NEON_CACHE_ST_F)
+#define ST_IS_I64(A) (neoncache_get_current_st(dyn, ninst, A)==NEON_CACHE_ST_I64)
 #define X87_COMBINE(A, B) neoncache_combine_st(dyn, ninst, A, B)
-#define X87_ST0     neoncache_get_current_st(dyn, ninst, 0)
-#define X87_ST(A)   neoncache_get_current_st(dyn, ninst, A)
+#define X87_ST0     neoncache_no_i64(dyn, ninst, 0, neoncache_get_current_st(dyn, ninst, 0))
+#define X87_ST(A)   neoncache_no_i64(dyn, ninst, A, neoncache_get_current_st(dyn, ninst, A))
 #else
 #define ST_IS_F(A) (neoncache_get_st(dyn, ninst, A)==NEON_CACHE_ST_F)
+#define ST_IS_I64(A) (neoncache_get_st(dyn, ninst, A)==NEON_CACHE_ST_I64)
 #if STEP == 3
 #define X87_COMBINE(A, B) neoncache_st_coherency(dyn, ninst, A, B)
 #else
@@ -1155,7 +1289,8 @@ int sse_get_reg_empty(dynarec_arm_t* dyn, int ninst, int s1, int a);
 void sse_forget_reg(dynarec_arm_t* dyn, int ninst, int a);
 // purge the XMM0..XMM7 cache (before function call)
 void sse_purge07cache(dynarec_arm_t* dyn, int ninst, int s1);
-
+// Push current value to the cache
+void sse_reflect_reg(dynarec_arm_t* dyn, int ninst, int a);
 // common coproc helpers
 // reset the cache
 void fpu_reset(dynarec_arm_t* dyn);
@@ -1180,16 +1315,20 @@ uintptr_t dynarec64_64(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int nin
 //uintptr_t dynarec64_65(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep,int* ok, int* need_epilog);
 uintptr_t dynarec64_66(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 uintptr_t dynarec64_67(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
+uintptr_t dynarec64_67_32(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
+uintptr_t dynarec64_6764_32(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int seg, int* ok, int* need_epilog);
 uintptr_t dynarec64_D8(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 uintptr_t dynarec64_D9(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
-//uintptr_t dynarec64_DA(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
+uintptr_t dynarec64_DA(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 uintptr_t dynarec64_DB(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 uintptr_t dynarec64_DC(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 uintptr_t dynarec64_DD(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 uintptr_t dynarec64_DE(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 uintptr_t dynarec64_DF(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 uintptr_t dynarec64_F0(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
-uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
+uintptr_t dynarec64_66F20F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int* ok, int* need_epilog);
+uintptr_t dynarec64_66F30F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int* ok, int* need_epilog);
+uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int* ok, int* need_epilog);
 uintptr_t dynarec64_6664(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int seg, int* ok, int* need_epilog);
 uintptr_t dynarec64_66F0(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int rep, int* ok, int* need_epilog);
 uintptr_t dynarec64_F20F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int* ok, int* need_epilog);
@@ -1210,7 +1349,7 @@ uintptr_t dynarec64_F30F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
 #if STEP < 3
 #define MAYUSE(A)   (void)A
 #else
-#define MAYUSE(A)   
+#define MAYUSE(A)
 #endif
 
 #define GOCOND(B, T1, T2)                                   \
@@ -1317,5 +1456,39 @@ uintptr_t dynarec64_F30F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
         MOV32w(s2, 1);                                      \
         STRw_U12(s2, xEmu, offsetof(x64emu_t, test.test));  \
     }
+
+#define GETREX()                                \
+    rex.rex = 0;                                \
+    if(!rex.is32bits)                           \
+        while(opcode>=0x40 && opcode<=0x4f) {   \
+            rex.rex = opcode;                   \
+            opcode = F8;                        \
+        }
+
+#define COMP_ZFSF(s1, A)                        \
+    IFX(X_ZF|X_SF) {                            \
+        if(arm64_flagm) {                       \
+            SETF##A(s1);                        \
+            IFX(X_ZF) {                         \
+                CSETw(s3, cEQ);                 \
+                BFIw(xFlags, s3, F_ZF, 1);      \
+            }                                   \
+            IFX(X_SF) {                         \
+                CSETw(s3, cMI);                 \
+                BFIw(xFlags, s3, F_SF, 1);      \
+            }                                   \
+        } else {                                \
+            IFX(X_ZF) {                         \
+                ANDSw_mask(s1, s1, 0, (A)-1);   \
+                CSETw(s3, cEQ);                 \
+                BFIw(xFlags, s3, F_ZF, 1);      \
+            }                                   \
+            IFX(X_SF) {                         \
+                LSRw(s3, s1, (A)-1);            \
+                BFIw(xFlags, s3, F_SF, 1);      \
+            }                                   \
+        }                                       \
+    }
+
 
 #endif //__DYNAREC_ARM64_HELPER_H__

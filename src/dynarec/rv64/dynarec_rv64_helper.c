@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
-#include <pthread.h>
 #include <errno.h>
 #include <assert.h>
 #include <string.h>
@@ -20,7 +19,6 @@
 #include "x64trace.h"
 #include "dynarec_native.h"
 #include "../dynablock_private.h"
-#include "../tools/bridge_private.h"
 #include "custommem.h"
 
 #include "rv64_printer.h"
@@ -28,10 +26,15 @@
 #include "dynarec_rv64_functions.h"
 #include "dynarec_rv64_helper.h"
 
+static uintptr_t geted_32(dynarec_rv64_t* dyn, uintptr_t addr, int ninst, uint8_t nextop, uint8_t* ed, uint8_t hint, uint8_t scratch, int64_t* fixaddress, int *l, int i12);
+
 /* setup r2 to address pointed by ED, also fixaddress is an optionnal delta in the range [-absmax, +absmax], with delta&mask==0 to be added to ed for LDR/STR */
 uintptr_t geted(dynarec_rv64_t* dyn, uintptr_t addr, int ninst, uint8_t nextop, uint8_t* ed, uint8_t hint, uint8_t scratch, int64_t* fixaddress, rex_t rex, int *l, int i12, int delta)
 {
     MAYUSE(dyn); MAYUSE(ninst); MAYUSE(delta);
+
+    if(rex.is32bits)
+        return geted_32(dyn, addr, ninst, nextop, ed, hint, scratch, fixaddress, l, i12);
 
     int lock = l?((l==LOCK_LOCK)?1:2):0;
     if(lock==2)
@@ -47,17 +50,13 @@ uintptr_t geted(dynarec_rv64_t* dyn, uintptr_t addr, int ninst, uint8_t nextop, 
         if((nextop&7)==4) {
             uint8_t sib = F8;
             int sib_reg = ((sib>>3)&7)+(rex.x<<3);
+            int sib_reg2 = (sib&0x7)+(rex.b<<3);
             if((sib&0x7)==5) {
                 int64_t tmp = F32S;
                 if (sib_reg!=4) {
                     if(tmp && ((tmp<-2048) || (tmp>maxval) || !i12)) {
                         MOV64x(scratch, tmp);
-                        if((sib>>6)) {
-                            SLLI(ret, xRAX+sib_reg, (sib>>6));
-                            ADD(ret, ret, scratch);
-                        } else {
-                            ADD(ret, xRAX+sib_reg, scratch);
-                        }
+                        ADDSL(ret, scratch, xRAX+sib_reg, sib>>6, ret);
                     } else {
                         if(sib>>6) {
                             SLLI(ret, xRAX+sib_reg, (sib>>6));
@@ -74,14 +73,9 @@ uintptr_t geted(dynarec_rv64_t* dyn, uintptr_t addr, int ninst, uint8_t nextop, 
                 }
             } else {
                 if (sib_reg!=4) {
-                    if(sib>>6) {
-                        SLLI(scratch, xRAX+sib_reg, (sib>>6));
-                        ADD(ret, xRAX+(sib&0x7)+(rex.b<<3), scratch);
-                    } else {
-                        ADD(ret, xRAX+(sib&0x7)+(rex.b<<3), xRAX+sib_reg);
-                    }
+                    ADDSL(ret, xRAX+sib_reg2, xRAX+sib_reg, sib>>6, scratch);
                 } else {
-                    ret = xRAX+(sib&0x7)+(rex.b<<3);
+                    ret = xRAX+sib_reg2;
                 }
             }
         } else if((nextop&7)==5) {
@@ -125,6 +119,260 @@ uintptr_t geted(dynarec_rv64_t* dyn, uintptr_t addr, int ninst, uint8_t nextop, 
             sib = F8;
             sib_reg = ((sib>>3)&7)+(rex.x<<3);
         }
+        int sib_reg2 = (sib&0x07)+(rex.b<<3);
+        if(nextop&0x80)
+            i64 = F32S;
+        else
+            i64 = F8S;
+        if(i64==0 || ((i64>=-2048) && (i64<=2047)  && i12)) {
+            *fixaddress = i64;
+            if((nextop&7)==4) {
+                if (sib_reg!=4) {
+                    ADDSL(ret, xRAX+sib_reg2, xRAX+sib_reg, sib>>6, scratch);
+                } else {
+                    ret = xRAX+sib_reg2;
+                }
+            } else
+                ret = xRAX+(nextop&0x07)+(rex.b<<3);
+        } else {
+            if(i64>=-2048 && i64<=2047) {
+                if((nextop&7)==4) {
+                    if (sib_reg!=4) {
+                        ADDSL(scratch, xRAX+sib_reg2, xRAX+sib_reg, sib>>6, scratch);
+                    } else {
+                        scratch = xRAX+sib_reg2;
+                    }
+                } else
+                    scratch = xRAX+(nextop&0x07)+(rex.b<<3);
+                ADDI(ret, scratch, i64);
+            } else {
+                MOV64x(scratch, i64);
+                if((nextop&7)==4) {
+                    if (sib_reg!=4) {
+                        ADD(scratch, scratch, xRAX+sib_reg2);
+                        ADDSL(ret, scratch, xRAX+sib_reg, sib>>6, ret);
+                    } else {
+                        PASS3(int tmp = xRAX+sib_reg2);
+                        ADD(ret, tmp, scratch);
+                    }
+                } else {
+                    PASS3(int tmp = xRAX+(nextop&0x07)+(rex.b<<3));
+                    ADD(ret, tmp, scratch);
+                }
+            }
+        }
+    }
+    *ed = ret;
+    return addr;
+}
+
+static uintptr_t geted_32(dynarec_rv64_t* dyn, uintptr_t addr, int ninst, uint8_t nextop, uint8_t* ed, uint8_t hint, uint8_t scratch, int64_t* fixaddress, int *l, int i12)
+{
+    MAYUSE(dyn); MAYUSE(ninst);
+
+    int lock = l?((l==LOCK_LOCK)?1:2):0;
+    if(lock==2)
+        *l = 0;
+    uint8_t ret = x2;
+    *fixaddress = 0;
+    if(hint>0) ret = hint;
+    int maxval = 2047;
+    if(i12>1)
+        maxval -= i12;
+    MAYUSE(scratch);
+    if(!(nextop&0xC0)) {
+        if((nextop&7)==4) {
+            uint8_t sib = F8;
+            int sib_reg = (sib>>3)&0x7;
+            int sib_reg2 = sib&0x7;
+            if(sib_reg2==5) {
+                int64_t tmp = F32S;
+                if (sib_reg!=4) {
+                    if(tmp && ((tmp<-2048) || (tmp>maxval) || !i12)) {
+                        MOV32w(scratch, tmp);
+                        if((sib>>6)) {
+                            if(rv64_zba) SHxADDUW(ret, xRAX+sib_reg, (sib>>6), scratch); else {SLLI(ret, xRAX+sib_reg, sib>>6); ADDW(ret, ret, scratch);}
+                        } else
+                            ADDW(ret, xRAX+sib_reg, scratch);
+                    } else {
+                        if(sib>>6)
+                            SLLI(ret, xRAX+sib_reg, (sib>>6));
+                        else
+                            ret = xRAX+sib_reg;
+                        *fixaddress = tmp;
+                    }
+                } else {
+                    switch(lock) {
+                        case 1: addLockAddress((int32_t)tmp); break;
+                        case 2: if(isLockAddress((int32_t)tmp)) *l=1; break;
+                    }
+                    MOV32w(ret, tmp);
+                }
+            } else {
+                if (sib_reg!=4) {
+                    if((sib>>6)) {
+                        if(rv64_zba) SHxADDUW(ret, xRAX+sib_reg, (sib>>6), xRAX+sib_reg2); else { SLLI(ret, xRAX+sib_reg, (sib>>6)); ADDW(ret, ret, xRAX+sib_reg2);}
+                    } else
+                        ADDW(ret, xRAX+sib_reg2, xRAX+sib_reg);
+                } else {
+                    ret = xRAX+sib_reg2;
+                }
+            }
+        } else if((nextop&7)==5) {
+            uint32_t tmp = F32;
+            MOV32w(ret, tmp);
+            switch(lock) {
+                case 1: addLockAddress(tmp); break;
+                case 2: if(isLockAddress(tmp)) *l=1; break;
+            }
+        } else {
+            ret = xRAX+(nextop&7);
+            if(ret==hint) {
+                AND(hint, ret, xMASK);    //to clear upper part
+            }
+        }
+    } else {
+        int64_t i32;
+        uint8_t sib = 0;
+        int sib_reg = 0;
+        if((nextop&7)==4) {
+            sib = F8;
+            sib_reg = (sib>>3)&7;
+        }
+        int sib_reg2 = sib&0x07;
+        if(nextop&0x80)
+            i32 = F32S;
+        else
+            i32 = F8S;
+        if(i32==0 || ((i32>=-2048) && (i32<=2047)  && i12)) {
+            *fixaddress = i32;
+            if((nextop&7)==4) {
+                if (sib_reg!=4) {
+                    if(sib>>6) {
+                    if(rv64_zba) SHxADDUW(ret, xRAX+sib_reg, (sib>>6), xRAX+sib_reg2); else {SLLI(ret, xRAX+sib_reg, (sib>>6)); ADDW(ret, ret, xRAX+sib_reg2);}
+                    } else
+                        ADDW(ret, xRAX+sib_reg2, xRAX+sib_reg);
+                } else {
+                    ret = xRAX+sib_reg2;
+                }
+            } else {
+                ret = xRAX+(nextop&0x07);
+            }
+        } else {
+            if(i32>=-2048 && i32<=2047) {
+                if((nextop&7)==4) {
+                    if (sib_reg!=4) {
+                        if(sib>>6) {
+                            if(rv64_zba) SHxADDUW(scratch, xRAX+sib_reg, (sib>>6), xRAX+sib_reg2); else {SLLI(scratch, xRAX+sib_reg, sib>>6); ADDW(scratch, scratch, xRAX+sib_reg2);}
+                        } else
+                            ADDW(scratch, xRAX+sib_reg2, xRAX+sib_reg);
+                    } else {
+                        scratch = xRAX+sib_reg2;
+                    }
+                } else
+                    scratch = xRAX+(nextop&0x07);
+                ADDIW(ret, scratch, i32);
+            } else {
+                MOV32w(scratch, i32);
+                if((nextop&7)==4) {
+                    if (sib_reg!=4) {
+                        ADDW(scratch, scratch, xRAX+sib_reg2);
+                        if(sib>>6) {
+                            if(rv64_zba) SHxADDUW(ret, xRAX+sib_reg, (sib>>6), scratch); else {SLLI(ret, xRAX+sib_reg, (sib>>6)); ADDW(ret, ret, scratch);}
+                        } else
+                            ADDW(ret, scratch, xRAX+sib_reg);
+                    } else {
+                        PASS3(int tmp = xRAX+sib_reg2);
+                        ADDW(ret, tmp, scratch);
+                    }
+                } else {
+                    PASS3(int tmp = xRAX+(nextop&0x07));
+                    ADDW(ret, tmp, scratch);
+                }
+            }
+        }
+    }
+    *ed = ret;
+    return addr;
+}
+
+/* setup r2 to address pointed by ED, also fixaddress is an optionnal delta in the range [-absmax, +absmax], with delta&mask==0 to be added to ed for LDR/STR */
+uintptr_t geted32(dynarec_rv64_t* dyn, uintptr_t addr, int ninst, uint8_t nextop, uint8_t* ed, uint8_t hint, uint8_t scratch, int64_t* fixaddress, rex_t rex, int *l, int i12, int delta)
+{
+    MAYUSE(dyn); MAYUSE(ninst); MAYUSE(delta);
+
+    int lock = l?((l==LOCK_LOCK)?1:2):0;
+    if(lock==2)
+        *l = 0;
+    uint8_t ret = x2;
+    *fixaddress = 0;
+    if(hint>0) ret = hint;
+    int maxval = 2047;
+    if(i12>1)
+        maxval -= i12;
+    MAYUSE(scratch);
+    if(!(nextop&0xC0)) {
+        if((nextop&7)==4) {
+            uint8_t sib = F8;
+            int sib_reg = ((sib>>3)&0x7)+(rex.x<<3);
+            int sib_reg2 = (sib&0x7)+(rex.b<<3);
+            if((sib&0x7)==5) {
+                int64_t tmp = F32S;
+                if (sib_reg!=4) {
+                    if(tmp && ((tmp<-2048) || (tmp>maxval) || !i12)) {
+                        MOV64x(scratch, tmp);
+                        if((sib>>6)) {
+                            if(rv64_zba) SHxADDUW(ret, xRAX+sib_reg, (sib>>6), scratch); else {SLLI(ret, xRAX+sib_reg, sib>>6); ADDW(ret, ret, scratch);}
+                        } else
+                            ADDW(ret, xRAX+sib_reg, scratch);
+                    } else {
+                        if(sib>>6)
+                            SLLI(ret, xRAX+sib_reg, (sib>>6));
+                        else
+                            ret = xRAX+sib_reg;
+                        *fixaddress = tmp;
+                    }
+                } else {
+                    switch(lock) {
+                        case 1: addLockAddress(tmp); break;
+                        case 2: if(isLockAddress(tmp)) *l=1; break;
+                    }
+                    MOV64x(ret, tmp);
+                }
+            } else {
+                if (sib_reg!=4) {
+                    if((sib>>6)) {
+                        if(rv64_zba) SHxADDUW(ret, xRAX+sib_reg, (sib>>6), xRAX+sib_reg2); else { SLLI(ret, xRAX+sib_reg, (sib>>6)); ADDW(ret, ret, xRAX+sib_reg2);}
+                    } else
+                        ADDW(ret, xRAX+sib_reg2, xRAX+sib_reg);
+                } else {
+                    ret = xRAX+sib_reg2;
+                }
+            }
+        } else if((nextop&7)==5) {
+            uint32_t tmp = F32;
+            MOV32w(ret, tmp);
+            GETIP(addr+delta);
+            ADDW(ret, ret, xRIP);
+            switch(lock) {
+                case 1: addLockAddress(addr+delta+tmp); break;
+                case 2: if(isLockAddress(addr+delta+tmp)) *l=1; break;
+            }
+        } else {
+            ret = xRAX+(nextop&7)+(rex.b<<3);
+            if(ret==hint) {
+                AND(hint, ret, xMASK);    //to clear upper part
+            }
+        }
+    } else {
+        int64_t i64;
+        uint8_t sib = 0;
+        int sib_reg = 0;
+        if((nextop&7)==4) {
+            sib = F8;
+            sib_reg = ((sib>>3)&7)+(rex.x<<3);
+        }
+        int sib_reg2 = (sib&0x07)+(rex.b<<3);
         if(nextop&0x80)
             i64 = F32S;
         else
@@ -134,50 +382,45 @@ uintptr_t geted(dynarec_rv64_t* dyn, uintptr_t addr, int ninst, uint8_t nextop, 
             if((nextop&7)==4) {
                 if (sib_reg!=4) {
                     if(sib>>6) {
-                        SLLI(scratch, xRAX+sib_reg, (sib>>6));
-                        ADD(ret, xRAX+(sib&0x07)+(rex.b<<3), scratch);
-                    } else {
-                        ADD(ret, xRAX+(sib&0x07)+(rex.b<<3), xRAX+sib_reg);
-                    }
+                    if(rv64_zba) SHxADDUW(ret, xRAX+sib_reg, (sib>>6), xRAX+sib_reg2); else {SLLI(ret, xRAX+sib_reg, (sib>>6)); ADDW(ret, ret, xRAX+sib_reg2);}
+                    } else
+                        ADDW(ret, xRAX+sib_reg2, xRAX+sib_reg);
                 } else {
-                    ret = xRAX+(sib&0x07)+(rex.b<<3);
+                    ret = xRAX+sib_reg2;
                 }
-            } else
+            } else {
                 ret = xRAX+(nextop&0x07)+(rex.b<<3);
+            }
         } else {
             if(i64>=-2048 && i64<=2047) {
                 if((nextop&7)==4) {
                     if (sib_reg!=4) {
                         if(sib>>6) {
-                            SLLI(scratch, xRAX+sib_reg, (sib>>6));
-                            ADD(scratch, xRAX+(sib&0x07)+(rex.b<<3), scratch);
-                        } else {
-                            ADD(scratch, xRAX+(sib&0x07)+(rex.b<<3), xRAX+sib_reg);
-                        }
+                            if(rv64_zba) SHxADDUW(scratch, xRAX+sib_reg, (sib>>6), xRAX+sib_reg2); else {SLLI(scratch, xRAX+sib_reg, sib>>6); ADDW(scratch, scratch, xRAX+sib_reg2);}
+                        } else
+                            ADDW(scratch, xRAX+sib_reg2, xRAX+sib_reg);
                     } else {
-                        scratch = xRAX+(sib&0x07)+(rex.b<<3);
+                        scratch = xRAX+sib_reg2;
                     }
                 } else
                     scratch = xRAX+(nextop&0x07)+(rex.b<<3);
-                ADDI(ret, scratch, i64);
+                ADDIW(ret, scratch, i64);
             } else {
-                MOV64x(scratch, i64);
+                MOV32w(scratch, i64);
                 if((nextop&7)==4) {
                     if (sib_reg!=4) {
-                        ADD(scratch, scratch, xRAX+(sib&0x07)+(rex.b<<3));
+                        ADDW(scratch, scratch, xRAX+sib_reg2);
                         if(sib>>6) {
-                            SLLI(ret, xRAX+sib_reg, (sib>>6));
-                            ADD(ret, scratch, ret);
-                        } else {
-                            ADD(ret, scratch, xRAX+sib_reg);
-                        }
+                            if(rv64_zba) SHxADDUW(ret, xRAX+sib_reg, (sib>>6), scratch); else {SLLI(ret, xRAX+sib_reg, (sib>>6)); ADDW(ret, ret, scratch);}
+                        } else
+                            ADDW(ret, scratch, xRAX+sib_reg);
                     } else {
-                        PASS3(int tmp = xRAX+(sib&0x07)+(rex.b<<3));
-                        ADD(ret, tmp, scratch);
+                        PASS3(int tmp = xRAX+sib_reg2);
+                        ADDW(ret, tmp, scratch);
                     }
                 } else {
                     PASS3(int tmp = xRAX+(nextop&0x07)+(rex.b<<3));
-                    ADD(ret, tmp, scratch);
+                    ADDW(ret, tmp, scratch);
                 }
             }
         }
@@ -219,7 +462,9 @@ void jump_to_epilog_fast(dynarec_rv64_t* dyn, uintptr_t ip, int reg, int ninst)
     SMEND();
     BR(x2);
 }
-
+#ifdef JMPTABLE_SHIFT4
+#error TODO!
+#endif
 void jump_to_next(dynarec_rv64_t* dyn, uintptr_t ip, int reg, int ninst)
 {
     MAYUSE(dyn); MAYUSE(ninst);
@@ -233,8 +478,7 @@ void jump_to_next(dynarec_rv64_t* dyn, uintptr_t ip, int reg, int ninst)
         MAYUSE(tbl);
         TABLE64(x3, tbl);
         SRLI(x2, xRIP, JMPTABL_START3);
-        SLLI(x2, x2, 3);
-        ADD(x3, x3, x2);
+        if(rv64_zba) SH3ADD(x3, x2, x3); else {SLLI(x2, x2, 3); ADD(x3, x3, x2);}
         LD(x3, x3, 0); // could be LR_D(x3, x3, 1, 1); for better safety
         MOV64x(x4, JMPTABLE_MASK2<<3);    // x4 = mask
         SRLI(x2, xRIP, JMPTABL_START2-3);
@@ -256,8 +500,7 @@ void jump_to_next(dynarec_rv64_t* dyn, uintptr_t ip, int reg, int ninst)
             }
             AND(x2, xRIP, x4);
         }
-        SLLI(x2, x2, 3);
-        ADD(x3, x3, x2);
+        if(rv64_zba) SH3ADD(x3, x2, x3); else {SLLI(x2, x2, 3); ADD(x3, x3, x2);}
         LD(x2, x3, 0); //LR_D(x2, x3, 1, 1);
     } else {
         uintptr_t p = getJumpTableAddress64(ip);
@@ -277,12 +520,12 @@ void jump_to_next(dynarec_rv64_t* dyn, uintptr_t ip, int reg, int ninst)
     JALR(x2); // save LR...
 }
 
-void ret_to_epilog(dynarec_rv64_t* dyn, int ninst)
+void ret_to_epilog(dynarec_rv64_t* dyn, int ninst, rex_t rex)
 {
     MAYUSE(dyn); MAYUSE(ninst);
     MESSAGE(LOG_DUMP, "Ret to epilog\n");
-    POP1(xRIP);
-    MV(x1, xRIP);
+    POP1z(xRIP);
+    MVz(x1, xRIP);
     SMEND();
     /*if(box64_dynarec_callret) {
         // pop the actual return address from RV64 stack
@@ -297,8 +540,7 @@ void ret_to_epilog(dynarec_rv64_t* dyn, int ninst)
     uintptr_t tbl = getJumpTable64();
     MOV64x(x3, tbl);
     SRLI(x2, xRIP, JMPTABL_START3);
-    SLLI(x2, x2, 3);
-    ADD(x3, x3, x2);
+    if(rv64_zba) SH3ADD(x3, x2, x3); else {SLLI(x2, x2, 3); ADD(x3, x3, x2);}
     LD(x3, x3, 0);
     MOV64x(x4, JMPTABLE_MASK2<<3);    // x4 = mask
     SRLI(x2, xRIP, JMPTABL_START2-3);
@@ -320,25 +562,24 @@ void ret_to_epilog(dynarec_rv64_t* dyn, int ninst)
         }
         AND(x2, xRIP, x4);
     }
-    SLLI(x2, x2, 3);
-    ADD(x3, x3, x2);
+    if(rv64_zba) SH3ADD(x3, x2, x3); else {SLLI(x2, x2, 3); ADD(x3, x3, x2);}
     LD(x2, x3, 0);
     JALR(x2); // save LR
     CLEARIP();
 }
 
-void retn_to_epilog(dynarec_rv64_t* dyn, int ninst, int n)
+void retn_to_epilog(dynarec_rv64_t* dyn, int ninst, rex_t rex, int n)
 {
     MAYUSE(dyn); MAYUSE(ninst);
     MESSAGE(LOG_DUMP, "Retn to epilog\n");
-    POP1(xRIP);
+    POP1z(xRIP);
     if(n>0x7ff) {
         MOV64x(w1, n);
-        ADD(xRSP, xRSP, x1);
+        ADDz(xRSP, xRSP, x1);
     } else {
-        ADDI(xRSP, xRSP, n);
+        ADDIz(xRSP, xRSP, n);
     }
-    MV(x1, xRIP);
+    MVz(x1, xRIP);
     SMEND();
     /*if(box64_dynarec_callret) {
         // pop the actual return address from RV64 stack
@@ -353,8 +594,7 @@ void retn_to_epilog(dynarec_rv64_t* dyn, int ninst, int n)
     uintptr_t tbl = getJumpTable64();
     MOV64x(x3, tbl);
     SRLI(x2, xRIP, JMPTABL_START3);
-    SLLI(x2, x2, 3);
-    ADD(x3, x3, x2);
+    if(rv64_zba) SH3ADD(x3, x2, x3); else {SLLI(x2, x2, 3); ADD(x3, x3, x2);}
     LD(x3, x3, 0);
     MOV64x(x4, JMPTABLE_MASK2<<3);    // x4 = mask
     SRLI(x2, xRIP, JMPTABL_START2-3);
@@ -376,8 +616,7 @@ void retn_to_epilog(dynarec_rv64_t* dyn, int ninst, int n)
         }
         AND(x2, xRIP, x4);
     }
-    SLLI(x2, x2, 3);
-    ADD(x3, x3, x2);
+    if(rv64_zba) SH3ADD(x3, x2, x3); else {SLLI(x2, x2, 3); ADD(x3, x3, x2);}
     LD(x2, x3, 0);
     JALR(x2); // save LR
     CLEARIP();
@@ -388,26 +627,35 @@ void iret_to_epilog(dynarec_rv64_t* dyn, int ninst, int is64bits)
     //#warning TODO: is64bits
     MAYUSE(ninst);
     MESSAGE(LOG_DUMP, "IRet to epilog\n");
-    // POP IP
     NOTEST(x2);
-    POP1(xRIP);
-    // POP CS
-    POP1(x2);
+    if(is64bits) {
+        POP1(xRIP);
+        POP1(x2);
+        POP1(xFlags);
+    } else {
+        POP1_32(xRIP);
+        POP1_32(x2);
+        POP1_32(xFlags);
+    }
+
     SH(x2, xEmu, offsetof(x64emu_t, segs[_CS]));
-    MV(x1, xZR);
-    SD(x1, xEmu, offsetof(x64emu_t, segs_serial[_CS]));
-    SD(x1, xEmu, offsetof(x64emu_t, segs_serial[_SS]));
-    // POP EFLAGS
-    POP1(xFlags);
+    SW(xZR, xEmu, offsetof(x64emu_t, segs_serial[_CS]));
+    // clean EFLAGS
     MOV32w(x1, 0x3F7FD7);
     AND(xFlags, xFlags, x1);
     ORI(xFlags, xFlags, 0x2);
     SET_DFNONE();
     // POP RSP
-    POP1(x3);
+    if (is64bits) {
+        POP1(x3);   //rsp
+        POP1(x2);   //ss
+    } else {
+        POP1_32(x3);   //rsp
+        POP1_32(x2);   //ss
+    }
     // POP SS
-    POP1(x2);
     SH(x2, xEmu, offsetof(x64emu_t, segs[_SS]));
+    SW(xZR, xEmu, offsetof(x64emu_t, segs_serial[_SS]));
     // set new RSP
     MV(xRSP, x3);
     // Ret....
@@ -434,6 +682,7 @@ void call_c(dynarec_rv64_t* dyn, int ninst, void* fnc, int reg, int ret, int sav
         // x5..x8, x10..x17, x28..x31 those needs to be saved by caller
         STORE_REG(RAX);
         STORE_REG(RCX);
+        STORE_REG(RDX);
         STORE_REG(R12);
         STORE_REG(R13);
         STORE_REG(R14);
@@ -452,6 +701,7 @@ void call_c(dynarec_rv64_t* dyn, int ninst, void* fnc, int reg, int ret, int sav
         #define GO(A)   if(ret!=x##A) {LOAD_REG(A);}
         GO(RAX);
         GO(RCX);
+        GO(RDX);
         GO(R12);
         GO(R13);
         GO(R14);
@@ -703,16 +953,14 @@ void x87_purgecache(dynarec_rv64_t* dyn, int ninst, int next, int s1, int s2, in
             for (int i=0; i<a; ++i) {
                 SUBI(s2, s2, 1);
                 ANDI(s2, s2, 7);    // (emu->top + st)&7
-                SLLI(s1, s2, 2);
-                ADD(s1, xEmu, s1);
+                if(rv64_zba) SH2ADD(s1, s2, xEmu); else {SLLI(s1, s2, 2); ADD(s1, xEmu, s1);}
                 SW(s3, s1, offsetof(x64emu_t, p_regs));
             }
         } else {
             // empty tags
             ADDI(s3, xZR, 0b11);
             for (int i=0; i<-a; ++i) {
-                SLLI(s1, s2, 2);
-                ADD(s1, xEmu, s1);
+                if(rv64_zba) SH2ADD(s1, s2, xEmu); else {SLLI(s1, s2, 2); ADD(s1, xEmu, s1);}
                 SW(s3, s1, offsetof(x64emu_t, p_regs));
                 ADDI(s2, s2, 1);
                 ANDI(s2, s2, 7);    // (emu->top + st)&7
@@ -741,8 +989,7 @@ void x87_purgecache(dynarec_rv64_t* dyn, int ninst, int next, int s1, int s2, in
                 #endif
                 ADDI(s3, s2, dyn->e.x87cache[i]);
                 ANDI(s3, s3, 7);   // (emu->top + st)&7
-                SLLI(s1, s3, 3);
-                ADD(s1, xEmu, s1);
+                if(rv64_zba) SH3ADD(s1, s3, xEmu); else {SLLI(s1, s3, 3); ADD(s1, xEmu, s1);}
                 if(next) {
                     // need to check if a ST_F need local promotion
                     if(extcache_get_st_f(dyn, ninst, dyn->e.x87cache[i])>=0) {
@@ -801,8 +1048,7 @@ static void x87_reflectcache(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int
         if(dyn->e.x87cache[i]!=-1) {
             ADDI(s3, s2, dyn->e.x87cache[i]);
             ANDI(s3, s3, 7);   // (emu->top + i)&7
-            SLLI(s1, s3, 3);
-            ADD(s1, xEmu, s1);
+            if(rv64_zba) SH3ADD(s1, s3, xEmu); else {SLLI(s1, s3, 3); ADD(s1, xEmu, s1);}
             if(extcache_get_st_f(dyn, ninst, dyn->e.x87cache[i])>=0) {
                 FCVTDS(SCRATCH0, dyn->e.x87reg[i]);
                 FSD(SCRATCH0, s1, offsetof(x64emu_t, x87));
@@ -834,7 +1080,7 @@ int x87_get_current_cache(dynarec_rv64_t* dyn, int ninst, int st, int t)
     for (int i=0; i<8; ++i) {
         if(dyn->e.x87cache[i]==st) {
             #if STEP == 1
-            if(t==EXT_CACHE_ST_D && (dyn->e.extcache[dyn->e.x87reg[i]].t==EXT_CACHE_ST_F))
+            if(t==EXT_CACHE_ST_D && (dyn->e.extcache[EXTIDX(dyn->e.x87reg[i])].t==EXT_CACHE_ST_F))
                 extcache_promote_double(dyn, ninst, st);
             #endif
             return i;
@@ -866,8 +1112,7 @@ int x87_get_cache(dynarec_rv64_t* dyn, int ninst, int populate, int s1, int s2, 
             ADDI(s2, s2, a);
             ANDI(s2, s2, 7);
         }
-        SLLI(s2, s2, 3);
-        ADD(s1, xEmu, s2);
+        if(rv64_zba) SH3ADD(s1, s2, xEmu); else  {SLLI(s2, s2, 3); ADD(s1, xEmu, s2);}
         FLD(dyn->e.x87reg[ret], s1, offsetof(x64emu_t, x87));
     }
     MESSAGE(LOG_DUMP, "\t-------x87 Cache for ST%d\n", st);
@@ -912,7 +1157,7 @@ void x87_refresh(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int st)
         ANDI(s2, s2, 7);    // (emu->top + i)&7
     }
     ADD(s1, xEmu, s2);
-    if(dyn->e.extcache[dyn->e.x87reg[ret]].t==EXT_CACHE_ST_F) {
+    if(dyn->e.extcache[EXTIDX(dyn->e.x87reg[ret])].t==EXT_CACHE_ST_F) {
         FCVTDS(SCRATCH0, dyn->e.x87reg[ret]);
         FSD(SCRATCH0, s1, offsetof(x64emu_t, x87));
     } else {
@@ -932,23 +1177,24 @@ void x87_forget(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int st)
         return;
     MESSAGE(LOG_DUMP, "\tForget x87 Cache for ST%d\n", st);
     #if STEP == 1
-    if(dyn->e.extcache[dyn->e.x87reg[ret]].t==EXT_CACHE_ST_F)
+    if(dyn->e.extcache[EXTIDX(dyn->e.x87reg[ret])].t==EXT_CACHE_ST_F)
         extcache_promote_double(dyn, ninst, st);
     #endif
     // prepare offset to fpu => s1
     // Get top
     LW(s2, xEmu, offsetof(x64emu_t, top));
     // Update
-    if(st) {
-        ADDI(s2, s2, st);
+    int a = st - dyn->e.x87stack;
+    if(a) {
+        ADDI(s2, s2, a);
         ANDI(s2, s2, 7);    // (emu->top + i)&7
     }
-    ADD(s1, xEmu, s2);
+    if(rv64_zba) SH3ADD(s1, s2, xEmu); else {SLLI(s2, s2, 3); ADD(s1, xEmu, s2);}
     FSD(dyn->e.x87reg[ret], s1, offsetof(x64emu_t, x87));
     MESSAGE(LOG_DUMP, "\t--------x87 Cache for ST%d\n", st);
     // and forget that cache
     fpu_free_reg(dyn, dyn->e.x87reg[ret]);
-    dyn->e.extcache[dyn->e.x87reg[ret]].v = 0;
+    dyn->e.extcache[EXTIDX(dyn->e.x87reg[ret])].v = 0;
     dyn->e.x87cache[ret] = -1;
     dyn->e.x87reg[ret] = -1;
 }
@@ -963,15 +1209,16 @@ void x87_reget_st(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int st)
             // refresh the value
             MESSAGE(LOG_DUMP, "\tRefresh x87 Cache for ST%d\n", st);
             #if STEP == 1
-            if(dyn->e.extcache[dyn->e.x87reg[i]].t==EXT_CACHE_ST_F)
+            if(dyn->e.extcache[EXTIDX(dyn->e.x87reg[i])].t==EXT_CACHE_ST_F)
                 extcache_promote_double(dyn, ninst, st);
             #endif
             LW(s2, xEmu, offsetof(x64emu_t, top));
             int a = st - dyn->e.x87stack;
-            ADDI(s2, s2, a);
-            AND(s2, s2, 7);
-            SLLI(s2, s2, 3);
-            ADD(s1, xEmu, s2);
+            if(a) {
+                ADDI(s2, s2, a);
+                AND(s2, s2, 7);
+            }
+            if(rv64_zba) SH3ADD(s1, s2, xEmu); else {SLLI(s2, s2, 3); ADD(s1, xEmu, s2);}
             FLD(dyn->e.x87reg[i], s1, offsetof(x64emu_t, x87));
             MESSAGE(LOG_DUMP, "\t-------x87 Cache for ST%d\n", st);
             // ok
@@ -991,8 +1238,7 @@ void x87_reget_st(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int st)
     int a = st - dyn->e.x87stack;
     ADDI(s2, s2, a);
     ANDI(s2, s2, 7);    // (emu->top + i)&7
-    SLLI(s2, s2, 3);
-    ADD(s1, xEmu, s2);
+    if(rv64_zba) SH3ADD(s1, s2, xEmu); else {SLLI(s2, s2, 3); ADD(s1, xEmu, s2);}
     FLD(dyn->e.x87reg[ret], s1, offsetof(x64emu_t, x87));
     MESSAGE(LOG_DUMP, "\t-------x87 Cache for ST%d\n", st);
 }
@@ -1084,6 +1330,16 @@ static int isx87Empty(dynarec_rv64_t* dyn)
     return 1;
 }
 
+// forget ext register for a MMX reg, does nothing if the regs is not loaded
+void mmx_forget_reg(dynarec_rv64_t* dyn, int ninst, int a)
+{
+    if (dyn->e.mmxcache[a] == -1)
+        return;
+    FSD(dyn->e.mmxcache[a], xEmu, offsetof(x64emu_t, mmx[a]));
+    fpu_free_reg(dyn, dyn->e.mmxcache[a]);
+    return;
+}
+
 // get neon register for a MMX reg, create the entry if needed
 int mmx_get_reg(dynarec_rv64_t* dyn, int ninst, int s1, int s2, int s3, int a)
 {
@@ -1153,6 +1409,10 @@ int sse_get_reg(dynarec_rv64_t* dyn, int ninst, int s1, int a, int single)
         // forget / reload if change of size
         if(dyn->e.ssecache[a].single!=single) {
             sse_forget_reg(dyn, ninst, a);
+            // update olds after the forget...
+            dyn->e.olds[a].changed = 1;
+            dyn->e.olds[a].purged = 0;
+            dyn->e.olds[a].single = 1-single;
             return sse_get_reg(dyn, ninst, s1, a, single);
         }
         return dyn->e.ssecache[a].reg;
@@ -1176,6 +1436,10 @@ int sse_get_reg_empty(dynarec_rv64_t* dyn, int ninst, int s1, int a, int single)
             // need to wipe the half high 32bits of old Double because we now have a single
             //SW(xZR, xEmu, offsetof(x64emu_t, xmm[a])+4);
         }
+        dyn->e.olds[a].changed = 1;
+        dyn->e.olds[a].purged = 0;
+        dyn->e.olds[a].reg = EXTIDX(dyn->e.ssecache[a].reg);
+        dyn->e.olds[a].single = 1-single;
         dyn->e.ssecache[a].single = single;
         dyn->e.extcache[EXTIDX(dyn->e.ssecache[a].reg)].t = single?EXT_CACHE_SS:EXT_CACHE_SD;
         return dyn->e.ssecache[a].reg;
@@ -1194,6 +1458,10 @@ void sse_forget_reg(dynarec_rv64_t* dyn, int ninst, int a)
     else
         FSD(dyn->e.ssecache[a].reg, xEmu, offsetof(x64emu_t, xmm[a]));
     fpu_free_reg(dyn, dyn->e.ssecache[a].reg);
+    dyn->e.olds[a].changed = 0;
+    dyn->e.olds[a].purged = 1;
+    dyn->e.olds[a].reg = dyn->e.ssecache[a].reg;
+    dyn->e.olds[a].single = dyn->e.ssecache[a].single;
     dyn->e.ssecache[a].v = -1;
     return;
 }
@@ -1235,6 +1503,10 @@ static void sse_purgecache(dynarec_rv64_t* dyn, int ninst, int next, int s1)
                 FSD(dyn->e.ssecache[i].reg, xEmu, offsetof(x64emu_t, xmm[i]));
             if(!next) {
                 fpu_free_reg(dyn, dyn->e.ssecache[i].reg);
+                dyn->e.olds[i].changed = 0;
+                dyn->e.olds[i].purged = 1;
+                dyn->e.olds[i].reg = dyn->e.ssecache[i].reg;
+                dyn->e.olds[i].single = dyn->e.ssecache[i].single;
                 dyn->e.ssecache[i].v = -1;
             }
         }
@@ -1286,8 +1558,8 @@ void fpu_pushcache(dynarec_rv64_t* dyn, int ninst, int s1, int not07)
         for(int i=17; i<24; ++i)
             if(dyn->e.extcache[i].v!=0) {
                 switch(dyn->e.extcache[i].t) {
-                    case EXT_CACHE_ST_F: 
-                    case EXT_CACHE_SS: 
+                    case EXT_CACHE_ST_F:
+                    case EXT_CACHE_SS:
                         FSW(EXTREG(i), xSP, p*8);
                         break;
                     default:
@@ -1328,8 +1600,8 @@ void fpu_popcache(dynarec_rv64_t* dyn, int ninst, int s1, int not07)
         for(int i=17; i<24; ++i)
             if(dyn->e.extcache[i].v!=0) {
                 switch(dyn->e.extcache[i].t) {
-                    case EXT_CACHE_ST_F: 
-                    case EXT_CACHE_SS: 
+                    case EXT_CACHE_ST_F:
+                    case EXT_CACHE_SS:
                         FLW(EXTREG(i), xSP, p*8);
                         break;
                     default:
@@ -1387,7 +1659,7 @@ static void swapCache(dynarec_rv64_t* dyn, int ninst, int i, int j, extcache_t *
     int j_single = 0;
     if(cache->extcache[j].t==EXT_CACHE_SS || cache->extcache[j].t==EXT_CACHE_ST_F)
         j_single =1;
-    
+
     if(!cache->extcache[i].v) {
         // a mov is enough, no need to swap
         MESSAGE(LOG_DUMP, "\t  - Moving %d <- %d\n", i, j);
@@ -1403,9 +1675,9 @@ static void swapCache(dynarec_rv64_t* dyn, int ninst, int i, int j, extcache_t *
     // SWAP
     ext_cache_t tmp;
     MESSAGE(LOG_DUMP, "\t  - Swapping %d <-> %d\n", i, j);
-    // There is no VSWP in Arm64 NEON to swap 2 register contents!
+    // There is no swap instruction in RV64 to swap 2 float registers!
     // so use a scratch...
-    #define SCRATCH 0
+    #define SCRATCH 2
     if(i_single)
         FMVS(SCRATCH, reg_i);
     else
@@ -1454,12 +1726,12 @@ static void loadCache(dynarec_rv64_t* dyn, int ninst, int stack_cnt, int s1, int
             FLD(reg, xEmu, offsetof(x64emu_t, xmm[n]));
             break;
         case EXT_CACHE_MM:
-            MESSAGE(LOG_DUMP, "\t  - Loading %s\n", getCacheName(t, n));                    
-            FLD(reg, xEmu, offsetof(x64emu_t, mmx[i]));
+            MESSAGE(LOG_DUMP, "\t  - Loading %s\n", getCacheName(t, n));
+            FLD(reg, xEmu, offsetof(x64emu_t, mmx[n]));
             break;
         case EXT_CACHE_ST_D:
         case EXT_CACHE_ST_F:
-            MESSAGE(LOG_DUMP, "\t  - Loading %s\n", getCacheName(t, n));                    
+            MESSAGE(LOG_DUMP, "\t  - Loading %s\n", getCacheName(t, n));
             if((*s3_top) == 0xffff) {
                 LW(s3, xEmu, offsetof(x64emu_t, top));
                 *s3_top = 0;
@@ -1471,18 +1743,17 @@ static void loadCache(dynarec_rv64_t* dyn, int ninst, int stack_cnt, int s1, int
             }
             *s3_top += a;
             *s2_val = 0;
-            SLLI(s2, s3, 3);
-            ADD(s2, xEmu, s2);
+            if(rv64_zba) SH3ADD(s2, s3, xEmu); else {SLLI(s2, s3, 3); ADD(s2, xEmu, s2);}
             FLD(reg, s2, offsetof(x64emu_t, x87));
             if(t==EXT_CACHE_ST_F) {
                 FCVTSD(reg, reg);
             }
-            break;                    
+            break;
         case EXT_CACHE_NONE:
         case EXT_CACHE_SCR:
         default:    /* nothing done */
             MESSAGE(LOG_DUMP, "\t  - ignoring %s\n", getCacheName(t, n));
-            break; 
+            break;
     }
     cache->extcache[i].n = n;
     cache->extcache[i].t = t;
@@ -1501,12 +1772,12 @@ static void unloadCache(dynarec_rv64_t* dyn, int ninst, int stack_cnt, int s1, i
             FSD(reg, xEmu, offsetof(x64emu_t, xmm[n]));
             break;
         case EXT_CACHE_MM:
-            MESSAGE(LOG_DUMP, "\t  - Unloading %s\n", getCacheName(t, n));                    
+            MESSAGE(LOG_DUMP, "\t  - Unloading %s\n", getCacheName(t, n));
             FSD(reg, xEmu, offsetof(x64emu_t, mmx[n]));
             break;
         case EXT_CACHE_ST_D:
         case EXT_CACHE_ST_F:
-            MESSAGE(LOG_DUMP, "\t  - Unloading %s\n", getCacheName(t, n));                    
+            MESSAGE(LOG_DUMP, "\t  - Unloading %s\n", getCacheName(t, n));
             if((*s3_top)==0xffff) {
                 LW(s3, xEmu, offsetof(x64emu_t, top));
                 *s3_top = 0;
@@ -1517,19 +1788,18 @@ static void unloadCache(dynarec_rv64_t* dyn, int ninst, int stack_cnt, int s1, i
                 ANDI(s3, s3, 7);
             }
             *s3_top += a;
-            SLLI(s2, s3, 3);
-            ADD(s2, xEmu, s2);
+            if(rv64_zba) SH3ADD(s2, s3, xEmu); else {SLLI(s2, s3, 3); ADD(s2, xEmu, s2);}
             *s2_val = 0;
             if(t==EXT_CACHE_ST_F) {
                 FCVTDS(reg, reg);
             }
             FSD(reg, s2, offsetof(x64emu_t, x87));
-            break;                    
+            break;
         case EXT_CACHE_NONE:
         case EXT_CACHE_SCR:
         default:    /* nothing done */
             MESSAGE(LOG_DUMP, "\t  - ignoring %s\n", getCacheName(t, n));
-            break; 
+            break;
     }
     cache->extcache[i].v = 0;
 }
@@ -1613,7 +1883,9 @@ static void fpuCacheTransform(dynarec_rv64_t* dyn, int ninst, int s1, int s2, in
         s3_top = 0;
         stack_cnt = cache_i2.stack;
     }
-    extcache_t cache = dyn->e;
+
+    // FIXME: why we can't just use dyn->e here? debug that!
+    extcache_t cache = dyn->insts[ninst].e;
     int s1_val = 0;
     int s2_val = 0;
     // unload every uneeded cache
@@ -1678,18 +1950,18 @@ static void flagsCacheTransform(dynarec_rv64_t* dyn, int ninst, int s1)
     int go = 0;
     switch (dyn->insts[jmp].f_entry.pending) {
         case SF_UNKNOWN: break;
-        case SF_SET: 
-            if(dyn->f.pending!=SF_SET && dyn->f.pending!=SF_SET_PENDING) 
-                go = 1; 
+        case SF_SET:
+            if(dyn->f.pending!=SF_SET && dyn->f.pending!=SF_SET_PENDING)
+                go = 1;
             break;
         case SF_SET_PENDING:
-            if(dyn->f.pending!=SF_SET 
+            if(dyn->f.pending!=SF_SET
             && dyn->f.pending!=SF_SET_PENDING
-            && dyn->f.pending!=SF_PENDING) 
-                go = 1; 
+            && dyn->f.pending!=SF_PENDING)
+                go = 1;
             break;
         case SF_PENDING:
-            if(dyn->f.pending!=SF_SET 
+            if(dyn->f.pending!=SF_SET
             && dyn->f.pending!=SF_SET_PENDING
             && dyn->f.pending!=SF_PENDING)
                 go = 1;
@@ -1702,11 +1974,11 @@ static void flagsCacheTransform(dynarec_rv64_t* dyn, int ninst, int s1)
     if(go) {
         if(dyn->f.pending!=SF_PENDING) {
             LW(s1, xEmu, offsetof(x64emu_t, df));
-            j64 = (GETMARK3)-(dyn->native_size);
+            j64 = (GETMARKF2)-(dyn->native_size);
             BEQZ(s1, j64);
         }
         CALL_(UpdateFlags, -1, 0);
-        MARK3;
+        MARKF2;
     }
 #endif
 }
@@ -1734,7 +2006,7 @@ void rv64_move32(dynarec_rv64_t* dyn, int ninst, int reg, int32_t val, int zerou
         LUI(reg, hi20);
         src = reg;
     }
-    if (lo12 || !hi20) ADDI(reg, src, lo12);
+    if (lo12 || !hi20) ADDIW(reg, src, lo12);
     if((zeroup && ((hi20&0x80000) || (!hi20 && (lo12&0x800)))
     || (!zeroup && !(val&0x80000000) && ((hi20&0x80000) || (!hi20 && (lo12&0x800)))))) {
         ZEROUP(reg);

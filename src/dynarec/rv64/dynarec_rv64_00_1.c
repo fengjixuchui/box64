@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
-#include <pthread.h>
 #include <errno.h>
 #include <signal.h>
 #include <assert.h>
@@ -53,7 +52,32 @@ uintptr_t dynarec64_00_1(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
     MAYUSE(cacheupd);
 
     switch(opcode) {
-
+        case 0x40:
+        case 0x41:
+        case 0x42:
+        case 0x43:
+        case 0x44:
+        case 0x45:
+        case 0x46:
+        case 0x47:
+            INST_NAME("INC Reg (32bits)");
+            SETFLAGS(X_ALL&~X_CF, SF_SUBSET_PENDING);
+            gd = xRAX + (opcode&7);
+            emit_inc32(dyn, ninst, rex, gd, x1, x2, x3, x4);
+            break;
+        case 0x48:
+        case 0x49:
+        case 0x4A:
+        case 0x4B:
+        case 0x4C:
+        case 0x4D:
+        case 0x4E:
+        case 0x4F:
+            INST_NAME("DEC Reg (32bits)");
+            SETFLAGS(X_ALL&~X_CF, SF_SUBSET_PENDING);
+            gd = xRAX + (opcode&7);
+            emit_dec32(dyn, ninst, rex, gd, x1, x2, x3, x4);
+            break;
         case 0x50:
         case 0x51:
         case 0x52:
@@ -64,8 +88,7 @@ uintptr_t dynarec64_00_1(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
         case 0x57:
             INST_NAME("PUSH reg");
             gd = xRAX+(opcode&0x07)+(rex.b<<3);
-            SD(gd, xRSP, -8);
-            SUBI(xRSP, xRSP, 8);
+            PUSH1z(gd);
             break;
         case 0x58:
         case 0x59:
@@ -77,31 +100,65 @@ uintptr_t dynarec64_00_1(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
         case 0x5F:
             INST_NAME("POP reg");
             gd = xRAX+(opcode&0x07)+(rex.b<<3);
-            LD(gd, xRSP, 0);
-            if(gd!=xRSP) {
-                ADDI(xRSP, xRSP, 8);
+            POP1z(gd);
+            break;
+
+        case 0x60:
+            if(rex.is32bits) {
+                INST_NAME("PUSHAD");
+                AND(x1, xRSP, xMASK);
+                PUSH1_32(xRAX);
+                PUSH1_32(xRCX);
+                PUSH1_32(xRDX);
+                PUSH1_32(xRBX);
+                PUSH1_32(x1);
+                PUSH1_32(xRBP);
+                PUSH1_32(xRSI);
+                PUSH1_32(xRDI);
+            } else {
+                DEFAULT;
+            }
+            break;
+        case 0x61:
+            if(rex.is32bits) {
+                INST_NAME("POPAD");
+                POP1_32(xRDI);
+                POP1_32(xRSI);
+                POP1_32(xRBP);
+                POP1_32(x1);
+                POP1_32(xRBX);
+                POP1_32(xRDX);
+                POP1_32(xRCX);
+                POP1_32(xRAX);
+            } else {
+                DEFAULT;
             }
             break;
 
         case 0x63:
-            INST_NAME("MOVSXD Gd, Ed");
-            nextop = F8;
-            GETGD;
-            if(rex.w) {
-                if(MODREG) {   // reg <= reg
-                    ADDIW(gd, xRAX+(nextop&7)+(rex.b<<3), 0);
-                } else {                    // mem <= reg
-                    SMREAD();
-                    addr = geted(dyn, addr, ninst, nextop, &ed, x2, x1, &fixedaddress, rex, NULL, 1, 0);
-                    LW(gd, ed, fixedaddress);
-                }
+            if(rex.is32bits) {
+                // this is ARPL opcode
+                DEFAULT;
             } else {
-                if(MODREG) {   // reg <= reg
-                    AND(gd, xRAX+(nextop&7)+(rex.b<<3), xMASK);
-                } else {                    // mem <= reg
-                    SMREAD();
-                    addr = geted(dyn, addr, ninst, nextop, &ed, x2, x1, &fixedaddress, rex, NULL, 1, 0);
-                    LWU(gd, ed, fixedaddress);
+                INST_NAME("MOVSXD Gd, Ed");
+                nextop = F8;
+                GETGD;
+                if(rex.w) {
+                    if(MODREG) {   // reg <= reg
+                        ADDIW(gd, xRAX+(nextop&7)+(rex.b<<3), 0);
+                    } else {                    // mem <= reg
+                        SMREAD();
+                        addr = geted(dyn, addr, ninst, nextop, &ed, x2, x1, &fixedaddress, rex, NULL, 1, 0);
+                        LW(gd, ed, fixedaddress);
+                    }
+                } else {
+                    if(MODREG) {   // reg <= reg
+                        AND(gd, xRAX+(nextop&7)+(rex.b<<3), xMASK);
+                    } else {                    // mem <= reg
+                        SMREAD();
+                        addr = geted(dyn, addr, ninst, nextop, &ed, x2, x1, &fixedaddress, rex, NULL, 1, 0);
+                        LWU(gd, ed, fixedaddress);
+                    }
                 }
             }
             break;
@@ -114,7 +171,12 @@ uintptr_t dynarec64_00_1(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
         case 0x66:
             addr = dynarec64_66(dyn, addr, ip, ninst, rex, rep, ok, need_epilog);
             break;
-
+        case 0x67:
+            if(rex.is32bits)
+                addr = dynarec64_67_32(dyn, addr, ip, ninst, rex, rep, ok, need_epilog);
+            else
+                addr = dynarec64_67(dyn, addr, ip, ninst, rex, rep, ok, need_epilog);
+            break;
         case 0x68:
             INST_NAME("PUSH Id");
             i64 = F32S;
@@ -122,10 +184,10 @@ uintptr_t dynarec64_00_1(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                 MESSAGE(LOG_DUMP, "PUSH then RET, using indirect\n");
                 TABLE64(x3, addr-4);
                 LW(x1, x3, 0);
-                PUSH1(x1);
+                PUSH1z(x1);
             } else {
-                MOV64x(x3, i64);
-                PUSH1(x3);
+                MOV64z(x3, i64);
+                PUSH1z(x3);
             }
             break;
         case 0x69:
@@ -164,8 +226,8 @@ uintptr_t dynarec64_00_1(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
         case 0x6A:
             INST_NAME("PUSH Ib");
             i64 = F8S;
-            MOV64x(x3, i64);
-            PUSH1(x3);
+            MOV64z(x3, i64);
+            PUSH1z(x3);
             break;
         case 0x6B:
             INST_NAME("IMUL Gd, Ed, Ib");
@@ -179,12 +241,12 @@ uintptr_t dynarec64_00_1(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                 // 64bits imul
                 UFLAG_IF {
                     MULH(x3, ed, x4);
-                    MULW(gd, ed, x4);
+                    MUL(gd, ed, x4);
                     UFLAG_OP1(x3);
                     UFLAG_RES(gd);
                     UFLAG_DF(x3, d_imul64);
                 } else {
-                    MULxw(gd, ed, x4);
+                    MUL(gd, ed, x4);
                 }
             } else {
                 // 32bits imul
@@ -195,10 +257,35 @@ uintptr_t dynarec64_00_1(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                     UFLAG_OP1(x3);
                     UFLAG_DF(x3, d_imul32);
                 } else {
-                    MULxw(gd, ed, x4);
+                    MULW(gd, ed, x4);
                 }
                 ZEROUP(gd);
             }
+            break;
+
+        case 0x6C:
+        case 0x6D:
+            INST_NAME(opcode == 0x6C ? "INSB" : "INSD");
+            SETFLAGS(X_ALL, SF_SET); // Hack to set flags in "don't care" state
+            GETIP(ip);
+            STORE_XEMU_CALL(x3);
+            CALL(native_priv, -1);
+            LOAD_XEMU_CALL();
+            jump_to_epilog(dyn, 0, xRIP, ninst);
+            *need_epilog = 0;
+            *ok = 0;
+            break;
+        case 0x6E:
+        case 0x6F:
+            INST_NAME(opcode == 0x6C ? "OUTSB" : "OUTSD");
+            SETFLAGS(X_ALL, SF_SET); // Hack to set flags in "don't care" state
+            GETIP(ip);
+            STORE_XEMU_CALL(x3);
+            CALL(native_priv, -1);
+            LOAD_XEMU_CALL();
+            jump_to_epilog(dyn, 0, xRIP, ninst);
+            *need_epilog = 0;
+            *ok = 0;
             break;
 
         #define GO(GETFLAGS, NO, YES, F)                                \

@@ -25,6 +25,7 @@
 #endif
 
 #include "modrm.h"
+#include "x64compstrings.h"
 
 #ifdef TEST_INTERPRETER
 uintptr_t Test670F(x64test_t *test, rex_t rex, int rep, uintptr_t addr)
@@ -50,6 +51,19 @@ uintptr_t Run670F(x64emu_t *emu, rex_t rex, int rep, uintptr_t addr)
     opcode = F8;
 
     switch(opcode) {
+
+        case 0x11:
+            switch(rep) {
+                case 0:                      /* MOVUPS Ex,Gx */
+                    nextop = F8;
+                    GETEX32(0);
+                    GETGX;
+                    EX->u128 = GX->u128;
+                    break;
+                default:
+                    return 0;
+            }
+            break;
 
         case 0x2E:
             // same for now
@@ -84,6 +98,12 @@ uintptr_t Run670F(x64emu_t *emu, rex_t rex, int rep, uintptr_t addr)
                     GETGM;
                     GM->q = EM->q;
                     break;
+                case 2:  /* MOVDQU Gx, Ex */
+                    nextop = F8;
+                    GETEX32(0);
+                    GETGX;
+                    memcpy(GX, EX, 16);    // unaligned...
+                    break;
                 default:
                     return 0;
             }
@@ -102,6 +122,13 @@ uintptr_t Run670F(x64emu_t *emu, rex_t rex, int rep, uintptr_t addr)
             }
             break;
 
+        case 0xB6:                      /* MOVZX Gd,Eb */
+            nextop = F8;
+            GETEB32(0);
+            GETGD;
+            GD->q[0] = EB->byte[0];
+            break;
+
         case 0xB9:
             switch(rep) {
                 case 0: /* UD1 Ed */
@@ -114,6 +141,13 @@ uintptr_t Run670F(x64emu_t *emu, rex_t rex, int rep, uintptr_t addr)
                 default:
                     return 0;
             }
+            break;
+
+        case 0xB7:                      /* MOVZX Gd,Ew */
+            nextop = F8;
+            GETEW32(0);
+            GETGD;
+            GD->q[0] = EW->word[0];
             break;
 
     default:

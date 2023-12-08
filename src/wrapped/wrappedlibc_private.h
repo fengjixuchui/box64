@@ -96,7 +96,7 @@ GOW(btowc, uFi)
 GO(__bzero, vFpL)
 GO(bzero, vFpL)
 //GO(c16rtomb, LFpW!)
-//GOW(c32rtomb, LFpu!)
+GOW(c32rtomb, LFpup)
 GOW(calloc, pFLL)
 //GO(callrpc, iFpLLL@p@p)
 //GO(__call_tls_dtors, vFv)
@@ -219,8 +219,8 @@ GOWM(dl_iterate_phdr, iFEpp)
 //GO(_dl_sym, 
 //GO(_dl_vsym, 
 GOW(dngettext, pFpppL)
-//GO(dprintf, iFipV)
-//GO(__dprintf_chk, 
+GOM(dprintf, iFEipV)
+GOM(__dprintf_chk, iFEiipV)
 GO(drand48, dFv)
 GO(drand48_r, iFpp)
 GOW(dup, iFi)
@@ -294,7 +294,7 @@ GO(eventfd, iFui)
 GO(eventfd_read, iFip)
 GO(eventfd_write, iFiL)
 GOM(execl, iFEpV) // First argument is also part of the variadic
-//GOM(execle, iFEpV) // First argument is also part of the variadic
+GOM(execle, iFEpV) // First argument is also part of the variadic
 GOM(execlp, iFEpV) // First argument is also part of the variadic
 GOM(execv, iFEpp)
 GOWM(execve, iFEppp)
@@ -366,8 +366,8 @@ GO(fgetws, pFpip)
 GO(fgetws_unlocked, pFpip)
 //GO(__fgetws_unlocked_chk, 
 GO(fgetxattr, lFippL)
-GOW(fileno, iFp)
-GOW(fileno_unlocked, iFp)
+GOW(fileno, iFS)
+GOW(fileno_unlocked, iFS)
 GO(__finite, iFd)
 GOW(finite, iFd)
 GO(__finitef, iFf)
@@ -384,7 +384,7 @@ GO(fmtmsg, iFlpippp)
 GO(fnmatch, iFppi)
 GOM(fopen, pFEpp)
 GOWM(fopen64, pFEpp)
-//GO(fopencookie, pFpp?)
+GOM(fopencookie, pFEppV)
 //GO(__fork, 
 GOWM(fork, iFEv)
 //GO(__fortify_fail, 
@@ -925,16 +925,20 @@ GO(__isnanf, iFf)
 GOW(isnanf, iFf)
 GO(__isnanl, iFD)
 GOW(isnanl, iFD)
+GO2(__isoc23_fscanf, iFEppV, my___isoc99_fscanf)
+GO2(__isoc23_sscanf, iFEppV, my___isoc99_sscanf)
+GO2(__isoc23_strtol, lFppi, strtol)
+GO2(__isoc23_strtoul, LFppi, strtoul)
 GOM(__isoc99_fscanf, iFEppV)
 //GO(__isoc99_fwscanf, iFppV)
 GOM(__isoc99_scanf, iFEpV)
 GOM(__isoc99_sscanf, iFEppV)
-//GO(__isoc99_swscanf, iFppV)
-GOM(__isoc99_vfscanf, iFEppp)
+GOM(__isoc99_swscanf, iFEppV)
+GOM(__isoc99_vfscanf, iFEppA)
 //GO(__isoc99_vfwscanf, iFppA)
 //GO(__isoc99_vscanf, iFpA)
-GOM(__isoc99_vsscanf, iFEppp)
-//GO(__isoc99_vswscanf, iFppA)
+GOM(__isoc99_vsscanf, iFEppA)
+GOM(__isoc99_vswscanf, iFEppA)
 //GO(__isoc99_vwscanf, iFpA)
 //GO(__isoc99_wscanf, iFpV)
 GO(isprint, iFi)
@@ -1131,16 +1135,16 @@ GO(mblen, iFpU)
 GO(__mbrlen, LFpLp)
 GO(mbrlen, LFpLp)
 //GO(mbrtoc16, LFppL!)
-//GOW(mbrtoc32, LFppL!)
+GOW(mbrtoc32, LFppLp)
 GO(__mbrtowc, LFppLp)
 GO(mbrtowc, LFppLp)
 GOW(mbsinit, iFp)
 GO(mbsnrtowcs, LFppLLp)
-//GO(__mbsnrtowcs_chk, 
+GO(__mbsnrtowcs_chk, LFppLLpL)
 GO(mbsrtowcs, LFppLp)
-//GO(__mbsrtowcs_chk, 
+GO(__mbsrtowcs_chk, LFppLpL)
 GO(mbstowcs, LFppL)
-//GO(__mbstowcs_chk, 
+GO(__mbstowcs_chk, LFppLL)
 GO(mbtowc, iFppL)
 //GO(mcheck, iF@)
 GO(mcheck_check_all, vFv)
@@ -1304,7 +1308,7 @@ DATA(opterr, sizeof(int))
 DATA(optind, sizeof(int))
 DATA(optopt, sizeof(int))
 GO(__overflow, iFpi)
-//GO(parse_printf_format, 
+GO(parse_printf_format, LFpLp)
 //GO(passwd2des, // Deprecated
 GO(pathconf, lFpi)
 GOW(pause, iFv)
@@ -1362,7 +1366,7 @@ GOW(posix_spawn_file_actions_destroy, iFp)
 GOW(posix_spawn_file_actions_init, iFp)
 GOM(posix_spawnp, iFEpppppp)
 GO(ppoll, iFpLpp)
-//GO(__ppoll_chk, 
+GO(__ppoll_chk, iFpuppL)
 GOWM(prctl, iFEiLLLL)
 GO(pread, IFipUI)
 GOW(__pread64, lFipLI)
@@ -1389,38 +1393,133 @@ DATA(__progname_full, sizeof(void))
 GOW(pselect, iFippppp)
 GO(psiginfo, vFpp)
 GO(psignal, vFip)
-//GO(pthread_attr_destroy, 
-//GO(pthread_attr_getdetachstate, 
-//GO(pthread_attr_getinheritsched, 
-//GO(pthread_attr_getschedparam, 
-//GO(pthread_attr_getschedpolicy, 
-//GO(pthread_attr_getscope, 
-//GO(pthread_attr_init, 
-//GO(pthread_attr_setdetachstate, 
-//GO(pthread_attr_setinheritsched, 
-//GO(pthread_attr_setschedparam, 
-//GO(pthread_attr_setschedpolicy, 
-//GO(pthread_attr_setscope, 
-//GO(pthread_condattr_destroy, 
-//GO(pthread_condattr_init, 
-//GO(pthread_cond_broadcast, 
-//GO(pthread_cond_destroy, 
-//GO(pthread_cond_init, 
-//GO(pthread_cond_signal, 
-//GO(pthread_cond_timedwait, 
-//GO(pthread_cond_wait, 
-//GO(pthread_equal, 
-//GO(pthread_exit, 
-//GO(pthread_getschedparam, 
-//GO(pthread_mutex_destroy, 
-//GO(pthread_mutex_init, 
-//GO(pthread_mutex_lock, 
-//GO(pthread_mutex_unlock, 
-//GO(pthread_self, 
-//GO(pthread_setcancelstate, 
-//GO(pthread_setcanceltype, 
-//GO(pthread_setschedparam, 
-GO(ptrace, lFuipp)
+GO(__sF, vFip)
+GO(__assert2, vFip)
+
+GOM(pthread_atfork, iFEppp)
+GOM(pthread_attr_destroy, iFEp)
+GOM(pthread_attr_getdetachstate, iFEpp)
+GOM(pthread_attr_getguardsize, iFEpp)
+GOM(pthread_attr_getinheritsched, iFEpp)
+GOM(pthread_attr_getschedparam, iFEpp)
+GOM(pthread_attr_getschedpolicy, iFEpp)
+GOM(pthread_attr_getscope, iFEpp)
+GOM(pthread_attr_getstack, iFEppp)
+GOM(pthread_attr_getstackaddr, iFEpp)
+GOM(pthread_attr_getstacksize, iFEpp)
+GOM(pthread_attr_init, iFEp)
+GOM(pthread_attr_setaffinity_np, iFEpLp)
+GOM(pthread_attr_setdetachstate, iFEpi)
+GOM(pthread_attr_setguardsize, iFEpL)
+GOM(pthread_attr_setinheritsched, iFEpi)
+GOM(pthread_attr_setschedparam, iFEpp)
+GOM(pthread_attr_setschedpolicy, iFEpi)
+GOM(pthread_attr_setscope, iFEpi)
+GOM(pthread_attr_setstackaddr, iFEpp)
+GOM(pthread_attr_setstack, iFEppL)
+GOM(pthread_attr_setstacksize, iFEpL)
+GOM(pthread_barrierattr_destroy, iFEp)
+GOM(pthread_barrierattr_getpshared, iFEpp)
+GOM(pthread_barrierattr_init, iFEp)
+GOM(pthread_barrierattr_setpshared, iFEpi)
+GO(pthread_barrier_destroy, iFp)
+GOM(pthread_barrier_init, iFEppu)
+GO(pthread_barrier_wait, iFp)
+GO(pthread_cancel, iFL)
+GOM(pthread_condattr_destroy, iFEp)
+GOM(pthread_condattr_getclock, iFEpp)
+GOM(pthread_condattr_getpshared, iFEpp)
+GOM(pthread_condattr_init, iFEp)
+GOM(pthread_condattr_setclock, iFEpi)
+GOM(pthread_condattr_setpshared, iFEpi)
+GOM(pthread_cond_broadcast, iFEp)
+GOM(pthread_cond_destroy, iFEp)
+GOM(pthread_cond_init, iFEpp)
+GO(pthread_cond_signal, iFp)
+GOM(pthread_cond_timedwait, iFEppp)
+GOM(pthread_cond_wait, iFEpp)
+GOM(pthread_create, iFEpppp)
+GOM(pthread_cond_clockwait, iFEppip)
+GO(pthread_detach, iFL)
+GO(pthread_equal, iFLL)
+GO(pthread_exit, vFp)
+GOM(pthread_getaffinity_np, iFEpLp)
+GOM(pthread_getattr_np, iFELp)
+GOM(pthread_getattr_default_np, iFEp)
+GOM(pthread_setattr_default_np, iFEp)
+GO(pthread_getcpuclockid, iFLp)
+GO(pthread_getschedparam, iFLpp)
+GO(pthread_getspecific, pFL)
+GO(pthread_getname_np, iFppL)
+GO(pthread_join, iFLp)
+GOM(pthread_key_create, iFEpp)
+GO(pthread_key_delete, iFL)
+GO2(pthread_kill@GLIBC_2.2.5, iFEpi, my_pthread_kill_old)
+GOM(pthread_kill, iFEpi)
+GO(pthread_kill_other_threads_np, vFv)
+GOM(pthread_mutexattr_destroy, iFEp)
+GOM(pthread_mutexattr_getkind_np, iFEpp)
+GOM(pthread_mutexattr_getprotocol, iFEpp)
+GOM(pthread_mutexattr_getrobust, iFEpp)
+GOM(pthread_mutexattr_gettype, iFEpp)
+GOM(pthread_mutexattr_init, iFEp)
+GOM(pthread_mutexattr_setkind_np, iFEpi)
+GOM(pthread_mutexattr_setprotocol, iFEpi)
+GOM(pthread_mutexattr_setpshared, iFEpi)
+GOM(pthread_mutexattr_setrobust, iFEpi)
+GOM(pthread_mutexattr_settype, iFEpi)
+GO(pthread_mutex_consistent, iFp)
+GO(pthread_mutex_destroy, iFp)
+// phtread_mutex_t is 40 bytes on x86_64, but 48bytes on ARM64
+GOM(pthread_mutex_init, iFpp)
+GO(pthread_mutex_lock, iFp)
+GO(pthread_mutex_timedlock, iFpp)
+GO(pthread_mutex_trylock, iFp)
+GO(pthread_mutex_unlock, iFp)
+GOM(pthread_once, iFEpp)
+GO(pthread_rwlockattr_destroy, vFp)
+GO(pthread_rwlockattr_getkind_np, iFpp)
+GO(pthread_rwlockattr_init, iFp)
+GO(pthread_rwlockattr_setkind_np, iFpi)
+GO(pthread_rwlock_destroy, iFp)
+GO(pthread_rwlock_init, iFpp)
+GO(pthread_rwlock_rdlock, iFp)
+GO(pthread_rwlock_tryrdlock, iFp)
+GO(pthread_rwlock_trywrlock, iFp)
+GO(pthread_rwlock_unlock, iFp)
+GO(pthread_rwlock_wrlock, iFp)
+GO(pthread_self, LFv)
+GOM(pthread_setaffinity_np, iFEpLp)
+GO(pthread_setcancelstate, iFip)
+GO(pthread_setcanceltype, iFip)
+GO(pthread_setconcurrency, iFi)
+GO(pthread_setname_np, iFpp)
+GO(pthread_setschedparam, iFLip)
+GO(pthread_setschedprio, iFpi)
+GO(pthread_setspecific, iFLp)
+GO(pthread_sigmask, iFipp)
+GO(pthread_spin_destroy, iFp)
+GO(pthread_spin_init, iFpi)
+GO(pthread_spin_lock, iFp)
+GO(pthread_spin_trylock, iFp)
+GO(pthread_spin_unlock, iFp)
+GO(pthread_testcancel, vFv)
+GO(pthread_timedjoin_np, iFppp)
+GO(pthread_tryjoin_np, iFpp)
+GO(pthread_yield, iFv)
+GO(sem_close, iFp)
+GO(sem_clockwait, iFppp)
+GO(sem_destroy, iFp)
+GO(sem_getvalue, iFpp)
+GO(sem_init, iFpiu)
+GO(sem_open, pFpOM)
+GO(sem_post, iFp)
+GO(sem_timedwait, iFpp)
+GO(sem_trywait, iFp)
+GO(sem_unlink, iFp)
+GO(sem_wait, iFp)
+
+GOM(ptrace, lFEuipp)
 GO(ptsname, pFi)
 GOW(ptsname_r, iFipL)
 //GO(__ptsname_r_chk, 
@@ -1650,7 +1749,7 @@ GOW(setregid, iFuu)
 GOW(setresgid, iFuuu)
 GOW(setresuid, iFuuu)
 GOW(setreuid, iFuu)
-GOW(setrlimit, iFup)
+GOWM(setrlimit, iFEup)
 GOW(setrlimit64, iFup)
 GO(setrpcent, vFi)
 GO(setservent, vFi)
@@ -1693,7 +1792,7 @@ GO(siggetmask, iFv)
 GO(sighold, iFi)
 GO(sigignore, iFi)
 GO(siginterrupt, iFii)
-//GO(sigisemptyset, iF!)
+GO(sigisemptyset, iFp)
 //GO(__sigismember, 
 GO(sigismember, iFpi)
 GOM(siglongjmp, vFEpi)
@@ -2051,8 +2150,8 @@ GO(utmpxname, iFp)
 GO(valloc, pFL)
 GOWM(vasprintf, iFEppA)
 GOM(__vasprintf_chk, iFEpipp)
-//GOW(vdprintf, iFipA)
-//GO(__vdprintf_chk, 
+GOM(vdprintf, iFEipA)
+GOM(__vdprintf_chk, iFEiipA)
 //GO(verr, vFipA)
 //GO(verrx, vFipA)
 GOW(versionsort, iFpp)
@@ -2087,7 +2186,7 @@ GOM(__vsyslog_chk, vFEiipA)
 //GO(vtimes, // Deprecated
 //GO(vwarn, vFpA)
 //GO(vwarnx, vFpA)
-//GO(vwprintf, iFpA)
+GOM(vwprintf, iFEpA)
 //GO(__vwprintf_chk, 
 //GO(vwscanf, iFpA)
 GOW(__wait, iFp)
@@ -2207,11 +2306,11 @@ GO(wmemcmp, iFppL)
 GOW(wmemcpy, pFppL)
 GO(__wmemcpy_chk, pFppLL)
 GO(wmemmove, pFppL)
-//GO(__wmemmove_chk, 
+GO(__wmemmove_chk, pFppLL)
 GOW(wmempcpy, pFppL)
 //GO(__wmempcpy_chk, 
 GO(wmemset, pFpuL)
-//GO(__wmemset_chk, 
+GO(__wmemset_chk, pFpuLL)
 GO(wordexp, iFppi)
 GO(wordfree, vFp)
 //GO(__woverflow, 
@@ -2326,3 +2425,12 @@ DATAM(__libc_single_threaded, 1)
 
 GO(iconvctl, iFlip)
 GO(dummy__ZnwmSt11align_val_tRKSt9nothrow_t, pFLLp) // for mallochook.c
+
+#ifdef ANDROID
+GOM(__libc_init, vFEpppp)
+GO(__errno, pFv)
+#else
+// Those symbols don't exist in non-Android builds
+//GOM(__libc_init,
+//GO(__errno,
+#endif

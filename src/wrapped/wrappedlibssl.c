@@ -41,7 +41,7 @@ GO(4)
 static uintptr_t my_pem_passwd_cb_fct_##A = 0;                                                      \
 static int my_pem_passwd_cb_##A(void* buf, int size, int rwflag, void* password)                    \
 {                                                                                                   \
-    return (int)RunFunction(my_context, my_pem_passwd_cb_fct_##A, 4, buf, size, rwflag, password);  \
+    return (int)RunFunctionFmt(my_pem_passwd_cb_fct_##A, "piip", buf, size, rwflag, password);  \
 }
 SUPER()
 #undef GO
@@ -65,7 +65,7 @@ static void* find_pem_passwd_cb_Fct(void* fct)
 static uintptr_t my_anonymous_fct_##A = 0;                                      \
 static void* my_anonymous_##A(void* a, void* b, void* c, void *d)               \
 {                                                                               \
-    return (void*)RunFunction(my_context, my_anonymous_fct_##A, 4, a, b, c, d);   \
+    return (void*)RunFunctionFmt(my_anonymous_fct_##A, "pppp", a, b, c, d);   \
 }
 SUPER()
 #undef GO
@@ -90,7 +90,7 @@ static void* find_anonymous_Fct(void* fct)
 static uintptr_t my_verify_fct_##A = 0;                                 \
 static int my_verify_##A(int a, void* b)                                \
 {                                                                       \
-    return (int)RunFunction(my_context, my_verify_fct_##A, 2, a, b);    \
+    return (int)RunFunctionFmt(my_verify_fct_##A, "ip", a, b);    \
 }
 SUPER()
 #undef GO
@@ -124,7 +124,7 @@ static void* reverse_verify_Fct(void* fct)
 static uintptr_t my_ex_new_fct_##A = 0;                                                        \
 static void my_ex_new_##A(void* parent, void* ptr, void* ad, int idx, long argl, void* argp)   \
 {                                                                                           \
-    RunFunction(my_context, my_ex_new_fct_##A, 6, parent, ptr, ad, idx, argl, argp);           \
+    RunFunctionFmt(my_ex_new_fct_##A, "pppilp", parent, ptr, ad, idx, argl, argp);           \
 }
 SUPER()
 #undef GO
@@ -148,7 +148,7 @@ static void* find_ex_new_Fct(void* fct)
 static uintptr_t my_ex_free_fct_##A = 0;                                                        \
 static void my_ex_free_##A(void* parent, void* ptr, void* ad, int idx, long argl, void* argp)   \
 {                                                                                               \
-    RunFunction(my_context, my_ex_free_fct_##A, 6, parent, ptr, ad, idx, argl, argp);           \
+    RunFunctionFmt(my_ex_free_fct_##A, "pppilp", parent, ptr, ad, idx, argl, argp);           \
 }
 SUPER()
 #undef GO
@@ -172,7 +172,7 @@ static void* find_ex_free_Fct(void* fct)
 static uintptr_t my_ex_dup_fct_##A = 0;                                                             \
 static int my_ex_dup_##A(void* to, void* from, void* from_d, int idx, long argl, void* argp)        \
 {                                                                                                   \
-    return (int) RunFunction(my_context, my_ex_dup_fct_##A, 6, to, from, from_d, idx, argl, argp);  \
+    return (int) RunFunctionFmt(my_ex_dup_fct_##A, "pppilp", to, from, from_d, idx, argl, argp);  \
 }
 SUPER()
 #undef GO
@@ -196,7 +196,7 @@ static void* find_ex_dup_Fct(void* fct)
 static uintptr_t my_client_cb_fct_##A = 0;                                                                              \
 static uint32_t my_client_cb_##A(void* ssl, void* hint, void* identity, uint32_t id_len, void* psk, uint32_t psk_len)   \
 {                                                                                                                       \
-    return RunFunction(my_context, my_client_cb_fct_##A, 6, ssl, hint, identity, id_len, psk, psk_len);                 \
+    return RunFunctionFmt(my_client_cb_fct_##A, "pppupu", ssl, hint, identity, id_len, psk, psk_len);                 \
 }
 SUPER()
 #undef GO
@@ -215,12 +215,86 @@ static void* find_client_cb_Fct(void* fct)
     return NULL;
 }
 
+
+// server_cb
+#define GO(A)   \
+static uintptr_t my_server_cb_fct_##A = 0;                                                  \
+static uint32_t my_server_cb_##A(void* ssl, void* identity, void* psk, uint32_t psk_len)    \
+{                                                                                           \
+    return RunFunctionFmt(my_server_cb_fct_##A, "pppu", ssl, identity, psk, psk_len);    \
+}
+SUPER()
+#undef GO
+static void* find_server_cb_Fct(void* fct)
+{
+    if(!fct) return NULL;
+    void* p;
+    if((p = GetNativeFnc((uintptr_t)fct))) return p;
+    #define GO(A) if(my_server_cb_fct_##A == (uintptr_t)fct) return my_server_cb_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_server_cb_fct_##A == 0) {my_server_cb_fct_##A = (uintptr_t)fct; return my_server_cb_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for libSSL server_cb callback\n");
+    return NULL;
+}
+
+
+// use_session_cb
+#define GO(A)   \
+static uintptr_t my_use_session_cb_fct_##A = 0;                                                         \
+static uint32_t my_use_session_cb_##A(void* ssl, void* md, void* id, void* id_len, void* sess)          \
+{                                                                                                       \
+    return RunFunctionFmt(my_use_session_cb_fct_##A, "ppppp", ssl, md, id, id_len, sess);   \
+}
+SUPER()
+#undef GO
+static void* find_use_session_cb_Fct(void* fct)
+{
+    if(!fct) return NULL;
+    void* p;
+    if((p = GetNativeFnc((uintptr_t)fct))) return p;
+    #define GO(A) if(my_use_session_cb_fct_##A == (uintptr_t)fct) return my_use_session_cb_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_use_session_cb_fct_##A == 0) {my_use_session_cb_fct_##A = (uintptr_t)fct; return my_use_session_cb_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for libSSL use_session_cb callback\n");
+    return NULL;
+}
+
+// sess
+#define GO(A)   \
+static uintptr_t my_sess_fct_##A = 0;                                   \
+static uint32_t my_sess_##A(void* ssl, void* sess)                      \
+{                                                                       \
+    return RunFunctionFmt(my_sess_fct_##A, "pp", ssl, sess);\
+}
+SUPER()
+#undef GO
+static void* find_sess_Fct(void* fct)
+{
+    if(!fct) return NULL;
+    void* p;
+    if((p = GetNativeFnc((uintptr_t)fct))) return p;
+    #define GO(A) if(my_sess_fct_##A == (uintptr_t)fct) return my_sess_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_sess_fct_##A == 0) {my_sess_fct_##A = (uintptr_t)fct; return my_sess_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for libSSL sess callback\n");
+    return NULL;
+}
+
 // proto_select
 #define GO(A)   \
 static uintptr_t my_proto_select_fct_##A = 0;                                                           \
 static int my_proto_select_##A(void* s, void* out, void* outlen, void* in, uint32_t inlen, void* arg)   \
 {                                                                                                       \
-    return (int)RunFunction(my_context, my_proto_select_fct_##A, 6, s, out, outlen, in, inlen, arg);    \
+    return (int)RunFunctionFmt(my_proto_select_fct_##A, "ppppup", s, out, outlen, in, inlen, arg);    \
 }
 SUPER()
 #undef GO
@@ -244,7 +318,7 @@ static void* find_proto_select_Fct(void* fct)
 static uintptr_t my_client_cert_fct_##A = 0;                                    \
 static int my_client_cert_##A(void* a, void* b, void* c)                        \
 {                                                                               \
-    return (int)RunFunction(my_context, my_client_cert_fct_##A, 3, a, b, c);    \
+    return (int)RunFunctionFmt(my_client_cert_fct_##A, "ppp", a, b, c);    \
 }
 SUPER()
 #undef GO
@@ -263,12 +337,61 @@ static void* find_client_cert_Fct(void* fct)
     return NULL;
 }
 
+// cookie_generate
+#define GO(A)   \
+static uintptr_t my_cookie_generate_fct_##A = 0;            \
+static int my_cookie_generate_##A(void* a, void* b, void* c)\
+{                                                           \
+    return (int)RunFunctionFmt(my_cookie_generate_fct_##A, "ppp", a, b, c); \
+}
+SUPER()
+#undef GO
+static void* find_cookie_generate_Fct(void* fct)
+{
+    if(!fct) return NULL;
+    void* p;
+    if((p = GetNativeFnc((uintptr_t)fct))) return p;
+    #define GO(A) if(my_cookie_generate_fct_##A == (uintptr_t)fct) return my_cookie_generate_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_cookie_generate_fct_##A == 0) {my_cookie_generate_fct_##A = (uintptr_t)fct; return my_cookie_generate_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for libSSL cookie_generate callback\n");
+    return NULL;
+}
+
+
+// cookie_verify
+#define GO(A)   \
+static uintptr_t my_cookie_verify_fct_##A = 0;                  \
+static int my_cookie_verify_##A(void* a, void* b, uint32_t c)   \
+{                                                               \
+    return (int)RunFunctionFmt(my_cookie_verify_fct_##A, "ppu", a, b, c);   \
+}
+SUPER()
+#undef GO
+static void* find_cookie_verify_Fct(void* fct)
+{
+    if(!fct) return NULL;
+    void* p;
+    if((p = GetNativeFnc((uintptr_t)fct))) return p;
+    #define GO(A) if(my_cookie_verify_fct_##A == (uintptr_t)fct) return my_cookie_verify_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_cookie_verify_fct_##A == 0) {my_cookie_verify_fct_##A = (uintptr_t)fct; return my_cookie_verify_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for libSSL cookie_verify callback\n");
+    return NULL;
+}
+
 // alpn_select
 #define GO(A)   \
 static uintptr_t my_alpn_select_fct_##A = 0;                                            \
 static int my_alpn_select_##A(void* a, void* b, void* c, void* d, uint32_t e, void* f)  \
 {                                                                                       \
-    return (int)RunFunction(my_context, my_alpn_select_fct_##A, 6, a, b, c, d, e, f);   \
+    return (int)RunFunctionFmt(my_alpn_select_fct_##A, "ppppup", a, b, c, d, e, f);   \
 }
 SUPER()
 #undef GO
@@ -331,6 +454,24 @@ EXPORT void my_SSL_set_psk_client_callback(x64emu_t* emu, void* ctx, void* cb)
     my->SSL_set_psk_client_callback(ctx, find_client_cb_Fct(cb));
 }
 
+EXPORT void my_SSL_set_psk_server_callback(x64emu_t* emu, void* ctx, void* cb)
+{
+    (void)emu;
+    my->SSL_set_psk_server_callback(ctx, find_client_cb_Fct(cb));
+}
+
+EXPORT void my_SSL_set_psk_use_session_callback(x64emu_t* emu, void* ctx, void* cb)
+{
+    (void)emu;
+    my->SSL_set_psk_use_session_callback(ctx, find_use_session_cb_Fct(cb));
+}
+
+EXPORT void my_SSL_CTX_sess_set_new_cb(x64emu_t* emu, void* ctx, void* cb)
+{
+    (void)emu;
+    my->SSL_CTX_sess_set_new_cb(ctx, find_sess_Fct(cb));
+}
+
 EXPORT void my_SSL_CTX_set_next_proto_select_cb(x64emu_t* emu, void* ctx, void* cb, void* arg)
 {
     (void)emu;
@@ -353,6 +494,18 @@ EXPORT void my_SSL_CTX_set_client_cert_cb(x64emu_t* emu, void* ctx, void* cb)
 {
     (void)emu;
     my->SSL_CTX_set_client_cert_cb(ctx, find_client_cert_Fct(cb));
+}
+
+EXPORT void my_SSL_CTX_set_cookie_generate_cb(x64emu_t* emu, void* ctx, void* cb)
+{
+    (void)emu;
+    my->SSL_CTX_set_cookie_generate_cb(ctx, find_cookie_generate_Fct(cb));
+}
+
+EXPORT void my_SSL_CTX_set_cookie_verify_cb(x64emu_t* emu, void* ctx, void* cb)
+{
+    (void)emu;
+    my->SSL_CTX_set_cookie_verify_cb(ctx, find_cookie_verify_Fct(cb));
 }
 
 EXPORT void my_SSL_CTX_set_alpn_select_cb(x64emu_t* emu, void* ctx, void* f ,void* arg)

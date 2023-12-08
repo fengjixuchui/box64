@@ -13,7 +13,7 @@
 #include "myalign.h"
 #include "debug.h"
 
-static int regs_abi[] = {_DI, _SI, _DX, _CX, _R8, _R9};
+static const int regs_abi[] = {_DI, _SI, _DX, _CX, _R8, _R9};
 
 void myStackAlign(x64emu_t* emu, const char* fmt, uint64_t* st, uint64_t* mystack, int xmm, int pos)
 {
@@ -717,7 +717,7 @@ void myStackAlignValist(x64emu_t* emu, const char* fmt, uint64_t* mystack, x64_v
             case 15:    //%zg, meh.. double?
                 if(fprs<X64_VA_MAX_XMM) {
                     *mystack = area[fprs/8];
-                    fprs+=8;
+                    fprs+=16;
                     mystack++;
                 } else {
                     *mystack = *st;
@@ -862,7 +862,7 @@ void myStackAlignWValist(x64emu_t* emu, const char* fmt, uint64_t* mystack, x64_
             case 15:    //%zg, meh .. double
                 if(fprs<X64_VA_MAX_XMM) {
                     *mystack = area[fprs/8];
-                    fprs+=8;
+                    fprs+=16;
                     mystack++;
                 } else {
                     *mystack = *st;

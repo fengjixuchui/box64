@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <math.h>
+#include <fenv.h>
 #include "regs.h"
 #include "x64run_private.h"
 #include "debug.h"
@@ -108,8 +109,13 @@ static inline double fpu_round(x64emu_t* emu, double d) {
     if (!isfinite(d))
         return d;
     switch(emu->cw.f.C87_RD) {
-        case ROUND_Nearest:
-            return nearbyint(d);
+        case ROUND_Nearest: {
+            int round = fegetround();
+            fesetround(FE_TONEAREST);
+            double res = nearbyint(d);
+            fesetround(round);
+            return res;
+        }
         case ROUND_Down:
             return floor(d);
         case ROUND_Up:
@@ -129,14 +135,14 @@ static inline void fpu_fxam(x64emu_t* emu) {
         return;
     }
     if(isinf(ST0.d)) 
-    {  // TODO: Unsuported and denormal not analysed...
+    {  // TODO: Unsupported and denormal not analysed...
         emu->sw.f.F87_C3 = 0;
         emu->sw.f.F87_C2 = 1;
         emu->sw.f.F87_C0 = 1;
         return;
     }
     if(isnan(ST0.d))
-    {  // TODO: Unsuported and denormal not analysed...
+    {  // TODO: Unsupported and denormal not analysed...
         emu->sw.f.F87_C3 = 0;
         emu->sw.f.F87_C2 = 0;
         emu->sw.f.F87_C0 = 1;
@@ -159,7 +165,7 @@ static inline void fpu_fxam(x64emu_t* emu) {
 static inline void fpu_ftst(x64emu_t* emu) {
     emu->sw.f.F87_C1 = 0;
     if(isinf(ST0.d) || isnan(ST0.d)) 
-    {  // TODO: Unsuported and denormal not analysed...
+    {  // TODO: Unsupported and denormal not analysed...
         emu->sw.f.F87_C3 = 1;
         emu->sw.f.F87_C2 = 1;
         emu->sw.f.F87_C0 = 1;

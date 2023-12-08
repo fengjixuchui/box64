@@ -56,10 +56,11 @@ uintptr_t Run66(x64emu_t *emu, rex_t rex, int rep, uintptr_t addr)
     }
 
     rex.rex = 0;
-    while(opcode>=0x40 && opcode<=0x4f) {
-        rex.rex = opcode;
-        opcode = F8;
-    }
+    if(!rex.is32bits)
+        while(opcode>=0x40 && opcode<=0x4f) {
+            rex.rex = opcode;
+            opcode = F8;
+        }
 
     switch(opcode) {
     #define GO(B, OP)                                               \
@@ -91,7 +92,7 @@ uintptr_t Run66(x64emu_t *emu, rex_t rex, int rep, uintptr_t addr)
         if(rex.w)                                                   \
             GW->q[0] = OP##64(emu, GW->q[0], EW->q[0]);             \
         else                                                        \
-        GW->word[0] = OP##16(emu, GW->word[0], EW->word[0]);        \
+            GW->word[0] = OP##16(emu, GW->word[0], EW->word[0]);    \
         break;                                                      \
     case B+4:                                                       \
         R_AL = OP##8(emu, R_AL, F8);                                \
@@ -111,12 +112,55 @@ uintptr_t Run66(x64emu_t *emu, rex_t rex, int rep, uintptr_t addr)
     GO(0x28, sub)                   /* SUB 0x29 ~> 0x2D */
     GO(0x30, xor)                   /* XOR 0x31 ~> 0x35 */
 
+    case 0x06:                      /* PUSH ES */
+        if(!rex.is32bits) {
+            return 0;
+        }
+        Push32(emu, emu->segs[_ES]);  // even if a segment is a 16bits, a 32bits push/pop is done
+        break;
+    case 0x07:                      /* POP ES */
+        if(!rex.is32bits) {
+            return 0;
+        }
+        emu->segs[_ES] = Pop32(emu);    // no check, no use....
+        emu->segs_serial[_ES] = 0;
+        break;
+
     case 0x0F:                              /* more opcdes */
-        #ifdef TEST_INTERPRETER
-        return Test660F(test, rex, addr);
-        #else
-        return Run660F(emu, rex, addr);
-        #endif
+        switch(rep) {
+            case 0:
+                #ifdef TEST_INTERPRETER
+                return Test660F(test, rex, addr);
+                #else
+                return Run660F(emu, rex, addr);
+                #endif
+            case 1:
+                #ifdef TEST_INTERPRETER
+                return Test66F20F(test, rex, addr);
+                #else
+                return Run66F20F(emu, rex, addr);
+                #endif
+            case 2:
+                #ifdef TEST_INTERPRETER
+                return Test66F30F(test, rex, addr);
+                #else
+                return Run66F30F(emu, rex, addr);
+                #endif
+        }
+
+        case 0x1E:                      /* PUSH DS */
+            if(!rex.is32bits) {
+                return 0;
+            }
+            Push32(emu, emu->segs[_DS]);  // even if a segment is a 16bits, a 32bits push/pop is done
+            break;
+        case 0x1F:                      /* POP DS */
+            if(!rex.is32bits) {
+                return 0;
+            }
+            emu->segs[_DS] = Pop32(emu);    // no check, no use....
+            emu->segs_serial[_DS] = 0;
+            break;
 
     case 0x39:
         nextop = F8;
@@ -141,6 +185,86 @@ uintptr_t Run66(x64emu_t *emu, rex_t rex, int rep, uintptr_t addr)
             cmp64(emu, R_RAX, F32S64);
         else
             cmp16(emu, R_AX, F16);
+        break;
+
+    case 0x40:
+    case 0x41:
+    case 0x42:
+    case 0x43:
+    case 0x44:
+    case 0x45:
+    case 0x46:
+    case 0x47:                              /* INC Reg (32bits only) */
+        tmp8u = opcode&7;
+        emu->regs[tmp8u].word[0] = inc16(emu, emu->regs[tmp8u].word[0]);
+        break;
+    case 0x48:
+    case 0x49:
+    case 0x4A:
+    case 0x4B:
+    case 0x4C:
+    case 0x4D:
+    case 0x4E:
+    case 0x4F:                              /* DEC Reg (32bits only) */
+        tmp8u = opcode&7;
+        emu->regs[tmp8u].word[0] = dec16(emu, emu->regs[tmp8u].word[0]);
+        break;
+    case 0x50:
+    case 0x51:
+    case 0x52:
+    case 0x53:
+    case 0x54:
+    case 0x55:
+    case 0x56:
+    case 0x57:                      /* PUSH Reg */
+        if(rex.is32bits) {
+            tmp16u = emu->regs[opcode&7].word[0];
+            Push16(emu, tmp16u);
+        } else
+            return 0;
+        break;
+    case 0x58:
+    case 0x59:
+    case 0x5A:
+    case 0x5B:
+    case 0x5C:                      /* POP ESP */
+    case 0x5D:
+    case 0x5E:
+    case 0x5F:                      /* POP Reg */
+        if(rex.is32bits) {
+            tmp8u = opcode&7;
+            emu->regs[tmp8u].word[0] = Pop16(emu);
+        } else
+            return 0;
+        break;
+    case 0x60:                              /* PUSHA */
+        if(rex.is32bits) {
+            tmp16u = R_SP;
+            Push16(emu, R_AX);
+            Push16(emu, R_CX);
+            Push16(emu, R_DX);
+            Push16(emu, R_BX);
+            Push16(emu, tmp16u);
+            Push16(emu, R_BP);
+            Push16(emu, R_SI);
+            Push16(emu, R_DI);
+        } else {
+            return 0;
+        }
+        break;
+    case 0x61:                              /* POPA */
+        if(rex.is32bits) {
+            R_DI = Pop16(emu);
+            R_SI = Pop16(emu);
+            R_BP = Pop16(emu);
+            R_ESP+=2;   // POP ESP
+            R_BX = Pop16(emu);
+            R_DX = Pop16(emu);
+            R_CX = Pop16(emu);
+            R_AX = Pop16(emu);
+        } else {
+            return 0;
+        }
         break;
 
     case 0x64:                              /* FS: */
@@ -283,28 +407,33 @@ uintptr_t Run66(x64emu_t *emu, rex_t rex, int rep, uintptr_t addr)
         else
             GD->word[0] = (uint16_t)tmp64u;
         break;
+    case 0x8E:                               /* MOV Seg,Ew */
+        nextop = F8;
+        GETEW(0);
+        emu->segs[((nextop&0x38)>>3)] = EW->word[0];
+        emu->segs_serial[((nextop&0x38)>>3)] = 0;
+        break;
 
-        case 0x90:                      /* NOP or XCHG R8d, AX*/
-        case 0x91:
-        case 0x92:
-        case 0x93:
-        case 0x94:
-        case 0x95:
-        case 0x96:
-        case 0x97:                      /* XCHG reg,AX */
-            tmp8u = _AX+(opcode&7)+(rex.b<<3);
-            if(tmp8u!=_AX) {
-                if(rex.w) {
-                    tmp64u = R_RAX;
-                    R_RAX = emu->regs[tmp8u].q[0];
-                    emu->regs[tmp8u].q[0] = tmp64u;
-                } else {
-                    tmp16u = R_AX;
-                    R_AX = emu->regs[tmp8u].word[0];
-                    emu->regs[tmp8u].word[0] = tmp16u;
-                }
+    case 0x90:                      /* NOP or XCHG R8d, AX*/
+    case 0x91:
+    case 0x92:
+    case 0x93:
+    case 0x94:
+    case 0x95:
+    case 0x96:
+    case 0x97:                      /* XCHG reg,AX */
+        tmp8u = _AX+(opcode&7)+(rex.b<<3);
+        if(tmp8u!=_AX) {
+            if(rex.w) {
+                tmp64u = R_RAX;
+                R_RAX = emu->regs[tmp8u].q[0];
+                emu->regs[tmp8u].q[0] = tmp64u;
+            } else {
+                tmp16u = R_AX;
+                R_AX = emu->regs[tmp8u].word[0];
+                emu->regs[tmp8u].word[0] = tmp16u;
             }
-            break;
+        }
         break;
 
     case 0x98:                               /* CBW */
@@ -314,18 +443,36 @@ uintptr_t Run66(x64emu_t *emu, rex_t rex, int rep, uintptr_t addr)
         R_DX=((R_AX & 0x8000)?0xFFFF:0x0000);
         break;
 
+    case 0x9C:                              /* PUSHFW */
+        CHECK_FLAGS(emu);
+        Push16(emu, (uint16_t)emu->eflags.x64);
+        break;
+    case 0x9D:                              /* POPFW */
+        CHECK_FLAGS(emu);
+        emu->eflags.x64 &=0xffff0000;
+        emu->eflags.x64 |= (Pop16(emu) & 0x3F7FD7) | 0x2;
+        break;
+
     case 0xA1:                      /* MOV EAX,Od */
-        if(rex.w)
-            R_RAX = *(uint64_t*)F64;
-        else
-            R_AX = *(uint16_t*)F64;
+        if(rex.is32bits) {
+            R_AX = *(uint16_t*)(uintptr_t)F32;
+        } else {
+            if(rex.w)
+                R_RAX = *(uint64_t*)F64;
+            else
+                R_AX = *(uint16_t*)F64;
+        }
         break;
 
     case 0xA3:                      /* MOV Od,EAX */
-        if(rex.w)
-            *(uint64_t*)F64 = R_RAX;
-        else
-            *(uint16_t*)F64 = R_AX;
+        if(rex.is32bits) {
+            *(uint16_t*)(uintptr_t)F32 = R_AX;
+        } else {
+            if(rex.w)
+                *(uint64_t*)F64 = R_RAX;
+            else
+                *(uint16_t*)F64 = R_AX;
+        }
         break;
 
     case 0xA5:              /* (REP) MOVSW */
@@ -414,14 +561,12 @@ uintptr_t Run66(x64emu_t *emu, rex_t rex, int rep, uintptr_t addr)
                 break;
             default:
                 if(rex.w) {
-                    tmp8s = ACCESS_FLAG(F_DF)?-8:+8;
                     tmp64u  = *(uint64_t*)R_RDI;
                     tmp64u2 = *(uint64_t*)R_RSI;
                     R_RDI += tmp8s;
                     R_RSI += tmp8s;
                     cmp64(emu, tmp64u2, tmp64u);
                 } else {
-                    tmp8s = ACCESS_FLAG(F_DF)?-2:+2;
                     tmp16u  = *(uint16_t*)R_RDI;
                     tmp16u2 = *(uint16_t*)R_RSI;
                     R_RDI += tmp8s;
@@ -485,7 +630,7 @@ uintptr_t Run66(x64emu_t *emu, rex_t rex, int rep, uintptr_t addr)
             R_RCX = tmp64u;
         break;
 
-    case 0xAF:                      /* (REPZ/REPNE) SCASD */
+    case 0xAF:                      /* (REPZ/REPNE) SCASW */
         if(rex.w)
             tmp8s = ACCESS_FLAG(F_DF)?-8:+8;
         else
@@ -647,7 +792,10 @@ uintptr_t Run66(x64emu_t *emu, rex_t rex, int rep, uintptr_t addr)
 
     case 0xE8:                              /* CALL Id */
         tmp32s = F32S; // call is relative
-        Push(emu, addr);
+        if(rex.is32bits)
+            Push32(emu, addr);
+        else
+            Push64(emu, addr);
         addr += tmp32s;
         break;
 
@@ -726,7 +874,6 @@ uintptr_t Run66(x64emu_t *emu, rex_t rex, int rep, uintptr_t addr)
     case 0xFF:                      /* GRP 5 Ew */
         nextop = F8;
         GETEW(0);
-        GETGW;
         switch((nextop>>3)&7) {
             case 0:                 /* INC Ed */
                 EW->word[0] = inc16(emu, EW->word[0]);
@@ -735,13 +882,21 @@ uintptr_t Run66(x64emu_t *emu, rex_t rex, int rep, uintptr_t addr)
                 EW->word[0] = dec16(emu, EW->word[0]);
                 break;
             case 2:                 /* CALL NEAR Ed */
-                tmp64u = (uintptr_t)getAlternate((void*)ED->q[0]);
-                Push(emu, addr);
+                if(rex.is32bits) {
+                    tmp64u = (uintptr_t)getAlternate((void*)(uintptr_t)ED->dword[0]);
+                    Push32(emu, addr);
+                } else {
+                    tmp64u = (uintptr_t)getAlternate((void*)ED->q[0]);
+                    Push64(emu, addr);
+                }
                 addr = tmp64u;
                 break;
-           /*case 6:
-                Push16(emu, EW->word[0]);
-                break;*/
+           case 6:                  /* Push Ew */
+                if(rex.is32bits) {
+                    Push16(emu, EW->word[0]);
+                } else 
+                    return 0;
+                break;
             default:
                     printf_log(LOG_NONE, "Illegal Opcode %p: 66 %02X %02X %02X %02X %02X %02X\n",(void*)R_RIP, opcode, nextop, PK(2), PK(3), PK(4), PK(5));
                     emu->quit=1;

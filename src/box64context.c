@@ -68,6 +68,8 @@ void free_tlsdatasize(void* p)
     tlsdatasize_t *data = (tlsdatasize_t*)p;
     box_free(data->ptr);
     box_free(p);
+    if(my_context)
+        pthread_setspecific(my_context->tlskey, NULL);
 }
 
 void x64Syscall(x64emu_t *emu);
@@ -76,7 +78,7 @@ int unlockMutex()
 {
     int ret = unlockCustommemMutex();
     int i;
-    #ifdef DYNAREC
+    #ifdef USE_CUSTOM_MUTEX
     uint32_t tid = (uint32_t)GetTID();
     #define GO(A, B)                    \
         i = (native_lock_storeifref2_d(&A, 0, tid)==tid); \
@@ -138,11 +140,23 @@ static void init_mutexes(box64context_t* context)
 
     pthread_mutexattr_destroy(&attr);
 #else
+    #ifdef USE_CUSTOM_MUTEX
     native_lock_store(&context->mutex_trace, 0);
     native_lock_store(&context->mutex_tls, 0);
     native_lock_store(&context->mutex_thread, 0);
     native_lock_store(&context->mutex_bridge, 0);
     native_lock_store(&context->mutex_dyndump, 0);
+    #else
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK);
+    pthread_mutex_init(&context->mutex_trace, &attr);
+    pthread_mutex_init(&context->mutex_tls, &attr);
+    pthread_mutex_init(&context->mutex_thread, &attr);
+    pthread_mutex_init(&context->mutex_bridge, &attr);
+    pthread_mutex_init(&context->mutex_dyndump, &attr);
+    pthread_mutexattr_destroy(&attr);
+    #endif
     pthread_mutex_init(&context->mutex_lock, NULL);
 #endif
 }
@@ -201,6 +215,7 @@ box64context_t *NewBox64Context(int argc)
     context->local_maplib = NewLibrarian(context, 1);
     context->versym = NewDictionnary();
     context->system = NewBridge();
+    // Cannot use Bridge name as the map is not initialized yet
     // create vsyscall
     context->vsyscall = AddBridge(context->system, vFEv, x64Syscall, 0, NULL);
     // create the vsyscalls
@@ -211,6 +226,8 @@ box64context_t *NewBox64Context(int argc)
     addAlternate((void*)0xffffffffff600000, (void*)context->vsyscalls[0]);
     addAlternate((void*)0xffffffffff600400, (void*)context->vsyscalls[1]);
     addAlternate((void*)0xffffffffff600800, (void*)context->vsyscalls[2]);
+    // create exit bridge
+    context->exit_bridge = AddBridge(context->system, NULL, NULL, 0, NULL);
     // get handle to box64 itself
     context->box64lib = dlopen(NULL, RTLD_NOW|RTLD_GLOBAL);
     context->dlprivate = NewDLPrivate();
@@ -227,6 +244,24 @@ box64context_t *NewBox64Context(int argc)
     for (int i=0; i<8; ++i) context->canary[i] = 1 +  getrand(255);
     context->canary[getrand(4)] = 0;
     printf_log(LOG_DEBUG, "Setting up canary (for Stack protector) at FS:0x28, value:%08X\n", *(uint32_t*)context->canary);
+
+    // init segments
+    for(int i=0; i<16; i++) {
+        context->segtls[i].limit = (uintptr_t)-1LL;
+    }
+    context->segtls[10].key_init = 0;    // 0x53 selector
+    context->segtls[10].present = 1;
+    context->segtls[8].key_init = 0;    // 0x43 selector
+    context->segtls[8].present = 1;
+    context->segtls[6].key_init = 0;    // 0x33 selector
+    context->segtls[6].present = 1;
+    context->segtls[5].key_init = 0;    // 0x2b selector
+    context->segtls[5].present = 1;
+    context->segtls[4].key_init = 0;    // 0x23 selector
+    context->segtls[4].present = 1;
+    context->segtls[4].is32bits = 1;
+
+    context->globdata = NewMapSymbols();
 
     initAllHelpers(context);
 
@@ -245,6 +280,7 @@ void FreeBox64Context(box64context_t** context)
 
     box64context_t* ctx = *context;   // local copy to do the cleanning
 
+    //clean_current_emuthread();    // cleaning main thread seems a bad idea
     if(ctx->local_maplib)
         FreeLibrarian(&ctx->local_maplib, NULL);
     if(ctx->maplib)
@@ -262,6 +298,8 @@ void FreeBox64Context(box64context_t** context)
     // stop trace now
     if(ctx->dec)
         DeleteX64TraceDecoder(&ctx->dec);
+    if(ctx->dec32)
+        DeleteX86TraceDecoder(&ctx->dec32);
     if(ctx->zydis)
         DeleteX64Trace(ctx);
 
@@ -307,7 +345,6 @@ void FreeBox64Context(box64context_t** context)
     void* ptr;
     if ((ptr = pthread_getspecific(ctx->tlskey)) != NULL) {
         free_tlsdatasize(ptr);
-        pthread_setspecific(ctx->tlskey, NULL);
     }
     pthread_key_delete(ctx->tlskey);
 
@@ -319,6 +356,8 @@ void FreeBox64Context(box64context_t** context)
 
     if(ctx->emu_sig)
         FreeX64Emu(&ctx->emu_sig);
+
+    FreeMapSymbols(&ctx->globdata);
 
     finiAllHelpers(ctx);
 
