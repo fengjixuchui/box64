@@ -206,7 +206,7 @@ static void autobridge_##NAME##_##A(wrapper_t W, void* fct)         \
         return;                                                     \
     Dl_info info;                                                   \
     if(dladdr(fct, &info))                                          \
-        AddAutomaticBridge(thread_get_emu(), my_bridge, W, fct, 0, #NAME "_" #A); \
+        AddAutomaticBridge(my_bridge, W, fct, 0, #NAME "_" #A); \
 }
 
 #define WRAPPER(A, NAME, RET, DEF, FMT, ...)        \
@@ -4418,6 +4418,48 @@ static void bridgeGstVideoFilterInstance(my_GstVideoFilter_t* class)
 {
     bridgeGstBaseTransformInstance(&class->parent);
 }
+// ----- GstAudioFilterClass ------
+// wrapper x86 -> natives of callbacks
+WRAPPER(GstAudioFilter, setup, int, (void* filter, void* info), "pp", filter, info);
+
+#define SUPERGO()       \
+    GO(setup, iFpp);    \
+
+// wrap (so bridge all calls, just in case)
+static void wrapGstAudioFilterClass(my_GstAudioFilterClass_t* class)
+{
+    wrapGstBaseTransformClass(&class->parent_class);
+    #define GO(A, W) class->A = reverse_##A##_GstAudioFilter (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+// unwrap (and use callback if not a native call anymore)
+static void unwrapGstAudioFilterClass(my_GstAudioFilterClass_t* class)
+{
+    unwrapGstBaseTransformClass(&class->parent_class);
+    #define GO(A, W)   class->A = find_##A##_GstAudioFilter (class->A)
+    SUPERGO()
+    #undef GO
+}
+// autobridge
+static void bridgeGstAudioFilterClass(my_GstAudioFilterClass_t* class)
+{
+    bridgeGstBaseTransformClass(&class->parent_class);
+    #define GO(A, W) autobridge_##A##_GstAudioFilter (W, class->A)
+    SUPERGO()
+    #undef GO
+}
+#undef SUPERGO
+
+static void unwrapGstAudioFilterInstance(my_GstAudioFilter_t* class)
+{
+    unwrapGstBaseTransformInstance(&class->parent);
+}
+// autobridge
+static void bridgeGstAudioFilterInstance(my_GstAudioFilter_t* class)
+{
+    bridgeGstBaseTransformInstance(&class->parent);
+}
 // ----- GDBusProxyClass ------
 // wrapper x86 -> natives of callbacks
 WRAPPER(GDBusProxy, g_properties_changed, void, (void* proxy, void* changed_properties, const char* const* invalidated_properties), "ppp", proxy, changed_properties, invalidated_properties);
@@ -4543,7 +4585,7 @@ static void wrapGTKClass(void* cl, size_t type)
     GTKCLASSES()
     if(type==8) {}  // GInterface have no structure
     else {
-        if(my_MetaFrames2==-1 && !strcmp(g_type_name(type), "MetaFrames")) {
+        if(my_MetaFrames2==(size_t)-1 && !strcmp(g_type_name(type), "MetaFrames")) {
             my_MetaFrames2 = type;
             wrapMetaFrames2Class((my_MetaFrames2Class_t*)cl);
         } else
@@ -4781,7 +4823,7 @@ void* wrapCopyGTKClass(void* klass, size_t type)
     GTKCLASSES()
     if(type==8) {}  // GInterface have no structure
     else {
-        if(my_MetaFrames2==-1 && !strcmp(g_type_name(type), "MetaFrames")) {
+        if(my_MetaFrames2==(size_t)-1 && !strcmp(g_type_name(type), "MetaFrames")) {
             my_MetaFrames2 = type;
             sz = sizeof(my_MetaFrames2Class_t);
         } else {
@@ -4791,6 +4833,7 @@ void* wrapCopyGTKClass(void* klass, size_t type)
     }
     #undef GTKIFACE
     #undef GTKCLASS
+    (void)sz;
     bridgeGTKClass(klass, type);
     return klass;
 }
@@ -4811,7 +4854,7 @@ void* wrapCopyGTKInterface(void* iface, size_t type)
     GTKCLASSES()
     if(type==8) {}  // GInterface have no structure
     else {
-        if(my_MetaFrames2==-1 && !strcmp(g_type_name(type), "MetaFrames")) {
+        if(my_MetaFrames2==(size_t)-1 && !strcmp(g_type_name(type), "MetaFrames")) {
             my_MetaFrames2 = type;
             sz = sizeof(my_MetaFrames2Class_t);
         } else {
@@ -4821,6 +4864,7 @@ void* wrapCopyGTKInterface(void* iface, size_t type)
     }
     #undef GTKIFACE
     #undef GTKCLASS
+    (void)sz;
     bridgeGTKInterface(iface, type);
     return iface;
 }
@@ -5455,11 +5499,11 @@ void AutoBridgeGtk(void*(*ref)(size_t), void(*unref)(void*))
 {
     void* p;
     #define GTKIFACE(A)
-    #define GTKCLASS(A)             \
-    if(my_##A && my_##A!=-1) {      \
-        p = ref(my_##A);            \
-        bridgeGTKClass(p, my_##A);  \
-        unref(p);                   \
+    #define GTKCLASS(A)                \
+    if(my_##A && my_##A!=(size_t)-1) { \
+        p = ref(my_##A);               \
+        bridgeGTKClass(p, my_##A);     \
+        unref(p);                      \
     }
     GTKCLASSES()
     #undef GTKIFACE

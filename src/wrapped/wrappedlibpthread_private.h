@@ -138,7 +138,11 @@ GOM(pthread_key_create, iFEpp)
 GOM(pthread_key_delete, iFEL)
 GO2(pthread_kill@GLIBC_2.2.5, iFEpi, my_pthread_kill_old)
 GOM(pthread_kill, iFEpi)
+#ifndef STATICBUILD
 GO(pthread_kill_other_threads_np, vFv)
+#else
+//GO(pthread_kill_other_threads_np, vFv)
+#endif
 #ifdef NOALIGN
 GO(__pthread_mutexattr_destroy, iFp)
 GO(pthread_mutexattr_destroy, iFp)
@@ -207,10 +211,10 @@ GOM(__pthread_register_cancel, vFEp)
 //GO(__pthread_register_cancel_defer, 
 GO(pthread_rwlockattr_destroy, vFp)
 GO(pthread_rwlockattr_getkind_np, iFpp)
-//GO(pthread_rwlockattr_getpshared, 
+GO(pthread_rwlockattr_getpshared, iFpi)
 GO(pthread_rwlockattr_init, iFp)
 GO(pthread_rwlockattr_setkind_np, iFpi)
-//GO(pthread_rwlockattr_setpshared, 
+GO(pthread_rwlockattr_setpshared, iFpi)
 //GO(__pthread_rwlock_destroy, 
 GO(pthread_rwlock_destroy, iFp)
 GO(__pthread_rwlock_init, iFpp)

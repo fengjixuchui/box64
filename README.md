@@ -62,7 +62,7 @@ Note that many installer (mojo setup based) will fall back to "x86" when detecti
 Notes about Box64 configuration
 ----
 
-Box64 now have configurations files. There are 2 files loaded. `/etc/box4.box64rc` and `~/.box64rc`. Both files have the same syntax, and is basicaly an ini files. Section in square brakets define the process name, and the rest is the env. var. to set. Looke at [Usage](USAGE.md) for detail on what parameters can be put. Box64 comes with a default file that should be installed for better stability. The file in in `system/box64.box64rc` and should be installed to `/etc/box64.box64rc` If, for some reason, you don't want to install that file here, at least copy it to `~/.box64rc` or some game may not function correctly.
+Box64 now have configurations files. There are 2 files loaded. `/etc/box64.box64rc` and `~/.box64rc`. Both files have the same syntax, and is basicaly an ini files. Section in square brakets define the process name, and the rest is the env. var. to set. Looke at [Usage](USAGE.md) for detail on what parameters can be put. Box64 comes with a default file that should be installed for better stability. The file in in `system/box64.box64rc` and should be installed to `/etc/box64.box64rc` If, for some reason, you don't want to install that file here, at least copy it to `~/.box64rc` or some game may not function correctly.
 Note that the priority is: `~/.box64rc` > `/etc/box64.box64rc` > command line
 So, your settings in `~/.box64rc` may override the setting from your command line...
 
@@ -112,10 +112,10 @@ I want to thank everyone who has contributed to box64 development.
 There are many ways to contribute: code contribution, financial, hardware and advertisement!
 So, in no particular order, I want to thank:
  * For their major code contribution: rajdakin, mogery
- * For their major financial contribution: FlyingFathead, stormchaser3000, dennis1248, sll00, [libre-computer-project](https://libre.computer/)
+ * For their major financial contribution: FlyingFathead, stormchaser3000, dennis1248, sll00, [libre-computer-project](https://libre.computer/), [CubeCoders Limited](http://cubecoders.com/)
  * For hardware contribution and LoongArch migration: [xiaoji](https://www.linuxgame.cn/), Deepin Beijing Develop Team
  * For their major code contribution on the RV64 Dynarec: ksco, xctan
- * For their hardware contribution: [ADLINK](https://www.adlinktech.com/Products/Computer_on_Modules/COM-HPC-Server-Carrier-and-Starter-Kit/Ampere_Altra_Developer_Platform?lang=en) with [Ampere](https://amperecomputing.com/home/edge), [Radxa](https://rockpi.org/), [StarFive](https://rvspace.org/), [Pine64](https://www.pine64.org/)
+ * For their hardware contribution: [ADLINK](https://www.adlinktech.com/Products/Computer_on_Modules/COM-HPC-Server-Carrier-and-Starter-Kit/Ampere_Altra_Developer_Platform?lang=en) with [Ampere](https://amperecomputing.com/home/edge), [SOPHGO](https://www.sophon.ai/), [Radxa](https://rockpi.org/), [StarFive](https://rvspace.org/), [Pine64](https://www.pine64.org/), [AYN](https://www.ayntec.com/), [jiangcuo](https://github.com/jiangcuo)
  * For their continuous advertisements for the box64 project: salva ([microLinux](https://www.youtube.com/channel/UCwFQAEj1lp3out4n7BeBatQ)), [PILab](https://www.youtube.com/channel/UCgfQjdc5RceRlTGfuthBs7g)/[TwisterOS](https://twisteros.com/) team, [The Byteman](https://www.youtube.com/channel/UCEr8lpIJ3B5Ctc5BvcOHSnA), [NicoD](https://www.youtube.com/channel/UCpv7NFr0-9AB5xoklh3Snhg), ekianjo ([Boilingsteam](https://boilingsteam.com/))
 
 And I also thank the many other people who participated even once in this project.

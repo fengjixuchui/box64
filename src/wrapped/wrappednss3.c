@@ -141,6 +141,28 @@ static void* find_PORTCharConversionWSwapFunc_Fct(void* fct)
     printf_log(LOG_NONE, "Warning, no more slot for nss3 PORTCharConversionWSwapFunc callback\n");
     return NULL;
 }
+// NSS_ShutdownFunc ...
+#define GO(A)   \
+static uintptr_t my_NSS_ShutdownFunc_fct_##A = 0;                           \
+static int my_NSS_ShutdownFunc_##A(void* a, void* b)                        \
+{                                                                           \
+    return (int)RunFunctionFmt(my_NSS_ShutdownFunc_fct_##A, "pp", a, b);    \
+}
+SUPER()
+#undef GO
+static void* find_NSS_ShutdownFunc_Fct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_NSS_ShutdownFunc_fct_##A == (uintptr_t)fct) return my_NSS_ShutdownFunc_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_NSS_ShutdownFunc_fct_##A == 0) {my_NSS_ShutdownFunc_fct_##A = (uintptr_t)fct; return my_NSS_ShutdownFunc_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for nss3 NSS_ShutdownFunc callback\n");
+    return NULL;
+}
 
 #undef SUPER
 
@@ -206,11 +228,9 @@ EXPORT void my_PORT_SetUCS2_ASCIIConversionFunction(x64emu_t* emu, void* f)
     my->PORT_SetUCS2_ASCIIConversionFunction(find_PORTCharConversionWSwapFunc_Fct(f));
 }
 
-#define CUSTOM_INIT \
-    getMy(lib);
-
-#define CUSTOM_FINI \
-    freeMy();
+EXPORT int my_NSS_RegisterShutdown(x64emu_t* emu, void* f, void* data)
+{
+    return my->NSS_RegisterShutdown(find_NSS_ShutdownFunc_Fct(f), data);
+}
 
 #include "wrappedlib_init.h"
-

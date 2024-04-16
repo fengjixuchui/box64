@@ -57,7 +57,7 @@ GO(cupsCopyDest, iFpip)
 //GO(cupsCopyDestInfo, 
 //GO(_cupsCreateDest, 
 //GO(cupsCreateDestJob, 
-//GO(cupsCreateJob, 
+GO(cupsCreateJob, iFpppip)
 //DATA(_cups_debug_fd, 
 //DATA(_cups_debug_level, 
 //GO(cupsDirClose, 
@@ -106,8 +106,8 @@ GOM(cupsEnumDests, iFEuipuupp)
 //GO(cupsFindDestDefault, 
 //GO(cupsFindDestReady, 
 //GO(cupsFindDestSupported, 
-//GO(cupsFinishDestDocument, 
-//GO(cupsFinishDocument, 
+GO(cupsFinishDestDocument, iFppp)
+GO(cupsFinishDocument, iFpp)
 GO(cupsFreeDestInfo, vFp)
 GO(cupsFreeDests, vFip)
 GO(cupsFreeJobs, vFip)
@@ -231,8 +231,8 @@ GO(cupsSetDefaultDest, vFppip)
 //GO(_cupsSNMPStringToOID, 
 //GO(_cupsSNMPWalk, 
 //GO(_cupsSNMPWrite, 
-//GO(cupsStartDestDocument, 
-//GO(cupsStartDocument, 
+GO(cupsStartDestDocument, iFpppippipi)
+GO(cupsStartDocument, iFppippi)
 //GO(_cupsStrAlloc, 
 //GO(_cups_strcasecmp, 
 //GO(_cups_strcpy, 
@@ -259,7 +259,7 @@ GO(cupsSetDefaultDest, vFppip)
 //GO(cupsUTF32ToUTF8, 
 //GO(cupsUTF8ToCharset, 
 //GO(cupsUTF8ToUTF32, 
-//GO(cupsWriteRequestData, 
+GO(cupsWriteRequestData, iFppl)
 
 //GO(httpAcceptConnection, 
 //GO(httpAddCredential, 

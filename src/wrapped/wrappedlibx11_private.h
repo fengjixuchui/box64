@@ -409,7 +409,7 @@ GO(XGetOMValues, pFp)
 GO(dummy_XGetPixel, LFpii)     // for the wrapper
 GO(XGetPointerControl, iFpppp)
 GO(XGetPointerMapping, iFppi)
-GO(_XGetRequest, pFpuL)
+GOM(_XGetRequest, pFEpuL)
 GO(XGetRGBColormaps, iFpLppL)
 //GO(_XGetScanlinePad, 
 GO(XGetScreenSaver, iFppppp)
@@ -592,7 +592,7 @@ GO(XkbGetDeviceInfo, pFpuuuu)
 //GO(XkbGetDeviceLedInfo
 //GO(XkbGetGeometry
 //GO(XkbGetIndicatorMap
-//GO(XkbGetIndicatorState
+GO(XkbGetIndicatorState, iFpup)
 //GO(XkbGetKeyActions
 //GO(XkbGetKeyBehaviors
 GO(XkbGetKeyboard, pFpuu)
@@ -791,7 +791,7 @@ GO(XmbTextEscapement, iFppi)
 GO(XmbTextExtents, iFppipp)
 GO(XmbTextListToTextProperty, iFppiip)
 //GO(_XmbTextListToTextProperty, 
-//GO(XmbTextPerCharExtents
+GO(XmbTextPerCharExtents, iFppippppp)
 GO(XmbTextPropertyToTextList, iFpppp)
 //GO(_XmbTextPropertyToTextList, 
 GO(_Xmbtowc, iFppi)

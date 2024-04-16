@@ -20,7 +20,11 @@
 #include "gtkclass.h"
 #include "threads.h"
 
-const char* glib2Name = "libglib-2.0.so.0";
+#ifdef ANDROID
+    const char* glib2Name = "libglib-2.0.so";
+#else
+    const char* glib2Name = "libglib-2.0.so.0";
+#endif
 #define LIBNAME glib2
 
 typedef void  (*vFppip_t)(void*, void*, int, void*);
@@ -1439,12 +1443,4 @@ EXPORT void* my_g_once_impl(x64emu_t* emu, void* once, void* f, void* arg)
     if(box64_nogtk) \
         return -1;
 
-#define CUSTOM_INIT \
-    my_lib = lib;       \
-    getMy(lib);
-
-#define CUSTOM_FINI \
-    freeMy();
-
 #include "wrappedlib_init.h"
-

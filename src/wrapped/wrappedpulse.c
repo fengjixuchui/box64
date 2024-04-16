@@ -783,7 +783,7 @@ static void* find_io_new_Fct(void* fct)
 // io_enable
 #define GO(A)                                                   \
 static uintptr_t my_io_enable_fct_##A = 0;                      \
-static void* my_io_enable_##A(void* api, int events)            \
+static void my_io_enable_##A(void* api, int events)             \
 {                                                               \
     RunFunctionFmt(my_io_enable_fct_##A, "pi", api, events);    \
 }
@@ -805,7 +805,7 @@ static void* find_io_enable_Fct(void* fct)
 // io_free
 #define GO(A)                                   \
 static uintptr_t my_io_free_fct_##A = 0;        \
-static void* my_io_free_##A(void* e)            \
+static void my_io_free_##A(void* e)             \
 {                                               \
     RunFunctionFmt(my_io_free_fct_##A, "p", e); \
 }
@@ -871,7 +871,7 @@ static void* find_time_new_Fct(void* fct)
 // time_restart
 #define GO(A)                                               \
 static uintptr_t my_time_restart_fct_##A = 0;               \
-static void* my_time_restart_##A(void* e, void* t)          \
+static void my_time_restart_##A(void* e, void* t)           \
 {                                                           \
     RunFunctionFmt(my_time_restart_fct_##A, "pp", e, t);    \
 }
@@ -893,7 +893,7 @@ static void* find_time_restart_Fct(void* fct)
 // time_free
 #define GO(A)                                       \
 static uintptr_t my_time_free_fct_##A = 0;          \
-static void* my_time_free_##A(void* e)              \
+static void my_time_free_##A(void* e)               \
 {                                                   \
     RunFunctionFmt(my_time_free_fct_##A, "p", e);   \
 }
@@ -913,10 +913,10 @@ static void* find_time_free_Fct(void* fct)
     return NULL;
 }
 // time_set_destroy
-#define GO(A)                                                                                                                   \
-static uintptr_t my_time_set_destroy_fct_##A = 0;                                                                               \
-static void my_time_set_destroy_##A(void* e, void* cb)                                                                          \
-{                                                                                                                               \
+#define GO(A)                                                                                                                       \
+static uintptr_t my_time_set_destroy_fct_##A = 0;                                                                                   \
+static void my_time_set_destroy_##A(void* e, void* cb)                                                                              \
+{                                                                                                                                   \
     RunFunctionFmt(my_time_set_destroy_fct_##A, "pp", e, AddCheckBridge(my_lib->w.bridge, vFppp, cb, 0, "my_time_set_destroy_cb")); \
 }
 SUPER()
@@ -959,7 +959,7 @@ static void* find_defer_new_Fct(void* fct)
 // defer_enable
 #define GO(A)                                               \
 static uintptr_t my_defer_enable_fct_##A = 0;               \
-static void* my_defer_enable_##A(void* e, int b)            \
+static void my_defer_enable_##A(void* e, int b)             \
 {                                                           \
     RunFunctionFmt(my_defer_enable_fct_##A, "pi", e, b);    \
 }
@@ -981,7 +981,7 @@ static void* find_defer_enable_Fct(void* fct)
 // defer_free
 #define GO(A)                                       \
 static uintptr_t my_defer_free_fct_##A = 0;         \
-static void* my_defer_free_##A(void* e)             \
+static void my_defer_free_##A(void* e)              \
 {                                                   \
     RunFunctionFmt(my_defer_free_fct_##A, "p", e);  \
 }
@@ -1025,7 +1025,7 @@ static void* find_defer_set_destroy_Fct(void* fct)
 // quit
 #define GO(A)                                           \
 static uintptr_t my_quit_fct_##A = 0;                   \
-static void* my_quit_##A(void* e, int retval)           \
+static void my_quit_##A(void* e, int retval)            \
 {                                                       \
     RunFunctionFmt(my_quit_fct_##A, "pi", e, retval);   \
 }
@@ -1052,7 +1052,7 @@ static void UpdateautobridgeMainloopAPI(x64emu_t* emu, bridge_t* bridge, my_pa_m
     if(!api) {
         return;
     }
-    #define GO(A, W) if(api->A!=my_mainloop_api.A) {api->A=find_##A##_Fct(api->A); AddAutomaticBridge(emu, bridge, W, api->A, 0, NULL);}
+    #define GO(A, W) if(api->A!=my_mainloop_api.A) {api->A=find_##A##_Fct(api->A); AddAutomaticBridge(bridge, W, api->A, 0, NULL);}
     GO(io_new, pFpiipp);
     GO(io_enable, vFpi);
     GO(io_free, vFp);
@@ -1076,7 +1076,7 @@ static void autobridgeMainloopAPI(x64emu_t* emu, bridge_t* bridge, my_pa_mainloo
     if(!api) {
         return;
     }
-    #define GO(A, W) if(api->A) AddAutomaticBridge(emu, bridge, W, api->A, 0, NULL)
+    #define GO(A, W) if(api->A) AddAutomaticBridge(bridge, W, api->A, 0, NULL)
     GO(io_new, pFpiipp);
     GO(io_enable, vFpi);
     GO(io_free, vFp);
@@ -1575,15 +1575,13 @@ EXPORT void my_pa_mainloop_api_once(x64emu_t* emu, void* mainloop, void* cb, voi
     my->pa_mainloop_api_once(mainloop, find_mainloop_once_Fct(cb), data);
 }
 
+void my_autobridge_mainloop_api(x64emu_t* emu, void* api)
+{
+    UpdateautobridgeMainloopAPI(emu, my_lib->w.bridge, api);
+}
+
 #define PRE_INIT        \
     if(box64_nopulse)   \
         return -1;
-
-#define CUSTOM_INIT \
-    getMy(lib);
-
-
-#define CUSTOM_FINI \
-    freeMy();
 
 #include "wrappedlib_init.h"

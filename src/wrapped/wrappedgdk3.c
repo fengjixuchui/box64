@@ -18,10 +18,12 @@
 #include "emu/x64emu_private.h"
 #include "gtkclass.h"
 
-const char* gdk3Name = "libgdk-3.so.0";
+#ifdef ANDROID
+    const char* gdk3Name = "libgdk-3.so";
+#else
+    const char* gdk3Name = "libgdk-3.so.0";
+#endif
 #define LIBNAME gdk3
-
-static char* libname = NULL;
 
 //#define ADDED_FUNCTIONS()
 
@@ -181,22 +183,16 @@ EXPORT uint32_t my3_gdk_threads_add_timeout_full(x64emu_t* emu, int priotity, ui
     return my->gdk_threads_add_timeout_full(priotity, interval, findGSourceFunc(f), data, findGDestroyNotifyFct(d));
 }
 
-
 #define PRE_INIT    \
     if(box64_nogtk) \
         return -1;
 
-#define CUSTOM_INIT \
-    libname = lib->name;            \
-    SETALT(my3_);                   \
-    getMy(lib);                     \
-    setNeededLibs(lib, 3,           \
-        "libgobject-2.0.so.0",      \
-        "libgio-2.0.so.0",          \
-        "libgdk_pixbuf-2.0.so.0");
+#define ALTMY my3_
 
-#define CUSTOM_FINI \
-    freeMy();
-
+#ifdef ANDROID
+#define NEEDED_LIBS "libgobject-2.0.so", "libgio-2.0.so", "libgdk_pixbuf-2.0.so"
+#else
+#define NEEDED_LIBS "libgobject-2.0.so.0", "libgio-2.0.so.0", "libgdk_pixbuf-2.0.so.0"
+#endif
 
 #include "wrappedlib_init.h"

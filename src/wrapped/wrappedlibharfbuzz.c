@@ -1190,13 +1190,13 @@ EXPORT int my_hb_font_funcs_set_user_data(x64emu_t* emu, void* funcs, void* key,
     return (int)my->hb_font_funcs_set_user_data(funcs, key, data, find_destroy_Fct(destroy), replace);
 }
 
-EXPORT int my_hb_font_set_funcs(x64emu_t* emu, void* font, void* klass, void* data, void* destroy)
+EXPORT void my_hb_font_set_funcs(x64emu_t* emu, void* font, void* klass, void* data, void* destroy)
 {
     (void)emu;
     my->hb_font_set_funcs(font, klass, data, find_destroy_Fct(destroy));
 }
 
-EXPORT int my_hb_font_set_funcs_data(x64emu_t* emu, void* font, void* data, void* destroy)
+EXPORT void my_hb_font_set_funcs_data(x64emu_t* emu, void* font, void* data, void* destroy)
 {
     (void)emu;
     my->hb_font_set_funcs_data(font, data, find_destroy_Fct(destroy));
@@ -1208,10 +1208,10 @@ EXPORT int my_hb_font_set_user_data(x64emu_t* emu, void* font, void* key, void* 
     return (int)my->hb_font_set_user_data(font, key, data, find_destroy_Fct(destroy), replace);
 }
 
-#define CUSTOM_INIT \
-    getMy(lib);
-
-#define CUSTOM_FINI \
-    freeMy();
+EXPORT void* my_hb_ft_face_create(x64emu_t* emu, void* face, void* destroy)
+{
+    (void)emu;
+    return my->hb_ft_face_create(face, find_destroy_Fct(destroy));
+}
 
 #include "wrappedlib_init.h"

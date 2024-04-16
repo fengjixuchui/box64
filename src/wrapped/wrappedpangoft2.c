@@ -14,7 +14,10 @@
 const char* pangoft2Name = "libpangoft2-1.0.so.0";
 #define LIBNAME pangoft2
 
-#define CUSTOM_INIT \
-    setNeededLibs(lib, 2, "libfontconfig.so.1", "libfreetype.so.6");
+#define PRE_INIT    \
+    if(box64_nogtk) \
+        return -1;
+
+#define NEEDED_LIBS "libfontconfig.so.1", "libfreetype.so.6"
 
 #include "wrappedlib_init.h"

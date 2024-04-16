@@ -13,6 +13,7 @@
 #() vFL
 #() vFp
 #() vFS
+#() vFb
 #() cFv
 #() cFi
 #() cFu
@@ -37,8 +38,8 @@
 #() iFO
 #() iFS
 #() iFP
+#() iFb
 #() IFv
-#() IFi
 #() IFI
 #() IFf
 #() IFd
@@ -62,6 +63,7 @@
 #() uFl
 #() uFL
 #() uFp
+#() uFb
 #() UFv
 #() UFu
 #() UFp
@@ -100,6 +102,7 @@
 #() pFp
 #() pFV
 #() pFA
+#() pFb
 #() HFi
 #() HFp
 #() xFx
@@ -160,6 +163,10 @@
 #() vFpp
 #() vFpS
 #() vFSi
+#() vFbi
+#() vFbu
+#() vFbU
+#() vFbp
 #() cFpi
 #() cFpp
 #() wFpi
@@ -202,6 +209,7 @@
 #() iFpp
 #() iFpO
 #() iFSi
+#() IFEi
 #() IFEf
 #() IFEd
 #() IFEp
@@ -221,6 +229,7 @@
 #() CFpu
 #() CFpL
 #() CFpp
+#() WFpi
 #() WFpp
 #() uFEp
 #() uFii
@@ -229,6 +238,7 @@
 #() uFui
 #() uFuu
 #() uFup
+#() uFuM
 #() uFpw
 #() uFpi
 #() uFpC
@@ -238,8 +248,10 @@
 #() uFpl
 #() uFpL
 #() uFpp
+#() uFbu
 #() UFEp
 #() UFuu
+#() UFUp
 #() UFpi
 #() UFpU
 #() UFpp
@@ -252,6 +264,7 @@
 #() fFfp
 #() fFpu
 #() fFpp
+#() fFbu
 #() dFEd
 #() dFid
 #() dFdi
@@ -267,6 +280,7 @@
 #() DFDD
 #() DFDp
 #() DFpp
+#() lFEi
 #() lFii
 #() lFip
 #() lFui
@@ -278,6 +292,7 @@
 #() LFEL
 #() LFii
 #() LFuu
+#() LFUp
 #() LFLi
 #() LFLL
 #() LFLp
@@ -317,9 +332,13 @@
 #() pFpL
 #() pFpp
 #() pFSi
+#() pFbC
+#() pFbu
+#() pFbp
 #() HFII
 #() HFll
 #() HFpi
+#() HFpp
 #() xFxx
 #() XFXX
 #() iWpi
@@ -486,13 +505,14 @@
 #() iFupL
 #() iFupp
 #() iFfff
-#() iFlip
 #() iFLip
-#() iFLLi
 #() iFLpp
 #() iFpwp
 #() iFpii
+#() iFpiC
+#() iFpiW
 #() iFpiu
+#() iFpiU
 #() iFpil
 #() iFpiL
 #() iFpip
@@ -535,6 +555,7 @@
 #() iFpOu
 #() iFpOM
 #() iFSpL
+#() iFbpp
 #() IFiIi
 #() IFpIi
 #() IFppi
@@ -552,6 +573,7 @@
 #() uFiuu
 #() uFilp
 #() uFipu
+#() uFipL
 #() uFuii
 #() uFuip
 #() uFuuu
@@ -578,7 +600,15 @@
 #() uFpLp
 #() uFppi
 #() uFppu
+#() uFppL
 #() uFppp
+#() uFbWW
+#() uFbWu
+#() uFbuC
+#() uFbuW
+#() uFbuu
+#() uFbuU
+#() uFbup
 #() UFUii
 #() UFUUU
 #() UFpiU
@@ -679,7 +709,6 @@
 #() pFpiL
 #() pFpip
 #() pFpCi
-#() pFpCC
 #() pFpCu
 #() pFpWi
 #() pFpWW
@@ -690,7 +719,6 @@
 #() pFpup
 #() pFpUi
 #() pFpUu
-#() pFpUp
 #() pFpdu
 #() pFpdd
 #() pFplC
@@ -712,7 +740,15 @@
 #() pFppp
 #() pFppA
 #() pFpOM
+#() pFpbi
 #() pFSpl
+#() pFbCC
+#() pFbuu
+#() pFbup
+#() pFbUp
+#() pFbpi
+#() pFbpu
+#() pFbpp
 #() vWpup
 #() iWEip
 #() iWEpp
@@ -758,6 +794,7 @@
 #() vFipii
 #() vFipup
 #() vFipll
+#() vFippL
 #() vFippp
 #() vFCCCC
 #() vFWWWW
@@ -905,7 +942,6 @@
 #() iFEpLi
 #() iFEpLp
 #() iFEppi
-#() iFEppu
 #() iFEppd
 #() iFEppL
 #() iFEppp
@@ -934,7 +970,6 @@
 #() iFipWp
 #() iFipui
 #() iFipuL
-#() iFipup
 #() iFipLi
 #() iFipLu
 #() iFipLp
@@ -953,7 +988,6 @@
 #() iFuppi
 #() iFuppu
 #() iFuppp
-#() iFLLiW
 #() iFLppp
 #() iFpwww
 #() iFpwpp
@@ -997,6 +1031,7 @@
 #() iFpupL
 #() iFpupp
 #() iFpupV
+#() iFpubp
 #() iFpUup
 #() iFpUUU
 #() iFpULp
@@ -1047,6 +1082,7 @@
 #() iFpppu
 #() iFpppL
 #() iFpppp
+#() iFbupp
 #() IFEpIi
 #() IFipUI
 #() IFipUp
@@ -1056,9 +1092,9 @@
 #() IFSIii
 #() CFuuff
 #() CFpiii
-#() CFpupp
 #() CFpLLi
 #() CFppip
+#() CFbupp
 #() uFEipp
 #() uFEupp
 #() uFEpup
@@ -1069,6 +1105,7 @@
 #() uFuuuu
 #() uFpiip
 #() uFpipu
+#() uFpipL
 #() uFpipp
 #() uFpCCC
 #() uFpuip
@@ -1085,10 +1122,16 @@
 #() uFpppu
 #() uFpppL
 #() uFpppp
-#() UFpipp
+#() uFbipp
+#() uFbCWp
+#() uFbuWp
+#() uFbuuC
+#() uFbuuu
+#() uFbuup
 #() UFpUui
 #() UFppii
 #() UFppip
+#() UFbipp
 #() dFpppp
 #() lFEipV
 #() lFEpip
@@ -1139,6 +1182,7 @@
 #() pFELpA
 #() pFEpii
 #() pFEpip
+#() pFEpuL
 #() pFEppi
 #() pFEppp
 #() pFEppV
@@ -1154,6 +1198,7 @@
 #() pFipip
 #() pFippi
 #() pFippu
+#() pFippL
 #() pFippp
 #() pFuuii
 #() pFuuip
@@ -1181,14 +1226,9 @@
 #() pFpipL
 #() pFpipp
 #() pFpCip
-#() pFpCWp
-#() pFpCuW
-#() pFpCuu
 #() pFpWWW
 #() pFpuii
 #() pFpuip
-#() pFpuWp
-#() pFpuuC
 #() pFpuuu
 #() pFpuup
 #() pFpudd
@@ -1215,10 +1255,7 @@
 #() pFppiL
 #() pFppip
 #() pFppCp
-#() pFppWW
 #() pFppWp
-#() pFppuC
-#() pFppuW
 #() pFppuu
 #() pFppuL
 #() pFppup
@@ -1231,10 +1268,20 @@
 #() pFppLp
 #() pFpppi
 #() pFpppu
-#() pFpppU
 #() pFpppL
 #() pFpppp
+#() pFpbii
 #() pFSppi
+#() pFbCuW
+#() pFbCuu
+#() pFbuWp
+#() pFbuuC
+#() pFbuuu
+#() pFbuup
+#() pFbpWp
+#() pFbpup
+#() pFbppu
+#() pFbppU
 #() vWpiiu
 #() vWpuup
 #() iWEpip
@@ -1462,7 +1509,6 @@
 #() iFiiipu
 #() iFiiipp
 #() iFiiupp
-#() iFiipup
 #() iFiuuuu
 #() iFiuuup
 #() iFiuLip
@@ -1587,6 +1633,7 @@
 #() uFEpppp
 #() uFEpppV
 #() uFiuuuu
+#() uFiuppi
 #() uFipipp
 #() uFipLpp
 #() uFuiiii
@@ -1605,6 +1652,10 @@
 #() uFppLpp
 #() uFppppL
 #() uFppppp
+#() uFbCuuu
+#() uFbCuup
+#() uFbuuWW
+#() uFbuuup
 #() UFuiiii
 #() lFEuipp
 #() lFipili
@@ -1615,6 +1666,7 @@
 #() lFpuipC
 #() lFpuuLL
 #() lFppupp
+#() lFppLpL
 #() lFppLpp
 #() LFELppi
 #() LFEpppp
@@ -1676,18 +1728,13 @@
 #() pFpipup
 #() pFpippi
 #() pFpippp
-#() pFpCpup
-#() pFpCppp
 #() pFpuiii
 #() pFpuiip
-#() pFpuWWW
 #() pFpuuip
-#() pFpuuWW
 #() pFpuuuu
 #() pFpuuup
 #() pFpuupp
 #() pFpuLpp
-#() pFpupii
 #() pFpuppu
 #() pFpuppp
 #() pFpUdii
@@ -1707,7 +1754,6 @@
 #() pFppipi
 #() pFppipp
 #() pFppWpp
-#() pFppuii
 #() pFppuip
 #() pFppuuu
 #() pFppuup
@@ -1724,7 +1770,14 @@
 #() pFpppLi
 #() pFppppi
 #() pFppppu
+#() pFppppL
 #() pFppppp
+#() pFbuWWW
+#() pFbuuWW
+#() pFbuuup
+#() pFbupii
+#() pFbpuii
+#() pFbpppp
 #() iWEpiup
 #() iWEpipp
 #() iWpiiii
@@ -1941,7 +1994,6 @@
 #() iFpipLpp
 #() iFpippip
 #() iFpippup
-#() iFpipppL
 #() iFpipppp
 #() iFpCiipp
 #() iFpCpipu
@@ -1951,6 +2003,7 @@
 #() iFpuippp
 #() iFpuuuuu
 #() iFpuuuup
+#() iFpuuupu
 #() iFpuuupp
 #() iFpuuLpp
 #() iFpuupuu
@@ -1986,6 +2039,7 @@
 #() iFppipii
 #() iFppipiL
 #() iFppipip
+#() iFppippi
 #() iFppippu
 #() iFppIppp
 #() iFppuiii
@@ -2016,6 +2070,7 @@
 #() iFppppiu
 #() iFppppip
 #() iFppppup
+#() iFppppLp
 #() iFpppppi
 #() iFpppppL
 #() iFpppppp
@@ -2028,7 +2083,6 @@
 #() uFupuufp
 #() uFuppppp
 #() uFpiuppu
-#() uFpippup
 #() uFpWuipp
 #() uFpWuuCp
 #() uFpuippp
@@ -2036,13 +2090,17 @@
 #() uFpuuupp
 #() uFpuuppp
 #() uFpupupu
+#() uFpupppp
 #() uFppippp
 #() uFppuuup
 #() uFppuupu
 #() uFppLppL
 #() uFpppppi
 #() uFpppppp
-#() UFpippup
+#() uFbippup
+#() uFbCuuWW
+#() uFbuuiup
+#() UFbippup
 #() lFEpippp
 #() lFipipLu
 #() lFipLipu
@@ -2095,14 +2153,9 @@
 #() pFpipipp
 #() pFpippip
 #() pFpipppp
-#() pFpCuuCC
-#() pFpCuuWW
-#() pFpCuuup
 #() pFpuiiip
-#() pFpuuwwu
 #() pFpuuuuu
 #() pFpuuupu
-#() pFpuuUUU
 #() pFpupuui
 #() pFpuppip
 #() pFpupppp
@@ -2121,20 +2174,23 @@
 #() pFppippi
 #() pFppippp
 #() pFppuupp
-#() pFppupii
 #() pFppuppp
 #() pFpplplp
 #() pFpplppp
-#() pFpppiup
 #() pFpppupp
 #() pFpppLii
 #() pFpppLui
 #() pFppppii
-#() pFppppWW
 #() pFpppppi
 #() pFpppppu
 #() pFpppppp
 #() pFSpiiii
+#() pFbCuuCC
+#() pFbCuuup
+#() pFbuuwwu
+#() pFbuuuuu
+#() pFbuuUUU
+#() pFbpupii
 #() iWEpuuip
 #() iWEppppp
 #() iWpiiiip
@@ -2213,6 +2269,7 @@
 #() vFpupuuup
 #() vFpupppui
 #() vFpUiUiup
+#() vFpUuuUup
 #() vFpUUUUuu
 #() vFpddiidd
 #() vFpdddddd
@@ -2285,6 +2342,7 @@
 #() iFpWppppp
 #() iFpuiCuCp
 #() iFpuiuupp
+#() iFpuuuuup
 #() iFpupiLpL
 #() iFpupuuui
 #() iFpupuupp
@@ -2346,6 +2404,8 @@
 #() uFppiuppp
 #() uFppuuuup
 #() uFppppppp
+#() uFbCuuuuu
+#() uFbuuuwwu
 #() LFEppLppU
 #() LFEpppppu
 #() LFpLLuupp
@@ -2362,16 +2422,11 @@
 #() pFfiiiiid
 #() pFdiiiIiI
 #() pFpiiiiid
+#() pFpiiippp
 #() pFpiiUdii
+#() pFpiipppp
 #() pFpipippp
-#() pFpCuwwWW
-#() pFpCuWCCC
-#() pFpCuuwwp
-#() pFpCuuuuu
-#() pFpCpWWup
 #() pFpWppWpp
-#() pFpuuuwwu
-#() pFpuupwwC
 #() pFpuLpipp
 #() pFpupiipp
 #() pFpuppipp
@@ -2414,6 +2469,10 @@
 #() pFpppppuu
 #() pFppppppu
 #() pFppppppp
+#() pFbCuwwWW
+#() pFbCuWCCC
+#() pFbCuuwwp
+#() pFbCpWWup
 #() iWpiiuuuu
 #() iWpuiiiip
 #() iWpuiiuii
@@ -2431,6 +2490,7 @@
 #() vFEpppppuu
 #() vFiiiiuuip
 #() vFiilliilp
+#() vFiilluulp
 #() vFiupuiuup
 #() vFiupuuuup
 #() vFuiiiiiii
@@ -2503,7 +2563,6 @@
 #() iFpippuupp
 #() iFpCCWWpWu
 #() iFpWCuWCuu
-#() iFpWWipppp
 #() iFpuiipppp
 #() iFpuippLpp
 #() iFpuuiiiii
@@ -2512,7 +2571,6 @@
 #() iFpuupuupp
 #() iFpuuppiip
 #() iFpuuppppp
-#() iFpupppWWu
 #() iFpupppppp
 #() iFpUuuLpUi
 #() iFpduuulul
@@ -2525,6 +2583,7 @@
 #() iFpLpppppp
 #() iFppiiipip
 #() iFppillppp
+#() iFppippppp
 #() iFppIIIppp
 #() iFppuiiuuu
 #() iFppuuuuuu
@@ -2538,6 +2597,8 @@
 #() iFppppppii
 #() iFpppppppi
 #() iFpppppppp
+#() iFbWWipppp
+#() iFbupppWWu
 #() CFuiifpppp
 #() uFEipipppp
 #() uFEpiupppp
@@ -2553,6 +2614,9 @@
 #() uFppuuuppu
 #() uFppuppppp
 #() uFpppppupp
+#() uFbCuuuCup
+#() uFbWWWWWWp
+#() uFbpuupwwC
 #() LFELpupupu
 #() LFEpiupppp
 #() LFpLpuuLLu
@@ -2573,17 +2637,10 @@
 #() pFpiiuuupp
 #() pFpiUdiiUi
 #() pFpipiiiip
-#() pFpCCuuwwC
-#() pFpCuwwWWu
-#() pFpCuuuCup
-#() pFpWWiCpup
-#() pFpuuWWCuu
 #() pFpuuuuupp
 #() pFpuuuupup
-#() pFpuuupwwp
 #() pFpupLLLpp
 #() pFpupppppp
-#() pFpdwwWWui
 #() pFplpppppp
 #() pFpLuLpLip
 #() pFpLpipLup
@@ -2595,6 +2652,12 @@
 #() pFppplippp
 #() pFppppuppp
 #() pFpppppupp
+#() pFbCCuuwwC
+#() pFbCuwwWWu
+#() pFbWWiCpup
+#() pFbuuWWCuu
+#() pFbuuupwwp
+#() pFbdwwWWui
 #() iWEpuuiipp
 #() iWEpuuuipp
 #() iWpuipuppp
@@ -2687,6 +2750,7 @@
 #() iFpppiiipip
 #() iFpppiiuuii
 #() iFpppiipiiu
+#() iFpppippipi
 #() iFpppLLLupp
 #() iFpppLppupp
 #() iFppppiiupp
@@ -2711,19 +2775,18 @@
 #() pFEpppppppp
 #() pFuupuuuuuu
 #() pFpiiiiuuuu
-#() pFpiiCpWWup
-#() pFpCuWCCuuu
-#() pFpuuwwWWww
-#() pFpupuuuuup
 #() pFpLpLLipui
 #() pFpLppLLiLi
 #() pFppiiiiiip
 #() pFppipppppp
 #() pFpppiiiiii
-#() pFpppWWWWWp
 #() pFpppuipppp
 #() pFpppppiipp
-#() pFpppppuuCC
+#() pFbiiCpWWup
+#() pFbCuWCCuuu
+#() pFbuuwwWWww
+#() pFbupuuuuup
+#() pFbppppuuCC
 #() iWEpuuiippu
 #() iWEpuuuiipp
 #() iWpiuuupipu
@@ -2776,6 +2839,7 @@
 #() iFpCuWCCCCup
 #() iFpuuLiuiiLL
 #() iFpLLpiiuuii
+#() iFpLpLUUUUpL
 #() iFppuuiiiiii
 #() iFppuuiiuupi
 #() iFpppiiipipi
@@ -2785,13 +2849,10 @@
 #() iFpppppppppu
 #() uFpddpippppp
 #() uFpppppppppp
+#() lFpLppdddddd
 #() pFEiippppppp
 #() pFEpiiiiiipp
 #() pFEpippppppp
-#() pFpCuWCCuuCW
-#() pFpuwwWWuCuu
-#() pFpuuuwwwwWW
-#() pFpuuuWWWCCi
 #() pFpupLLLLLpp
 #() pFplllllllll
 #() pFppippLLLip
@@ -2799,6 +2860,10 @@
 #() pFppuuLLuppp
 #() pFpppiiiiiii
 #() pFpppppppppp
+#() pFbCuWCCuuCW
+#() pFbuwwWWuCuu
+#() pFbuuuwwwwWW
+#() pFbuuuWWWCCi
 #() iWEpuipupppp
 #() iWEpuuiiuipp
 #() iWEpuuuuiipp
@@ -2888,12 +2953,12 @@
 #() pFEppiiuuuipii
 #() pFEppppppppppp
 #() pFWWiCCCCiipup
-#() pFpCuuWWwwCCup
-#() pFpuuuWWWWWWWW
 #() pFppiiuuuiupLp
 #() pFppippLLLiLpp
 #() pFppuuppppuppp
 #() pFpppppppppppp
+#() pFbCuuWWwwCCup
+#() pFbuuuWWWWWWWW
 #() vFEpppppppiippp
 #() vFuiiiiiiiiiuup
 #() vFuuuuuuuuuuuuu
@@ -2913,7 +2978,7 @@
 #() iFppppppLLLLupp
 #() uFippuuuulllipp
 #() uFpppppuupppppp
-#() pFpCuuwwWWWWuup
+#() uFbCuuwwWWWWuup
 #() pFpuupppwwwwWWC
 #() pFppLppppiiLpip
 #() pFpppppppuipppp
@@ -2926,7 +2991,7 @@
 #() iFpipppppppppppp
 #() iFppupppLLLLpupp
 #() iFpppwwWWwwWWpuu
-#() pFppCpppwwwwwwWW
+#() pFbpCpppwwwwwwWW
 #() vFuiiiiiuiiiiilll
 #() vFuuiiiiuuiiiiiii
 #() vFfffffffffffffff
@@ -2938,15 +3003,15 @@
 #() pFppppppppppppppp
 #() vFpppppppppppppppp
 #() iFpppppppppppppppp
-#() pFpuuWWWWWWwwCCCuu
 #() pFppipipipipipipip
 #() pFpppppppppppppppp
+#() pFbuuWWWWWWwwCCCuu
 #() vFuuuiiiiiuiiiiilll
 #() vFuuuuiiiiuuiiiiiii
 #() vFppiiiiddddiiiiiuu
 #() vFpppuppiipppuUUUpi
-#() pFpuuuuuwwuuuuUUUup
 #() pFppippipipipipipip
+#() pFbuuuuuwwuuuuUUUup
 #() vFppuiiiiipuiiiiiiii
 #() vFpppipppppppppppppp
 #() iFpppppppppppppppppp
@@ -2954,24 +3019,47 @@
 #() pFippppppppppppppppp
 #() pFpupppppppppppppppp
 #() vFpiiiiiiiiiiiiiiiiii
+#() uFbWWWCCCCCCCCWCCCCCC
 #() pFiiiippppppppppppppp
 #() pFpippppppppppppppppp
 #() pFpupupppppppppppppppp
-#() pFpppWWCCpCpCpCWpCpCpC
 #() iFpppppppppppppppppppppp
 #() uFippuuuuiiiiuuiiiiiiiipp
 #() vFpppppppppppppppppppppppp
 #() iFpppppppppppppppppppppppppppppppppp
 #defined(HAVE_LD80BITS) DFD
+#defined(HAVE_LD80BITS) DFY
+#defined(HAVE_LD80BITS) lFD
+#defined(HAVE_LD80BITS) YFY
 #defined(HAVE_LD80BITS) IFED
+#defined(HAVE_LD80BITS) DFiD
+#defined(HAVE_LD80BITS) lFDD
+#defined(HAVE_LD80BITS) YFYY
+#defined(HAVE_LD80BITS) vFDpp
+#defined(HAVE_LD80BITS) DFDDD
 #!defined(HAVE_LD80BITS) KFK
+#!defined(HAVE_LD80BITS) KFy
+#!defined(HAVE_LD80BITS) lFK
+#!defined(HAVE_LD80BITS) yFy
 #!defined(HAVE_LD80BITS) IFEK
+#!defined(HAVE_LD80BITS) KFiK
 #!defined(HAVE_LD80BITS) KFKK
 #!defined(HAVE_LD80BITS) KFKp
+#!defined(HAVE_LD80BITS) lFKK
+#!defined(HAVE_LD80BITS) yFyy
+#!defined(HAVE_LD80BITS) vFKpp
+#!defined(HAVE_LD80BITS) KFKKK
 #defined(NOALIGN) iFipiip
+#!defined(NOALIGN) iFEppu
 #!defined(NOALIGN) iFEiiip
 #!defined(NOALIGN) iFEipii
 #!defined(NOALIGN) iFEipiip
+#!defined(STATICBUILD) iFlip
+#!defined(STATICBUILD) iFLLi
+#!defined(STATICBUILD) iFipup
+#!defined(STATICBUILD) iFLLiW
+#!defined(STATICBUILD) iFiipup
+#!defined(STATICBUILD) iFpipppL
 #() vFEv -> vFE
 #() iFEv -> iFE
 #() lFEv -> lFE
@@ -2983,6 +3071,7 @@
 #() iFEpuvvppp -> iFEpuppp
 wrappedalure:
 wrappedalut:
+wrappedanl:
 wrappedatk:
 - vFp:
   - atk_focus_tracker_init
@@ -3009,6 +3098,11 @@ wrappedbz2:
 - iFpiii:
   - BZ2_bzCompressInit
 wrappedcairo:
+- pFp:
+  - cairo_xcb_device_get_connection
+- iFpppp:
+  - cairo_set_user_data
+  - cairo_surface_set_user_data
 wrappedcairogobject:
 wrappedcap:
 wrappedcrashhandler:
@@ -3064,18 +3158,25 @@ wrappedcrypto3:
 - vFp:
   - CRYPTO_set_id_callback
   - CRYPTO_set_locking_callback
+- pFp:
+  - OPENSSL_sk_new
 - vFpp:
   - X509_STORE_CTX_set_verify_cb
 - pFpp:
   - OPENSSL_sk_pop_free
+- vFppp:
+  - EVP_MD_do_all_provided
 - iFppp:
   - ASN1_i2d_bio
+- iFppV:
+  - BIO_printf
 - vFiipV:
   - ERR_set_error
 - vFiipA:
   - ERR_vset_error
 - pFpppp:
   - ASN1_d2i_bio
+  - PEM_read_DHparams
   - PEM_read_bio_DSAPrivateKey
   - PEM_read_bio_DSA_PUBKEY
   - PEM_read_bio_ECPrivateKey
@@ -3101,6 +3202,7 @@ wrappedcurl:
   - curl_multi_setopt
 - uFpup:
   - curl_easy_setopt
+  - curl_share_setopt
 wrappedd3dadapter9:
 - pWp:
   - D3DAdapter9GetProc
@@ -3216,8 +3318,10 @@ wrappedflac:
 wrappedfontconfig:
 - pFpV:
   - FcObjectSetBuild
+  - FcPatternBuild
 - pFpA:
   - FcObjectSetVaBuild
+  - FcPatternVaBuild
 wrappedfreebl3:
 wrappedfreetype:
 - iFpp:
@@ -3349,6 +3453,7 @@ wrappedgio2:
   - g_dbus_connection_signal_subscribe
 - vFpppppppiippp:
   - g_dbus_connection_call
+wrappedglesv2:
 wrappedglib2:
 - vFp:
   - g_atexit
@@ -3543,6 +3648,7 @@ wrappedgobject2:
   - g_object_class_install_properties
 - vFppp:
   - g_closure_add_finalize_notifier
+  - g_closure_remove_finalize_notifier
   - g_object_weak_ref
   - g_signal_override_class_handler
 - vFppV:
@@ -3558,6 +3664,8 @@ wrappedgobject2:
 - pFLpA:
   - g_object_new_valist
 - pFppp:
+  - g_cclosure_new
+  - g_cclosure_new_swap
   - g_value_array_sort_with_data
 - pFppV:
   - g_object_connect
@@ -3649,6 +3757,7 @@ wrappedgstreamer:
 - pFpA:
   - gst_caps_features_new_valist
 - vFppp:
+  - gst_pad_sticky_events_foreach
   - gst_structure_filter_and_map_in_place
   - gst_tag_list_foreach
 - vFppV:
@@ -3661,6 +3770,7 @@ wrappedgstreamer:
   - gst_structure_remove_fields_valist
   - gst_structure_set_valist
 - iFppp:
+  - gst_buffer_foreach_meta
   - gst_caps_foreach
   - gst_element_foreach_sink_pad
   - gst_init_check
@@ -3694,6 +3804,7 @@ wrappedgstreamer:
   - gst_pad_set_chain_function_full
   - gst_pad_set_event_function_full
   - gst_pad_set_getrange_function_full
+  - gst_pad_set_iterate_internal_links_function_full
   - gst_pad_set_link_function_full
   - gst_pad_set_query_function_full
 - iFpppp:
@@ -3760,9 +3871,14 @@ wrappedgtk3:
   - gtk_message_dialog_format_secondary_markup
   - gtk_message_dialog_format_secondary_text
   - gtk_style_context_get
+  - gtk_tree_store_set
   - gtk_widget_style_get
+- vFppA:
+  - gtk_tree_store_set_valist
 - uFupp:
   - gtk_timeout_add
+- vFppiV:
+  - gtk_list_store_insert_with_values
 - vFpppi:
   - gtk_enumerate_printers
 - vFpppp:
@@ -3893,13 +4009,20 @@ wrappedgtkx112:
 wrappedicui18n66:
 wrappedicui18n67:
 wrappedicui18n72:
+wrappedicui18n73:
+wrappedicui18n74:
 wrappedicuuc66:
 wrappedicuuc67:
 wrappedicuuc72:
+wrappedicuuc73:
+wrappedicuuc74:
+wrappedidn2:
 wrappedkrb5:
 - iFppppppipp:
   - krb5_get_init_creds_password
 wrappedlber:
+- iFppip:
+  - ber_sockbuf_add_io
 wrappedlcms2:
 wrappedldapr:
 - iFpppppupp:
@@ -3928,7 +4051,6 @@ wrappedlibc:
   - __cxa_pure_virtual
   - __stack_chk_fail
 - vFi:
-  - _exit
   - exit
 - vFp:
   - _ITM_deregisterTMCloneTable
@@ -3942,25 +4064,17 @@ wrappedlibc:
   - _setjmp
   - atexit
   - getcontext
-  - pthread_attr_destroy
-  - pthread_attr_init
-  - pthread_barrierattr_destroy
-  - pthread_barrierattr_init
-  - pthread_cond_broadcast
-  - pthread_cond_destroy
-  - pthread_condattr_destroy
-  - pthread_condattr_init
-  - pthread_getattr_default_np
-  - pthread_mutexattr_destroy
-  - pthread_mutexattr_init
-  - pthread_setattr_default_np
   - register_printf_type
   - setcontext
   - setjmp
   - stime
   - uname
+- IFi:
+  - sysconf
 - lFv:
   - syscall
+- lFi:
+  - __sysconf
 - LFL:
   - getauxval
 - pFp:
@@ -3979,6 +4093,7 @@ wrappedlibc:
   - _obstack_free
   - obstack_free
   - tdestroy
+  - twalk
 - vFpV:
   - warn
   - warnx
@@ -3987,30 +4102,12 @@ wrappedlibc:
   - fstat64
 - iFup:
   - setrlimit
-- iFLp:
-  - pthread_getattr_np
 - iFpi:
   - __sigsetjmp
   - backtrace
-  - pthread_attr_setdetachstate
-  - pthread_attr_setinheritsched
-  - pthread_attr_setschedpolicy
-  - pthread_attr_setscope
-  - pthread_barrierattr_setpshared
-  - pthread_condattr_setclock
-  - pthread_condattr_setpshared
-  - pthread_kill
-  - pthread_kill@GLIBC_2.2.5
-  - pthread_mutexattr_setkind_np
-  - pthread_mutexattr_setprotocol
-  - pthread_mutexattr_setpshared
-  - pthread_mutexattr_setrobust
-  - pthread_mutexattr_settype
   - sigsetjmp
 - iFpL:
   - munmap
-  - pthread_attr_setguardsize
-  - pthread_attr_setstacksize
 - iFpp:
   - __vprintf_chk
   - dl_iterate_phdr
@@ -4018,28 +4115,6 @@ wrappedlibc:
   - execvp
   - lstat
   - lstat64
-  - pthread_attr_getdetachstate
-  - pthread_attr_getguardsize
-  - pthread_attr_getinheritsched
-  - pthread_attr_getschedparam
-  - pthread_attr_getschedpolicy
-  - pthread_attr_getscope
-  - pthread_attr_getstackaddr
-  - pthread_attr_getstacksize
-  - pthread_attr_setschedparam
-  - pthread_attr_setstackaddr
-  - pthread_barrierattr_getpshared
-  - pthread_cond_init
-  - pthread_cond_wait
-  - pthread_condattr_getclock
-  - pthread_condattr_getpshared
-  - pthread_key_create
-  - pthread_mutex_init
-  - pthread_mutexattr_getkind_np
-  - pthread_mutexattr_getprotocol
-  - pthread_mutexattr_getrobust
-  - pthread_mutexattr_gettype
-  - pthread_once
   - sigaltstack
   - stat
   - stat64
@@ -4052,12 +4127,15 @@ wrappedlibc:
   - printf
   - wprintf
 - iFpA:
+  - __isoc99_vscanf
   - vprintf
+  - vscanf
   - vwprintf
 - iFSp:
   - _IO_file_stat
 - pFip:
   - __sysv_signal
+  - bsd_signal
   - signal
   - sigset
   - sysv_signal
@@ -4101,26 +4179,15 @@ wrappedlibc:
   - vdprintf
 - iFpLi:
   - mprotect
-- iFpLp:
-  - pthread_attr_setaffinity_np
-  - pthread_getaffinity_np
-  - pthread_setaffinity_np
 - iFppi:
   - ftw
   - ftw64
-- iFppu:
-  - pthread_barrier_init
-- iFppL:
-  - pthread_attr_setstack
 - iFppp:
   - __cxa_atexit
   - __cxa_thread_atexit_impl
   - __vfprintf_chk
   - __vsscanf
   - execve
-  - pthread_atfork
-  - pthread_attr_getstack
-  - pthread_cond_timedwait
 - iFppV:
   - __asprintf
   - __isoc23_fscanf
@@ -4210,14 +4277,11 @@ wrappedlibc:
   - vswprintf
 - iFppii:
   - nftw64
-- iFppip:
-  - pthread_cond_clockwait
 - iFppiV:
   - makecontext
 - iFpppp:
   - __register_atfork
   - __vsprintf_chk
-  - pthread_create
   - scandir
   - scandir64
 - lFuipp:
@@ -4324,10 +4388,14 @@ wrappedlibgl:
   - glDebugMessageCallbackAMD
   - glDebugMessageCallbackARB
   - glDebugMessageCallbackKHR
+- iFpp:
+  - eglDebugMessageControlKHR
 - vFipp:
   - glProgramCallbackMESA
 - vFppi:
   - glXSwapIntervalEXT
+- vFppp:
+  - eglSetBlobCacheFuncsANDROID
 wrappedlibglu:
 - vFpip:
   - gluNurbsCallback
@@ -4343,6 +4411,8 @@ wrappedlibharfbuzz:
   - hb_font_funcs_destroy
 - pFp:
   - hb_unicode_funcs_reference
+- pFpp:
+  - hb_ft_face_create
 - vFppp:
   - hb_font_set_funcs_data
 - pFppp:
@@ -4440,6 +4510,7 @@ wrappedlibm:
   - __sinhf_finite
   - __sqrtf_finite
   - nearbyintf
+  - pow10f
   - rintf
 - dFd:
   - __acos_finite
@@ -4454,10 +4525,12 @@ wrappedlibm:
   - __sinh_finite
   - __sqrt_finite
   - nearbyint
+  - pow10
   - rint
-- xFx:
-  - catanf
-  - catanhf
+- DFD:
+  - pow10l
+- KFK:
+  - pow10l
 - fFff:
   - __atan2f_finite
   - __fmodf_finite
@@ -4664,10 +4737,15 @@ wrappedlibssl:
   - SSL_get_ex_new_index
 wrappedlibssl3:
 - pFp:
+  - SSL_CTX_get_default_passwd_cb
+  - SSL_CTX_get_verify_callback
   - SSL_get_verify_callback
 - vFpp:
   - SSL_CTX_set_client_cert_cb
   - SSL_CTX_set_default_passwd_cb
+  - SSL_CTX_set_keylog_callback
+  - SSL_CTX_set_msg_callback
+  - SSL_set_msg_callback
   - SSL_set_psk_client_callback
 - vFpip:
   - SSL_CTX_set_verify
@@ -4735,6 +4813,8 @@ wrappedlibx11:
   - XESetError
   - XESetEventToWire
   - XESetWireToEvent
+- pFpuL:
+  - _XGetRequest
 - iFpppp:
   - XCheckIfEvent
   - XIfEvent
@@ -4753,8 +4833,15 @@ wrappedlibx11:
 - pFppiiuuuipii:
   - XGetSubImage
 wrappedlibx11xcb:
+- pFp:
+  - XGetXCBConnection
 wrappedlibxau:
 wrappedlibxcb:
+- vFp:
+  - xcb_disconnect
+- pFpp:
+  - xcb_connect
+wrappedlibxcbcursor:
 wrappedlibxcbdri2:
 wrappedlibxcbdri3:
 wrappedlibxcbglx:
@@ -4771,6 +4858,7 @@ wrappedlibxcbsync:
 wrappedlibxcbutil:
 wrappedlibxcbxfixes:
 wrappedlibxcbxinerama:
+wrappedlibxcbxinput:
 wrappedlibxcbxkb:
 wrappedlibxcbxtest:
 wrappedlibxcomposite:
@@ -4798,10 +4886,16 @@ wrappedlibxrandr:
 wrappedlibxrender:
 wrappedlibxss:
 wrappedlibxt:
+- vFpp:
+  - XtAppSetErrorHandler
+  - XtAppSetErrorMsgHandler
+  - XtAppSetWarningHandler
+  - XtAppSetWarningMsgHandler
 - lFppp:
   - XtAppAddWorkProc
 - vFpuipp:
   - XtAddEventHandler
+  - XtAddRawEventHandler
 - lFpippp:
   - XtAppAddInput
 wrappedlibxtst:
@@ -4857,12 +4951,17 @@ wrappedmpg123:
 wrappednotify:
 wrappednsl:
 wrappednspr4:
+- iFpp:
+  - PR_CallOnce
+- iFppp:
+  - PR_CallOnceWithArg
 wrappednss3:
 - vFp:
   - PK11_SetPasswordFunc
   - PORT_SetUCS2_ASCIIConversionFunction
 - iFpp:
   - CERT_RegisterAlternateOCSPAIAInfoCallBack
+  - NSS_RegisterShutdown
 - iFpIppp:
   - CERT_PKIXVerifyCert
 wrappednssutil3:
@@ -4882,6 +4981,7 @@ wrappedopencl:
   - clBuildProgram
 - pFpupppp:
   - clCreateContext
+wrappedpam:
 wrappedpango:
 - vFpp:
   - pango_attribute_init
@@ -5011,6 +5111,9 @@ wrappedpulse:
   - pa_stream_write
 - pFpiuCppp:
   - pa_ext_device_restore_save_formats
+wrappedpulsemainloopglib:
+- pFp:
+  - pa_glib_mainloop_get_api
 wrappedpulsesimple:
 wrappedsdl1:
 - vFp:
@@ -5414,6 +5517,8 @@ wrappedvulkan:
   - vkDestroyCommandPool
   - vkDestroyCuFunctionNVX
   - vkDestroyCuModuleNVX
+  - vkDestroyCudaFunctionNV
+  - vkDestroyCudaModuleNV
   - vkDestroyDeferredOperationKHR
   - vkDestroyDescriptorPool
   - vkDestroyDescriptorSetLayout
@@ -5425,6 +5530,7 @@ wrappedvulkan:
   - vkDestroyImage
   - vkDestroyImageView
   - vkDestroyIndirectCommandsLayoutNV
+  - vkDestroyMicromapEXT
   - vkDestroyOpticalFlowSessionNV
   - vkDestroyPipeline
   - vkDestroyPipelineCache
@@ -5434,8 +5540,10 @@ wrappedvulkan:
   - vkDestroyQueryPool
   - vkDestroyRenderPass
   - vkDestroySampler
+  - vkDestroySamplerYcbcrConversion
   - vkDestroySamplerYcbcrConversionKHR
   - vkDestroySemaphore
+  - vkDestroyShaderEXT
   - vkDestroyShaderModule
   - vkDestroySurfaceKHR
   - vkDestroySwapchainKHR
@@ -5462,6 +5570,8 @@ wrappedvulkan:
   - vkCreateCommandPool
   - vkCreateCuFunctionNVX
   - vkCreateCuModuleNVX
+  - vkCreateCudaFunctionNV
+  - vkCreateCudaModuleNV
   - vkCreateDebugReportCallbackEXT
   - vkCreateDebugUtilsMessengerEXT
   - vkCreateDescriptorPool
@@ -5477,6 +5587,7 @@ wrappedvulkan:
   - vkCreateImage
   - vkCreateImageView
   - vkCreateIndirectCommandsLayoutNV
+  - vkCreateMicromapEXT
   - vkCreateOpticalFlowSessionNV
   - vkCreatePipelineCache
   - vkCreatePipelineLayout
@@ -5502,6 +5613,7 @@ wrappedvulkan:
 - vFpupup:
   - vkUpdateDescriptorSets
 - iFpuppp:
+  - vkCreateShadersEXT
   - vkCreateSharedSwapchainsKHR
 - iFpUppp:
   - vkCreateDisplayModeKHR
@@ -5522,6 +5634,7 @@ wrappedwaylandegl:
 wrappedxinerama:
 wrappedxkbcommon:
 wrappedxkbcommonx11:
+wrappedxkbregistry:
 wrappedxml2:
 - vFp:
   - xmlSetExternalEntityLoader
@@ -5577,6 +5690,8 @@ wrappedxml2:
 - pFpppppi:
   - xmlCreateIOParserCtxt
   - xmlReaderForIO
+- pFppppppi:
+  - xmlCtxtReadIO
 wrappedxshmfence:
 wrappedxslt:
 - vFp:

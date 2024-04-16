@@ -19,7 +19,11 @@
 #include "gtkclass.h"
 #include "myalign.h"
 
-const char* gobject2Name = "libgobject-2.0.so.0";
+#ifdef ANDROID
+    const char* gobject2Name = "libgobject-2.0.so";
+#else
+    const char* gobject2Name = "libgobject-2.0.so.0";
+#endif
 #define LIBNAME gobject2
 
 typedef size_t(*LFv_t)(void);
@@ -35,7 +39,12 @@ typedef void*(*pFL_t)(size_t);
 #include "generated/wrappedgobject2types.h"
 static void addGObject2Alternate(library_t* lib);
 
-#define ADDED_INIT()   addGObject2Alternate(lib);
+#define ADDED_INIT() \
+    addGObject2Alternate(lib);   \
+    InitGTKClass(lib->w.bridge);
+
+#define ADDED_FINI() \
+    FiniGTKClass();
 
 #include "wrappercallback.h"
 
@@ -129,7 +138,7 @@ static void signal_delete(my_signal_t* sig, void* b)
 
 static void addGObject2Alternate(library_t* lib)
 {
-    #define GO(A, W) AddAutomaticBridge(thread_get_emu(), lib->w.bridge, W, dlsym(lib->w.lib, #A), 0, #A)
+    #define GO(A, W) AddAutomaticBridge(lib->w.bridge, W, dlsym(lib->w.lib, #A), 0, #A)
     GO(g_cclosure_marshal_VOID__VOID,               vFppuppp);
     GO(g_cclosure_marshal_VOID__BOOLEAN,            vFppuppp);
     GO(g_cclosure_marshal_VOID__UCHAR,              vFppuppp);
@@ -175,7 +184,7 @@ static void addGObject2Alternate(library_t* lib)
     GO(g_cclosure_marshal_BOOLEAN__FLAGSv,          vFpppppip);
     GO(g_cclosure_marshal_BOOLEAN__BOXED_BOXEDv,    vFpppppip);
     #undef GO
-    #define GO(A, W) AddAutomaticBridge(thread_get_emu(), lib->w.bridge, W, A, 0, #A)
+    #define GO(A, W) AddAutomaticBridge(lib->w.bridge, W, A, 0, #A)
     GO(signal_cb, iFpppp);
     GO(signal_cb_swapped, iFpppp);
     GO(signal_cb_5, iFppppp);
@@ -266,6 +275,9 @@ GO(9)   \
 GO(10)  \
 GO(11)  \
 GO(12)  \
+GO(13)  \
+GO(14)  \
+GO(15)  \
 
 #define GO(A)   \
 static uintptr_t my_copy_fct_##A = 0;                                     \
@@ -347,7 +359,7 @@ static void* findMarshalFct(void* fct)
     #define GO(A) if(my_marshal_fct_##A == (uintptr_t)fct) return my_marshal_##A;
     SUPER()
     #undef GO
-    #define GO(A) if(my_marshal_fct_##A == 0) {AddAutomaticBridge(thread_get_emu(), my_lib->w.bridge, vFppuppp, my_marshal_##A, 0, #A); my_marshal_fct_##A = (uintptr_t)fct; return my_marshal_##A; }
+    #define GO(A) if(my_marshal_fct_##A == 0) {AddAutomaticBridge(my_lib->w.bridge, vFppuppp, my_marshal_##A, 0, #A); my_marshal_fct_##A = (uintptr_t)fct; return my_marshal_##A; }
     SUPER()
     #undef GO
     printf_log(LOG_NONE, "Warning, no more slot for gobject Closure Marshal callback\n");
@@ -446,28 +458,6 @@ static void* findWeakNotifyFct(void* fct)
     return NULL;
 }
 
-// GCallback  (generic function with 6 arguments, hopefully it's enough)
-#define GO(A)   \
-static uintptr_t my_GCallback_fct_##A = 0;                                                      \
-static void* my_GCallback_##A(void* a, void* b, void* c, void* d, void* e, void* f)             \
-{                                                                                               \
-    return (void*)RunFunctionFmt(my_GCallback_fct_##A, "pppppp", a, b, c, d, e, f); \
-}
-SUPER()
-#undef GO
-static void* findGCallbackFct(void* fct)
-{
-    if(!fct) return fct;
-    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
-    #define GO(A) if(my_GCallback_fct_##A == (uintptr_t)fct) return my_GCallback_##A;
-    SUPER()
-    #undef GO
-    #define GO(A) if(my_GCallback_fct_##A == 0) {my_GCallback_fct_##A = (uintptr_t)fct; return my_GCallback_##A; }
-    SUPER()
-    #undef GO
-    printf_log(LOG_NONE, "Warning, no more slot for gobject Value Transform callback\n");
-    return NULL;
-}
 // GParamSpecTypeInfo....
 // First the structure GParamSpecTypeInfo statics, with paired x64 source pointer
 typedef struct my_GParamSpecTypeInfo_s {
@@ -607,6 +597,33 @@ static void* findcompareFct(void* fct)
     printf_log(LOG_NONE, "Warning, no more slot for gobject compare callback\n");
     return NULL;
 }
+#undef SUPER
+
+#include "super100.h"
+
+// GCallback  (generic function with 6 arguments, hopefully it's enough)
+#define GO(A)   \
+static uintptr_t my_GCallback_fct_##A = 0;                                                      \
+static void* my_GCallback_##A(void* a, void* b, void* c, void* d, void* e, void* f)             \
+{                                                                                               \
+    return (void*)RunFunctionFmt(my_GCallback_fct_##A, "pppppp", a, b, c, d, e, f); \
+}
+SUPER()
+#undef GO
+static void* findGCallbackFct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_GCallback_fct_##A == (uintptr_t)fct) return my_GCallback_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_GCallback_fct_##A == 0) {my_GCallback_fct_##A = (uintptr_t)fct; return my_GCallback_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for gobject generic GCallback\n");
+    return NULL;
+}
+
 #undef SUPER
 
 EXPORT uintptr_t my_g_signal_connect_object(x64emu_t* emu, void* instance, void* detailed, void* c_handler, void* object, uint32_t flags)
@@ -890,9 +907,24 @@ EXPORT void my_g_closure_set_marshal(x64emu_t* emu, void* closure, void* marshal
     my->g_closure_set_marshal(closure, findMarshalFct(marshal));
 }
 
+EXPORT void* my_g_cclosure_new(x64emu_t* emu, void* callback, void* data, void* destroy)
+{
+    return my->g_cclosure_new(findGCallbackFct(callback), data, findGClosureNotify_Fct(destroy));
+}
+
+EXPORT void* my_g_cclosure_new_swap(x64emu_t* emu, void* callback, void* data, void* destroy)
+{
+    return my->g_cclosure_new_swap(findGCallbackFct(callback), data, findGClosureNotify_Fct(destroy));
+}
+
 EXPORT void my_g_closure_add_finalize_notifier(x64emu_t* emu, void* closure, void* data, void* f)
 {
     my->g_closure_add_finalize_notifier(closure, data, findGClosureNotify_Fct(f));
+}
+
+EXPORT void my_g_closure_remove_finalize_notifier(x64emu_t* emu, void* closure, void* data, void* f)
+{
+    my->g_closure_remove_finalize_notifier(closure, data, findGClosureNotify_Fct(f));
 }
 
 EXPORT void* my_g_type_value_table_peek(x64emu_t* emu, size_t type)
@@ -905,18 +937,16 @@ EXPORT void* my_g_type_value_table_peek(x64emu_t* emu, size_t type)
         return -1;
 
 #define CUSTOM_INIT \
-    InitGTKClass(lib->w.bridge);       \
-    getMy(lib);                             \
     SetGObjectID(my->g_object_get_type());  \
     SetGInitiallyUnownedID(my->g_initially_unowned_get_type()); \
     SetGTypeName(my->g_type_name);          \
     SetGClassPeek(my->g_type_class_peek);   \
-    SetGTypeParent(my->g_type_parent);      \
-    setNeededLibs(lib, 1, "libglib-2.0.so.0");
+    SetGTypeParent(my->g_type_parent);
 
-#define CUSTOM_FINI \
-    FiniGTKClass(); \
-    freeMy();
+#ifdef ANDROID
+#define NEEDED_LIBS "libglib-2.0.so"
+#else
+#define NEEDED_LIBS "libglib-2.0.so.0"
+#endif
 
 #include "wrappedlib_init.h"
-

@@ -7,17 +7,39 @@
 #include "my_cpuid.h"
 #include "../emu/x64emu_private.h"
 #include "debug.h"
+#include "x64emu.h"
 
 int get_cpuMhz()
 {
 	int MHz = 0;
-	FILE *f = fopen("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq", "r");
-	if(f) {
-		int r;
-		if(1==fscanf(f, "%d", &r))
-			MHz = r/1000;
-		fclose(f);
-	}
+    char *p = NULL;
+    if((p=getenv("BOX64_CPUMHZ"))) {
+        MHz = atoi(p);
+        return MHz;
+    }
+    char cpumhz[200];
+    sprintf(cpumhz, "%d", MHz?:1000);
+    setenv("BOX64_CPUMHZ", cpumhz, 1);  // set temp value incase box64 gets recursively called
+
+    int cpucore = 0;
+    while(cpucore!=-1) {
+        char cpufreq[4096];
+        sprintf(cpufreq, "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", cpucore);
+        FILE *f = fopen(cpufreq, "r");
+        if(f) {
+            int r;
+            if(1==fscanf(f, "%d", &r)) {
+                r /= 1000;
+                if(MHz<r)
+                    MHz = r;
+            }
+            fclose(f);
+            ++cpucore;
+        }
+        else 
+            cpucore = -1;
+    }
+    #ifndef STATICBUILD
     if(!MHz) {
         // try with lscpu, grabbing the max frequency
         FILE* f = popen("lscpu | grep \"CPU max MHz:\" | sed -r 's/CPU max MHz:\\s{1,}//g'", "r");
@@ -46,8 +68,11 @@ int get_cpuMhz()
             }
         }
     }
+    #endif
 	if(!MHz)
 		MHz = 1000; // default to 1Ghz...
+    sprintf(cpumhz, "%d", MHz);
+    setenv("BOX64_CPUMHZ", cpumhz, 1);  // set actual value
 	return MHz;
 }
 static int nCPU = 0;
@@ -56,13 +81,13 @@ static double bogoMips = 100.;
 void grabNCpu() {
     nCPU = 1;  // default number of CPU to 1
     FILE *f = fopen("/proc/cpuinfo", "r");
-    size_t dummy;
+    ssize_t dummy;
     if(f) {
         nCPU = 0;
         int bogo = 0;
         size_t len = 500;
         char* line = malloc(len);
-        while ((dummy = getline(&line, &len, f)) != -1) {
+        while ((dummy = getline(&line, &len, f)) != (ssize_t)-1) {
             if(!strncmp(line, "processor\t", strlen("processor\t")))
                 ++nCPU;
             if(!bogo && !strncmp(line, "BogoMIPS\t", strlen("BogoMIPS\t"))) {
@@ -83,6 +108,8 @@ int getNCpu()
 {
     if(!nCPU)
         grabNCpu();
+    if(box64_maxcpu && nCPU>box64_maxcpu)
+        return box64_maxcpu;
     return nCPU;
 }
 
@@ -100,6 +127,13 @@ const char* getCpuName()
     if(done)
         return name;
     done = 1;
+    char *p = NULL;
+    if((p=getenv("BOX64_CPUNAME"))) {
+        strcpy(name, p);
+        return name;
+    }
+    setenv("BOX64_CPUNAME", name, 1);   // temporary set
+    #ifndef STATICBUILD
     FILE* f = popen("lscpu | grep \"Model name:\" | sed -r 's/Model name:\\s{1,}//g'", "r");
     if(f) {
         char tmp[200] = "";
@@ -116,6 +150,7 @@ const char* getCpuName()
                     *strchr(tmp,'\n') = ' ';
                 strncpy(name, tmp, 199);
             }
+            setenv("BOX64_CPUNAME", name, 1);
             return name;
         }
     }
@@ -134,9 +169,11 @@ const char* getCpuName()
             while(strchr(tmp, '\n'))
                 *strchr(tmp,'\n') = ' ';
             snprintf(name, 199, "unknown %s cpu", tmp);
+            setenv("BOX64_CPUNAME", name, 1);
             return name;
         }
     }
+    #endif
     // Nope, bye
     return name;
 }
@@ -167,8 +204,15 @@ void my_cpuid(x64emu_t* emu, uint32_t tmp32u)
 {
     emu->regs[_AX].dword[1] = emu->regs[_DX].dword[1] = emu->regs[_CX].dword[1] = emu->regs[_BX].dword[1] = 0;
     int ncpu = getNCpu();
-    if(ncpu>255) ncpu = 255;
     if(!ncpu) ncpu = 1;
+    int ncluster = 1;
+    while(ncpu>64) {
+        ncluster++; // do cluster of 64 cpus...
+        if(ncpu>=128)
+            ncpu-=64;
+        else
+            ncpu=64;
+    }
     static char branding[3*4*4+1] = "";
     if(!branding[0]) {
         strcpy(branding, getBoxCpuName());
@@ -180,7 +224,7 @@ void my_cpuid(x64emu_t* emu, uint32_t tmp32u)
     switch(tmp32u) {
         case 0x0:
             // emulate a P4. TODO: Emulate a Core2?
-            R_EAX = 0x0000000F;//0x80000004;
+            R_EAX = 0x0000000f;//was 0x15 before, but something seems wrong for leaf 0x15, and cpu-z take that as pure cpu speed...
             // return GenuineIntel
             R_EBX = 0x756E6547;
             R_EDX = 0x49656E69;
@@ -188,7 +232,7 @@ void my_cpuid(x64emu_t* emu, uint32_t tmp32u)
             break;
         case 0x1:
             R_EAX = 0x00000601; // family and all
-            R_EBX = 0 | (8<<0x8) | (/*ncpu*/1<<16);          // Brand index, CLFlush (8), Max APIC ID (16-23), Local APIC ID (24-31)
+            R_EBX = 0 | (8<<0x8) | (ncluster<<16);          // Brand index, CLFlush (8), Max APIC ID (16-23), Local APIC ID (24-31)
             /*{
                 int cpu = sched_getcpu();
                 if(cpu<0) cpu=0;
@@ -210,7 +254,7 @@ void my_cpuid(x64emu_t* emu, uint32_t tmp32u)
             R_ECX =   1<<0      // SSE3
                     | 1<<1      // PCLMULQDQ
                     | 1<<9      // SSSE3
-                    | 1<<12     // fma
+                    //| 1<<12     // fma    // some games treat FMA as AVX
                     | 1<<13     // cx16 (cmpxchg16)
                     | 1<<19     // SSE4_1
                     | 1<<20     // SSE4_2
@@ -274,10 +318,11 @@ void my_cpuid(x64emu_t* emu, uint32_t tmp32u)
         case 0x7:   // extended bits...
             if(R_ECX==0) {
                 R_EAX = 0;
-                R_EBX = 0 |
-                        1<<3 |  // BMI1 
+                R_EBX = 
+                        //1<<3 |  // BMI1 
                         //1<<8 | //BMI2
-                        1<<29;  // SHA extension
+                        1<<29|  // SHA extension
+                        0;
             } else {R_EAX = R_ECX = R_EBX = R_EDX = 0;}
             break;
         case 0xB:   // Extended Topology Enumeration Leaf
@@ -319,9 +364,33 @@ void my_cpuid(x64emu_t* emu, uint32_t tmp32u)
                 default: R_EAX = 0;
             }
             break;
+        case 0x14:  // Processor Trace Enumeration Main Leaf
+            switch(R_ECX) {
+                case 0: // main leaf
+                    R_EAX = 0;  // max sub-leaf
+                    R_EBX = 0;
+                    R_ECX = 0;
+                    R_EDX = 0;
+                    break;
+                default: R_EAX = 0;
+            }
+            break;
+        case 0x15:  // TSC core frenquency
+            R_EAX = 1;  // denominator
+            R_EBX = 1;  // numerator
+            {
+                uint64_t freq = ReadTSCFrequency(emu);
+                while(freq>100000000) {
+                    freq/=10;
+                    R_EAX *= 10;
+                }
+                R_ECX = freq;  // nominal frequency in Hz
+            }
+            R_EDX = 0;
+            break;
 
         case 0x80000000:        // max extended
-            R_EAX = 0x80000005;
+            R_EAX = 0x80000005; // was 0x80000007 before, but L2 cache description 0x80000006 is not correct and make some AC games to assert about l2 cache value coherency...
             break;
         case 0x80000001:        //Extended Processor Signature and Feature Bits
             R_EAX = 0;  // reserved
@@ -359,6 +428,18 @@ void my_cpuid(x64emu_t* emu, uint32_t tmp32u)
             R_EBX = 0;
             R_ECX = 0;
             R_EDX = 0;
+            break;
+        case 0x80000006:    // L2 cache line size and associativity
+            R_EAX = 0;
+            R_EBX = 0;
+            R_ECX = 0;
+            R_EDX = 0;
+            break;
+        case 0x80000007:    // Invariant TSC
+            R_EAX = 0;
+            R_EBX = 0;
+            R_ECX = 0;
+            R_EDX = 0 | (1<<8); // Invariant TSC
             break;
         default:
             printf_log(LOG_INFO, "Warning, CPUID command %X unsupported (ECX=%08x)\n", tmp32u, R_ECX);

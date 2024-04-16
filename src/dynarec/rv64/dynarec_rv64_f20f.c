@@ -28,12 +28,13 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
     uint8_t opcode = F8;
     uint8_t nextop;
     uint8_t gd, ed;
-    uint8_t wback, gback;
+    uint8_t wb1, wback, wb2, gback;
     uint8_t u8;
     uint64_t u64, j64;
     int v0, v1;
     int q0;
     int d0, d1;
+    int s0, s1;
     int64_t fixedaddress, gdoffset;
     int unscaled;
 
@@ -146,6 +147,38 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             opcode = F8;
             switch(opcode) {
 
+                case 0xF0:  // CRC32 Gd, Eb
+                    INST_NAME("CRC32 Gd, Eb");
+                    nextop = F8;
+                    GETEB(x1, 0);
+                    GETGD;
+                    XOR(gd, gd, ed);
+                    MOV32w(x2, 0x82f63b78);
+                    for (int i = 0; i < 8; i++) {
+                        SRLI((i&1)?gd:x4, (i&1)?x4:gd, 1);
+                        ANDI(x6, (i&1)?x4:gd, 1);
+                        BEQZ(x6, 4+4);
+                        XOR((i&1)?gd:x4, (i&1)?gd:x4, x2);
+                    }
+                    break;
+                case 0xF1:  // CRC32 Gd, Ed
+                    INST_NAME("CRC32 Gd, Ed");
+                    nextop = F8;
+                    GETGD;
+                    GETED(0);
+                    MOV32w(x2, 0x82f63b78);
+                    for(int j=0; j<4*(rex.w+1); ++j) {
+                        SRLI(x5, ed, 8*j);
+                        ANDI(x3, x5, 0xFF);
+                        XOR(gd, gd, x3);
+                        for (int i = 0; i < 8; i++) {
+                            SRLI((i&1)?gd:x4, (i&1)?x4:gd, 1);
+                            ANDI(x6, (i&1)?x4:gd, 1);
+                            BEQZ(x6, 4+4);
+                            XOR((i&1)?gd:x4, (i&1)?gd:x4, x2);
+                        }
+                    }
+                    break;
                 default:
                     DEFAULT;
             }
@@ -272,6 +305,42 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                 SD(x3, gback, gdoffset+8);
             }
             break;
+        case 0x7C:
+            INST_NAME("HADDPS Gx, Ex");
+            nextop = F8;
+            GETGX();
+            GETEX(x2, 0);
+            s0 = fpu_get_scratch(dyn);
+            s1 = fpu_get_scratch(dyn);
+            // GX->f[0] += GX->f[1];
+            FLW(s0, gback, gdoffset + 0);
+            FLW(s1, gback, gdoffset + 4);
+            FADDS(s0, s0, s1);
+            FSW(s0, gback, gdoffset + 0);
+            // GX->f[1] = GX->f[2] + GX->f[3];
+            FLW(s0, gback, gdoffset + 8);
+            FLW(s1, gback, gdoffset + 12);
+            FADDS(s0, s0, s1);
+            FSW(s0, gback, gdoffset + 4);
+            if (MODREG && gd == (nextop & 7) + (rex.b << 3)) {
+                // GX->f[2] = GX->f[0];
+                FLW(s1, gback, gdoffset + 0);
+                FSW(s1, gback, gdoffset + 8);
+                // GX->f[3] = GX->f[1];
+                FSW(s0, gback, gdoffset + 12);
+            } else {
+                // GX->f[2] = EX->f[0] + EX->f[1];
+                FLW(s0, wback, fixedaddress + 0);
+                FLW(s1, wback, fixedaddress + 4);
+                FADDS(s0, s0, s1);
+                FSW(s0, gback, gdoffset + 8);
+                // GX->f[3] = EX->f[2] + EX->f[3];
+                FLW(s0, wback, fixedaddress + 8);
+                FLW(s1, wback, fixedaddress + 12);
+                FADDS(s0, s0, s1);
+                FSW(s0, gback, gdoffset + 12);
+            }
+            break;
         case 0xC2:
             INST_NAME("CMPSD Gx, Ex, Ib");
             nextop = F8;
@@ -328,8 +397,7 @@ uintptr_t dynarec64_F20F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                 FLD(d0, wback, fixedaddress+8*i);
                 FCVTLD(x3, d0, RD_DYN);
                 SEXT_W(x5, x3);
-                SUB(x5, x5, x3);
-                BEQZ(x5, 8);
+                BEQ(x5, x3, 8);
                 LUI(x3, 0x80000); // INT32_MIN
                 SW(x3, gback, gdoffset+4*i);
             }

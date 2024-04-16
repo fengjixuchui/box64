@@ -491,10 +491,10 @@ uintptr_t dynarec64_00_2(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             INST_NAME("POPF");
             SETFLAGS(X_ALL, SF_SET);
             POP1z(xFlags);
-            FLAGS_ADJUST_FROM11(xFlags, x2);
+            FLAGS_ADJUST_FROM11(xFlags, xFlags, x2);
             MOV32w(x1, 0x3F7FD7);
             AND(xFlags, xFlags, x1);
-            ORI(xFlags, xFlags, 0x2);
+            ORI(xFlags, xFlags, 0x202);
             SET_DFNONE();
             if(box64_wine) {    // should this be done all the time?
                 ANDI(x1, xFlags, 1 << F_TF);
@@ -503,9 +503,20 @@ uintptr_t dynarec64_00_2(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                 jump_to_epilog(dyn, addr, 0, ninst);
             }
             break;
+        case 0x9E:
+            INST_NAME("SAHF");
+            SETFLAGS(X_CF | X_PF | X_AF | X_ZF | X_SF, SF_SUBSET);
+            ADDI(x1, xZR, ~0b11010101);
+            AND(xFlags, xFlags, x1);
+            NOT(x1, x1);
+            SRLI(x2, xRAX, 8);
+            AND(x1, x1, x2);
+            OR(xFlags, xFlags, x1);
+            SET_DFNONE();
+            break;
         case 0x9F:
             INST_NAME("LAHF");
-            READFLAGS(X_CF|X_PF|X_AF|X_ZF|X_SF);
+            READFLAGS(X_CF | X_PF | X_AF | X_ZF | X_SF);
             ANDI(x1, xFlags, 0xFF);
             SLLI(x1, x1, 8);
             MOV64x(x2, 0xffffffffffff00ffLL);
@@ -579,16 +590,16 @@ uintptr_t dynarec64_00_2(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                 BNEZ_MARK2(x1);
                 MARK;   // Part with DF==0
                 LDxw(x1, xRSI, 0);
-                ADDI(xRSI, xRSI, rex.w?8:4);
                 SDxw(x1, xRDI, 0);
+                ADDI(xRSI, xRSI, rex.w?8:4);
                 ADDI(xRDI, xRDI, rex.w?8:4);
                 SUBI(xRCX, xRCX, 1);
                 BNEZ_MARK(xRCX);
                 B_NEXT_nocond;
                 MARK2;  // Part with DF==1
                 LDxw(x1, xRSI, 0);
-                SUBI(xRSI, xRSI, rex.w?8:4);
                 SDxw(x1, xRDI, 0);
+                SUBI(xRSI, xRSI, rex.w?8:4);
                 SUBI(xRDI, xRDI, rex.w?8:4);
                 SUBI(xRCX, xRCX, 1);
                 BNEZ_MARK2(xRCX);
@@ -614,8 +625,8 @@ uintptr_t dynarec64_00_2(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                 BNEZ_MARK2(x1);
                 MARK;   // Part with DF==0
                 LBU(x1, xRSI, 0);
-                ADDI(xRSI, xRSI, 1);
                 LBU(x2, xRDI, 0);
+                ADDI(xRSI, xRSI, 1);
                 ADDI(xRDI, xRDI, 1);
                 SUBI(xRCX, xRCX, 1);
                 if (rep==1) {BEQ_MARK3(x1, x2);} else {BNE_MARK3(x1, x2);}
@@ -623,8 +634,8 @@ uintptr_t dynarec64_00_2(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                 B_MARK3_nocond;
                 MARK2;   // Part with DF==1
                 LBU(x1, xRSI, 0);
-                SUBI(xRSI, xRSI, 1);
                 LBU(x2, xRDI, 0);
+                SUBI(xRSI, xRSI, 1);
                 SUBI(xRDI, xRDI, 1);
                 SUBI(xRCX, xRCX, 1);
                 if (rep==1) {BEQ_MARK3(x1, x2);} else {BNE_MARK3(x1, x2);}
@@ -656,8 +667,8 @@ uintptr_t dynarec64_00_2(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                     BNEZ_MARK2(x1);
                     MARK; // Part with DF==0
                     LDxw(x1, xRSI, 0);
-                    ADDI(xRSI, xRSI, rex.w ? 8 : 4);
                     LDxw(x2, xRDI, 0);
+                    ADDI(xRSI, xRSI, rex.w ? 8 : 4);
                     ADDI(xRDI, xRDI, rex.w ? 8 : 4);
                     SUBI(xRCX, xRCX, 1);
                     if (rep == 1) { BEQ_MARK3(x1, x2); } else { BNE_MARK3(x1, x2); }
@@ -665,8 +676,8 @@ uintptr_t dynarec64_00_2(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                     B_MARK3_nocond;
                     MARK2; // Part with DF==1
                     LDxw(x1, xRSI, 0);
-                    SUBI(xRSI, xRSI, rex.w ? 8 : 4);
                     LDxw(x2, xRDI, 0);
+                    SUBI(xRSI, xRSI, rex.w ? 8 : 4);
                     SUBI(xRDI, xRDI, rex.w ? 8 : 4);
                     SUBI(xRCX, xRCX, 1);
                     if (rep == 1) { BEQ_MARK3(x1, x2); } else { BNE_MARK3(x1, x2); }

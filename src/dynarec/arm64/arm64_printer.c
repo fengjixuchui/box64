@@ -387,13 +387,13 @@ const char* arm64_print(uint32_t opcode, uintptr_t addr)
     }
     if(isMask(opcode, "f00100101wwiiiiiiiiiiiiiiiiddddd", &a)) {
         if(sf) {
-            uint64_t noti=~(uint64_t)imm;
+            uint64_t noti=~(((uint64_t)imm)<<(hw*16));
             if(!hw)
                 snprintf(buff, sizeof(buff), "MOVN %s, 0x%x\t; 0x%lx", Xt[Rd], imm, noti);
             else
                 snprintf(buff, sizeof(buff), "MOVN %s, 0x%x LSL %d\t; 0x%lx", Xt[Rd], imm, 16*hw, noti);
         } else {
-            uint32_t noti=~(uint32_t)imm;
+            uint32_t noti=~(((uint32_t)imm)<<(hw*16));
             if(!hw)
                 snprintf(buff, sizeof(buff), "MOVN %s, 0x%x\t; 0x%x", Wt[Rd], imm, noti);
             else
@@ -1757,6 +1757,11 @@ const char* arm64_print(uint32_t opcode, uintptr_t addr)
     }
     if(isMask(opcode, "01011110000mmmmm010100nnnnnddddd", &a)) {
         snprintf(buff, sizeof(buff), "SHA256H2 Q%d, Q%d, V%d.4S", Rd, Rn, Rm);
+        return buff;
+    }
+    // UDF
+    if(isMask(opcode, "0000000000000000iiiiiiiiiiiiiiii", &a)) {
+        snprintf(buff, sizeof(buff), "UDF 0x%x", a.i);
         return buff;
     }
 

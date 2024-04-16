@@ -10,13 +10,14 @@ typedef struct instsize_s instsize_t;
 
 #define BARRIER_MAYBE   8
 
-#define EXT_CACHE_NONE 0
-#define EXT_CACHE_ST_D 1
-#define EXT_CACHE_ST_F 2
-#define EXT_CACHE_MM   3
-#define EXT_CACHE_SS   4
-#define EXT_CACHE_SD   5
-#define EXT_CACHE_SCR  6
+#define EXT_CACHE_NONE   0
+#define EXT_CACHE_ST_D   1
+#define EXT_CACHE_ST_F   2
+#define EXT_CACHE_ST_I64 3
+#define EXT_CACHE_MM     4
+#define EXT_CACHE_SS     5
+#define EXT_CACHE_SD     6
+#define EXT_CACHE_SCR    7
 typedef union ext_cache_s {
     int8_t           v;
     struct {
@@ -112,6 +113,9 @@ typedef struct dynarec_rv64_s {
     uintptr_t*          next;       // variable array of "next" jump address
     int                 next_sz;
     int                 next_cap;
+    int*                jmps;       // variable array of jump instructions
+    int                 jmp_sz;
+    int                 jmp_cap;
     int*                predecessor;// single array of all predecessor
     dynablock_t*        dynablock;
     instsize_t*         instsize;
@@ -123,6 +127,7 @@ typedef struct dynarec_rv64_s {
     int32_t             forward_size;   // size at the forward point
     int                 forward_ninst;  // ninst at the forward point
     uint8_t             always_test;
+    uint8_t             abort;
 } dynarec_rv64_t;
 
 // convert idx (0..24) to reg index (10..31 0..1)
@@ -132,6 +137,8 @@ typedef struct dynarec_rv64_s {
 
 void add_next(dynarec_rv64_t *dyn, uintptr_t addr);
 uintptr_t get_closest_next(dynarec_rv64_t *dyn, uintptr_t addr);
+void add_jump(dynarec_rv64_t *dyn, int ninst);
+int get_first_jump(dynarec_rv64_t *dyn, int next);
 int is_nops(dynarec_rv64_t *dyn, uintptr_t addr, int n);
 int is_instructions(dynarec_rv64_t *dyn, uintptr_t addr, int n);
 

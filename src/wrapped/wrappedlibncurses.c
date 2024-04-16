@@ -21,6 +21,7 @@
 
 const char* libncursesName = "libncurses.so.5";
 #define LIBNAME libncurses
+#define ALTNAME "libncurses.so.6"
 
 // this is a simple copy of libncursesw wrapper. TODO: check if ok
 
@@ -87,11 +88,6 @@ EXPORT void* my_initscr()
     return ret;
 }
 
-#define CUSTOM_INIT \
-    getMy(lib); \
-    setNeededLibs(lib,  1, "libtinfo.so.5");
-
-#define CUSTOM_FINI \
-    freeMy();
+#define NEEDED_LIBS "libtinfo.so.5"
 
 #include "wrappedlib_init.h"

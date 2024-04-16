@@ -25,7 +25,6 @@
     const char* gtk3Name = "libgtk-3.so.0";
 #endif
 
-static char* libname = NULL;
 #define LIBNAME gtk3
 
 typedef size_t        (*LFv_t)(void);
@@ -41,6 +40,7 @@ typedef int           (*iFppp_t)(void*, void*, void*);
 typedef void          (*vFppp_t)(void*, void*, void*);
 typedef void          (*vFppA_t)(void*, void*, va_list);
 typedef void          (*vFpipV_t)(void*, int, void*, ...);
+typedef void          (*vFppippi_t)(void*, void*, int, void*, void*, int);
 
 #define ADDED_FUNCTIONS()                   \
 GO(g_type_class_ref, pFL_t)                 \
@@ -88,6 +88,7 @@ GO(g_module_close, vFp_t)                   \
 GO(gtk_tree_store_newv, pFup_t)             \
 GO(gtk_widget_style_get_valist, vFppA_t)    \
 GO(gtk_widget_style_get_property, vFppp_t)  \
+GO(gtk_list_store_insert_with_valuesv, vFppippi_t)
 
 #include "generated/wrappedgtk3types.h"
 
@@ -684,7 +685,7 @@ static void my3_gtk_builder_connect_signals_default(void* builder, void* object,
   }
   // Mixing Native and emulated code... the my_g_signal_* function will handle that (GetNativeFnc does)
   if(!func)
-      func = (void*)FindGlobalSymbol(my_context->maplib, handler_name, 0, NULL);
+      func = (void*)FindGlobalSymbol(my_context->maplib, handler_name, 0, NULL, 0);
 
   if(!func) {
       my->g_log("Gtk", 1<<4, "Could not find signal handler '%s'.", handler_name);
@@ -718,7 +719,7 @@ EXPORT void my3_gtk_tree_view_column_set_cell_data_func(x64emu_t* emu, void* tre
 EXPORT void* my3_gtk_tree_store_new(x64emu_t* emu, uint32_t n, uintptr_t* b)
 {
     uintptr_t c[n];
-    for(int i=0; i<n; ++i)
+    for(uint32_t i=0; i<n; ++i)
         c[i] = getVArgs(emu, 1, b, i);
     return my->gtk_tree_store_newv(n, c);
 }
@@ -785,14 +786,43 @@ EXPORT void my3_gtk_widget_style_get(x64emu_t* emu, void* widget, void* first, u
     #endif
 }
 
+EXPORT void my3_gtk_list_store_insert_with_values(x64emu_t* emu, void* list_store, void* iter, int position, uintptr_t* b)
+{
+    int n = 0;
+    while((((int)getVArgs(emu, 3, b, n*2)))!=-1) n+=1;
+    int columns[n];
+    my_GValue_t values[n];
+    for(int i=0; i<n; ++i) {
+      columns[i] = (int)getVArgs(emu, 3, b, i*2+0);
+      values[i] = *(my_GValue_t*)getVArgs(emu, 3, b, i*2+1);
+    }
+    my->gtk_list_store_insert_with_valuesv(list_store, iter, position, columns, values, n);
+}
+
+EXPORT void my3_gtk_tree_store_set_valist(x64emu_t* emu, void* tree, void* iter, x64_va_list_t V)
+{
+    #ifdef CONVERT_VALIST
+    CONVERT_VALIST(V);
+    #else
+    CREATE_VALIST_FROM_VALIST(V, emu->scratch);
+    #endif
+    my->gtk_tree_store_set_valist(tree, iter, VARARGS);
+}
+
+EXPORT void my3_gtk_tree_store_set(x64emu_t* emu, void* tree, void* iter, uintptr_t* b)
+{
+    CREATE_VALIST_FROM_VAARG(b, emu->scratch, 2);
+    my->gtk_tree_store_set_valist(tree, iter, VARARGS);
+}
+
+
 #define PRE_INIT    \
     if(box64_nogtk) \
         return -1;
 
+#define ALTMY my3_
+
 #define CUSTOM_INIT \
-    libname = lib->name;                                        \
-    getMy(lib);                                                 \
-    SETALT(my3_);                                               \
     SetGtkApplicationID(my->gtk_application_get_type());        \
     SetGtkWidget3ID(my->gtk_widget_get_type());                 \
     SetGtkFixed3ID(my->gtk_fixed_get_type());                   \
@@ -813,10 +843,12 @@ EXPORT void my3_gtk_widget_style_get(x64emu_t* emu, void* widget, void* first, u
     SetGtkGestureID(my->gtk_gesture_get_type());                \
     SetGtkGestureSingleID(my->gtk_gesture_single_get_type());   \
     SetGtkGestureLongPressID(my->gtk_gesture_long_press_get_type());\
-    SetGtkActionID(my->gtk_action_get_type());                  \
-    setNeededLibs(lib, 3, "libgdk-3.so.0", "libpangocairo-1.0.so.0", "libgio-2.0.so.0");
+    SetGtkActionID(my->gtk_action_get_type());
 
-#define CUSTOM_FINI \
-    freeMy();
+#ifdef ANDROID
+#define NEEDED_LIBS "libgdk-3.so", "libpangocairo-1.0.so", "libgio-2.0.so"
+#else
+#define NEEDED_LIBS "libgdk-3.so.0", "libpangocairo-1.0.so.0", "libgio-2.0.so.0"
+#endif
 
 #include "wrappedlib_init.h"

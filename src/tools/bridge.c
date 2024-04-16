@@ -28,15 +28,8 @@ typedef struct brick_s {
     int         sz;
     brick_t     *next;
 } brick_t;
-#ifdef PAGE8K
-#define NBRICK  (8192/sizeof(onebridge_t))
-#elif defined(PAGE16K)
-#define NBRICK  (16384/sizeof(onebridge_t))
-#elif defined(PAGE64K)
-#define NBRICK  (65536/sizeof(onebridge_t))
-#else
-#define NBRICK  (4096/sizeof(onebridge_t))
-#endif
+
+#define NBRICK (box64_pagesize/sizeof(onebridge_t))
 
 typedef struct bridge_s {
     brick_t         *head;
@@ -148,10 +141,8 @@ uintptr_t AddCheckBridge(bridge_t* bridge, wrapper_t w, void* fnc, int N, const 
     return ret;
 }
 
-uintptr_t AddAutomaticBridge(x64emu_t* emu, bridge_t* bridge, wrapper_t w, void* fnc, int N, const char* name)
+uintptr_t AddAutomaticBridge(bridge_t* bridge, wrapper_t w, void* fnc, int N, const char* name)
 {
-    (void)emu;
-
     if(!fnc)
         return 0;
     uintptr_t ret = CheckBridged(bridge, fnc);
@@ -160,11 +151,6 @@ uintptr_t AddAutomaticBridge(x64emu_t* emu, bridge_t* bridge, wrapper_t w, void*
     if(!hasAlternate(fnc)) {
         printf_log(LOG_DEBUG, "Adding AutomaticBridge for %p to %p\n", fnc, (void*)ret);
         addAlternate(fnc, (void*)ret);
-        #ifdef DYNAREC
-        // now, check if dynablock at native address exist
-        if(box64_dynarec)
-            DBAlternateBlock(emu, (uintptr_t)fnc, ret, 0);  // function wrapping is exclusive to 64bits on box64
-        #endif
     }
     return ret;
 }
@@ -236,9 +222,13 @@ uintptr_t AddVSyscall(bridge_t* bridge, int num)
 
 const char* getBridgeName(void* addr)
 {
-    onebridge_t* one = (onebridge_t*)(((uintptr_t)addr/sizeof(onebridge_t))*sizeof(onebridge_t));   // align to start of bridge
-    if(one->C3==0xC3 && one->S=='S' && one->C=='C')
-        return one->name;
+    onebridge_t* one = (onebridge_t*)(((uintptr_t)addr&~(sizeof(onebridge_t)-1)));   // align to start of bridge
+    if(one->C3==0xC3 && one->S=='S' && one->C=='C') {
+        if(one->w==NULL)
+            return "ExitEmulation";
+        else
+            return one->name;
+    }
     return NULL;
 }
 

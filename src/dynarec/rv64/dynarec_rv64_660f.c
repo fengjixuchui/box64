@@ -15,11 +15,13 @@
 #include "emu/x64run_private.h"
 #include "x64trace.h"
 #include "dynarec_native.h"
+#include "bitutils.h"
 
 #include "rv64_printer.h"
 #include "dynarec_rv64_private.h"
 #include "dynarec_rv64_functions.h"
 #include "dynarec_rv64_helper.h"
+#include "emu/x64compstrings.h"
 
 uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ninst, rex_t rex, int* ok, int* need_epilog)
 {
@@ -36,7 +38,7 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
     uint64_t tmp64u, tmp64u2;
     int v0, v1;
     int q0, q1;
-    int d0, d1;
+    int d0, d1, d2;
     int64_t fixedaddress, gdoffset;
     int unscaled;
 
@@ -344,7 +346,36 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                         SW(x3, gback, gdoffset + 3 * 4);
                     }
                     break;
-
+                case 0x03:
+                    INST_NAME("PHADDSW Gx, Ex");
+                    nextop = F8;
+                    GETGX();
+                    for (int i = 0; i < 4; ++i) {
+                        // tmp32s = GX->sw[i*2+0]+GX->sw[i*2+1];
+                        // GX->sw[i] = sat(tmp32s);
+                        LH(x3, gback, gdoffset + 2 * (i * 2 + 0));
+                        LH(x4, gback, gdoffset + 2 * (i * 2 + 1));
+                        ADDW(x3, x3, x4);
+                        SAT16(x3, x4);
+                        SH(x3, gback, gdoffset + 2 * i);
+                    }
+                    if (MODREG && gd == (nextop & 7) + (rex.b << 3)) {
+                        // GX->q[1] = GX->q[0];
+                        LD(x3, gback, gdoffset + 0);
+                        SD(x3, gback, gdoffset + 8);
+                    } else {
+                        GETEX(x2, 0);
+                        for (int i = 0; i < 4; ++i) {
+                            // tmp32s = EX->sw[i*2+0] + EX->sw[i*2+1];
+                            // GX->sw[4+i] = sat(tmp32s);
+                            LH(x3, wback, fixedaddress + 2 * (i * 2 + 0));
+                            LH(x4, wback, fixedaddress + 2 * (i * 2 + 1));
+                            ADDW(x3, x3, x4);
+                            SAT16(x3, x4);
+                            SH(x3, gback, gdoffset + 2 * (4 + i));
+                        }
+                    }
+                    break;
                 case 0x04:
                     INST_NAME("PADDUBSW Gx, Ex");
                     nextop = F8;
@@ -372,7 +403,32 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                         SH(x3, gback, gdoffset + i * 2);
                     }
                     break;
-
+                case 0x05:
+                    INST_NAME("PHSUBW Gx, Ex");
+                    nextop = F8;
+                    GETGX();
+                    for (int i = 0; i < 4; ++i) {
+                        // GX->sw[i] = GX->sw[i*2+0] - GX->sw[i*2+1];
+                        LH(x3, gback, gdoffset + 2 * (i * 2 + 0));
+                        LH(x4, gback, gdoffset + 2 * (i * 2 + 1));
+                        SUBW(x3, x3, x4);
+                        SH(x3, gback, gdoffset + 2 * i);
+                    }
+                    if (MODREG && gd == (nextop & 7) + (rex.b << 3)) {
+                        // GX->q[1] = GX->q[0];
+                        LD(x3, gback, gdoffset + 0);
+                        SD(x3, gback, gdoffset + 8);
+                    } else {
+                        GETEX(x2, 0);
+                        for (int i = 0; i < 4; ++i) {
+                            // GX->sw[4+i] = EX->sw[i*2+0] - EX->sw[i*2+1];
+                            LH(x3, wback, fixedaddress + 2 * (i * 2 + 0));
+                            LH(x4, wback, fixedaddress + 2 * (i * 2 + 1));
+                            SUBW(x3, x3, x4);
+                            SH(x3, gback, gdoffset + 2 * (4 + i));
+                        }
+                    }
+                    break;
                 case 0x08:
                     INST_NAME("PSIGNB Gx, Ex");
                     nextop = F8;
@@ -445,6 +501,18 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                         LBU(x3, wback, fixedaddress + i);
                         SB(x3, gback, gdoffset + i);
                         // continue
+                    }
+                    break;
+                case 0x14:
+                    INST_NAME("PBLENDVPS Gx,Ex");
+                    nextop = F8;
+                    GETGX();
+                    GETEX(x2, 0);
+                    for (int i = 0; i < 4; ++i) {
+                        LW(x3, xEmu, offsetof(x64emu_t, xmm[0]) + i * 4);
+                        BGE(x3, xZR, 4 + 4 * 2);
+                        LWU(x3, wback, fixedaddress + i * 4);
+                        SW(x3, gback, gdoffset + i * 4);
                     }
                     break;
                 case 0x17:
@@ -522,7 +590,84 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                         SW(x4, gback, gdoffset + i * 4);
                     }
                     break;
-
+                case 0x20:
+                    INST_NAME("PMOVSXBW Gx, Ex"); // SSE4 opcode!
+                    nextop = F8;
+                    GETGX();
+                    GETEX(x2, 0);
+                    for (int i = 7; i >= 0; --i) {
+                        // GX->sw[i] = EX->sb[i];
+                        LB(x3, wback, fixedaddress + i);
+                        SH(x3, gback, gdoffset + i * 2);
+                    }
+                    break;
+                case 0x21:
+                    INST_NAME("PMOVSXBD Gx, Ex"); // SSE4 opcode!
+                    nextop = F8;
+                    GETGX();
+                    GETEX(x2, 0);
+                    for (int i = 3; i >= 0; --i) {
+                        // GX->sd[i] = EX->sb[i];
+                        LB(x3, wback, fixedaddress + i);
+                        SW(x3, gback, gdoffset + i * 4);
+                    }
+                    break;
+                case 0x22:
+                    INST_NAME("PMOVSXBQ Gx, Ex"); // SSE4 opcode!
+                    nextop = F8;
+                    GETGX();
+                    GETEX(x2, 0);
+                    for (int i = 1; i >= 0; --i) {
+                        // GX->sq[i] = EX->sb[i];
+                        LB(x3, wback, fixedaddress + i);
+                        SD(x3, gback, gdoffset + i * 8);
+                    }
+                    break;
+                case 0x23:
+                    INST_NAME("PMOVSXWD Gx, Ex"); // SSE4 opcode!
+                    nextop = F8;
+                    GETGX();
+                    GETEX(x2, 0);
+                    for (int i = 3; i >= 0; --i) {
+                        // GX->sd[i] = EX->sw[i];
+                        LH(x3, wback, fixedaddress + i * 2);
+                        SW(x3, gback, gdoffset + i * 4);
+                    }
+                    break;
+                case 0x24:
+                    INST_NAME("PMOVSXWQ Gx, Ex"); // SSE4 opcode!
+                    nextop = F8;
+                    GETGX();
+                    GETEX(x2, 0);
+                    for (int i = 1; i >= 0; --i) {
+                        // GX->sq[i] = EX->sw[i];
+                        LH(x3, wback, fixedaddress + i * 2);
+                        SD(x3, gback, gdoffset + i * 8);
+                    }
+                    break;
+                case 0x25:
+                    INST_NAME("PMOVSXDQ Gx, Ex");
+                    nextop = F8;
+                    GETGX();
+                    GETEX(x2, 0);
+                    for (int i = 1; i >= 0; --i) {
+                        // GX->sq[i] = EX->sd[i];
+                        LW(x4, wback, fixedaddress + i * 4);
+                        SD(x4, gback, gdoffset + i * 8);
+                    }
+                    break;
+                case 0x28:
+                    INST_NAME("PMULDQ Gx, Ex");
+                    nextop = F8;
+                    GETEX(x2, 0);
+                    GETGX();
+                    for (int i = 1; i >= 0; --i) {
+                        LW(x3, wback, fixedaddress + i * 8);
+                        LW(x4, gback, gdoffset + i * 8);
+                        MUL(x3, x3, x4);
+                        SD(x3, gback, gdoffset + i * 8);
+                    }
+                    break;
                 case 0x2B:
                     INST_NAME("PACKUSDW Gx, Ex");
                     nextop = F8;
@@ -752,6 +897,42 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                         LW(x4, wback, fixedaddress + i * 4);
                         MUL(x3, x3, x4);
                         SW(x3, gback, gdoffset + i * 4);
+                    }
+                    break;
+                case 0x61:
+                    INST_NAME("PCMPESTRI Gx, Ex, Ib");
+                    SETFLAGS(X_ALL, SF_SET);
+                    nextop = F8;
+                    GETG;
+                    sse_reflect_reg(dyn, ninst, gd);
+                    ADDI(x3, xEmu, offsetof(x64emu_t, xmm[gd]));
+                    if (MODREG) {
+                        ed = (nextop & 7) + (rex.b << 3);
+                        sse_reflect_reg(dyn, ninst, ed);
+                        ADDI(x1, xEmu, offsetof(x64emu_t, xmm[ed]));
+                    } else {
+                        addr = geted(dyn, addr, ninst, nextop, &wback, x1, x2, &fixedaddress, rex, NULL, 0, 1);
+                        if (ed != x1) {
+                            MV(x1, ed);
+                        }
+                    }
+                    // prepare rest arguments
+                    MV(x2, xRDX);
+                    MV(x4, xRAX);
+                    u8 = F8;
+                    MOV32w(x5, u8);
+                    CALL(sse42_compare_string_explicit_len, x1);
+                    ZEROUP(x1);
+                    BNEZ_MARK(x1);
+                    MOV32w(xRCX, (u8 & 1) ? 8 : 16);
+                    B_NEXT_nocond;
+                    MARK;
+                    if (u8 & 0b1000000) {
+                        CLZxw(xRCX, x1, 0, x2, x3, x4);
+                        ADDI(x2, xZR, 31);
+                        SUB(xRCX, x2, xRCX);
+                    } else {
+                        CTZxw(xRCX, xRCX, 0, x1, x2);
                     }
                     break;
                 case 0xDB:
@@ -1073,6 +1254,29 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                         SW(ed, gback, gdoffset + 4 * (u8 & 0x3));
                     }
                     break;
+                case 0x40:
+                    INST_NAME("DPPS Gx, Ex, Ib");
+                    nextop = F8;
+                    GETGX();
+                    GETEX(x2, 1);
+                    u8 = F8;
+                    d0 = fpu_get_scratch(dyn);
+                    d1 = fpu_get_scratch(dyn);
+                    d2 = fpu_get_scratch(dyn);
+                    FMVWX(d2, xZR);
+                    for (int i = 0; i < 4; ++i)
+                        if (u8 & (1 << (i + 4))) {
+                            FLW(d0, gback, gdoffset + i * 4);
+                            FLW(d1, wback, fixedaddress + i * 4);
+                            FMULS(d0, d0, d1);
+                            FADDS(d2, d2, d0);
+                        }
+                    for (int i = 0; i < 4; ++i)
+                        if (u8 & (1 << i))
+                            FSW(d2, gback, gdoffset + i * 4);
+                        else
+                            SW(xZR, gback, gdoffset + i * 4);
+                    break;
                 case 0x44:
                     INST_NAME("PCLMULQDQ Gx, Ex, Ib");
                     nextop = F8;
@@ -1276,8 +1480,7 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
                 FLW(d0, wback, fixedaddress + 4 * i);
                 FCVTLS(x3, d0, RD_DYN);
                 SEXT_W(x5, x3);
-                SUB(x5, x5, x3);
-                BEQZ(x5, 8);
+                BEQ(x5, x3, 8);
                 LUI(x3, 0x80000); // INT32_MIN
                 SW(x3, gback, gdoffset + 4 * i);
             }
@@ -2002,6 +2205,54 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             SSE_LOOP_MV_Q2(x3);
             if (!MODREG) SMWRITE2();
             break;
+        case 0xA3:
+            INST_NAME("BT Ew, Gw");
+            SETFLAGS(X_CF, SF_SUBSET);
+            SET_DFNONE();
+            nextop = F8;
+            GETEW(x1, 0);
+            GETGW(x2);
+            ANDI(gd, gd, 15);
+            BEXT(x4, ed, gd, x6);
+            ANDI(xFlags, xFlags, ~1);
+            OR(xFlags, xFlags, x4);
+            break;
+        case 0xA4:
+            nextop = F8;
+            INST_NAME("SHLD Ew, Gw, Ib");
+            SETFLAGS(X_ALL, SF_SET_PENDING);
+            GETEW(x1, 0);
+            GETGW(x2);
+            u8 = F8;
+            emit_shld16c(dyn, ninst, rex, ed, gd, u8, x3, x4, x5);
+            EWBACK;
+            break;
+        case 0xAB:
+            INST_NAME("BTS Ew, Gw");
+            SETFLAGS(X_CF, SF_SUBSET);
+            SET_DFNONE();
+            nextop = F8;
+            GETEW(x1, 0);
+            GETGW(x2);
+            ANDI(gd, gd, 15);
+            BEXT(x4, ed, gd, x6);
+            ANDI(xFlags, xFlags, ~1);
+            OR(xFlags, xFlags, x4);
+            ADDI(x4, xZR, 1);
+            SLL(x4, x4, gd);
+            OR(ed, ed, x4);
+            EWBACK;
+            break;
+        case 0xAC:
+            nextop = F8;
+            INST_NAME("SHRD Ew, Gw, Ib");
+            SETFLAGS(X_ALL, SF_SET_PENDING);
+            GETEW(x1, 0);
+            GETGW(x2);
+            u8 = F8;
+            emit_shrd16c(dyn, ninst, rex, ed, gd, u8, x3, x4);
+            EWBACK;
+            break;
         case 0xAF:
             INST_NAME("IMUL Gw,Ew");
             SETFLAGS(X_ALL, SF_PENDING);
@@ -2014,9 +2265,27 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             ZEXTH(x2, x2);
             GWBACK;
             break;
+        case 0xB3:
+            INST_NAME("BTR Ew, Gw");
+            SETFLAGS(X_CF, SF_SUBSET);
+            SET_DFNONE();
+            nextop = F8;
+            GETEW(x1, 0);
+            GETGW(x2);
+            ANDI(gd, gd, 15);
+            BEXT(x4, ed, gd, x3); // F_CF is 1
+            ANDI(xFlags, xFlags, ~1);
+            OR(xFlags, xFlags, x4);
+            ADDI(x4, xZR, 1);
+            SLL(x4, x4, gd);
+            NOT(x4, x4);
+            AND(ed, ed, x4);
+            EWBACK;
+            break;
         case 0xB6:
             INST_NAME("MOVZX Gw, Eb");
             nextop = F8;
+            gd = xRAX+((nextop&0x38)>>3)+(rex.r<<3);
             if (MODREG) {
                 if (rex.rex) {
                     eb1 = xRAX + (nextop & 7) + (rex.b << 3);
@@ -2039,6 +2308,153 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             LUI(x5, 0xffff0);
             AND(gd, gd, x5);
             OR(gd, gd, x1);
+            break;
+        case 0xBA:
+            nextop = F8;
+            switch ((nextop >> 3) & 7) {
+                case 4:
+                    INST_NAME("BT Ew, Ib");
+                    SETFLAGS(X_CF, SF_SUBSET);
+                    SET_DFNONE();
+                    GETED(1);
+                    u8 = F8;
+                    u8 &= rex.w ? 0x3f : 15;
+                    BEXTI(x3, ed, u8); // F_CF is 1
+                    ANDI(xFlags, xFlags, ~1);
+                    OR(xFlags, xFlags, x3);
+                    break;
+                case 5:
+                    INST_NAME("BTS Ew, Ib");
+                    SETFLAGS(X_CF, SF_SUBSET);
+                    SET_DFNONE();
+                    GETEW(x1, 1);
+                    u8 = F8;
+                    u8 &= (rex.w ? 0x3f : 15);
+                    ORI(xFlags, xFlags, 1 << F_CF);
+                    if (u8 <= 10) {
+                        ANDI(x6, ed, 1 << u8);
+                        BNE_MARK(x6, xZR);
+                        ANDI(xFlags, xFlags, ~(1 << F_CF));
+                        XORI(ed, ed, 1 << u8);
+                    } else {
+                        ORI(x6, xZR, 1);
+                        SLLI(x6, x6, u8);
+                        AND(x4, ed, x6);
+                        BNE_MARK(x4, xZR);
+                        ANDI(xFlags, xFlags, ~(1 << F_CF));
+                        XOR(ed, ed, x6);
+                    }
+                    EWBACK;
+                    MARK;
+                    break;
+                case 6:
+                    INST_NAME("BTR Ed, Ib");
+                    SETFLAGS(X_CF, SF_SUBSET);
+                    SET_DFNONE();
+                    GETEW(x1, 1);
+                    u8 = F8;
+                    u8 &= (rex.w ? 0x3f : 15);
+                    ANDI(xFlags, xFlags, ~(1 << F_CF));
+                    if (u8 <= 10) {
+                        ANDI(x6, ed, 1 << u8);
+                        BEQ_MARK(x6, xZR);
+                        ORI(xFlags, xFlags, 1 << F_CF);
+                        XORI(ed, ed, 1 << u8);
+                    } else {
+                        ORI(x6, xZR, 1);
+                        SLLI(x6, x6, u8);
+                        AND(x6, ed, x6);
+                        BEQ_MARK(x6, xZR);
+                        ORI(xFlags, xFlags, 1 << F_CF);
+                        XOR(ed, ed, x6);
+                    }
+                    EWBACK;
+                    MARK;
+                    break;
+                case 7:
+                    INST_NAME("BTC Ew, Ib");
+                    SETFLAGS(X_CF, SF_SUBSET);
+                    SET_DFNONE();
+                    GETEW(x1, 1);
+                    u8 = F8;
+                    u8 &= rex.w ? 0x3f : 15;
+                    BEXTI(x3, ed, u8); // F_CF is 1
+                    ANDI(xFlags, xFlags, ~1);
+                    OR(xFlags, xFlags, x3);
+                    if (u8 <= 10) {
+                        XORI(ed, ed, (1LL << u8));
+                    } else {
+                        MOV64xw(x3, (1LL << u8));
+                        XOR(ed, ed, x3);
+                    }
+                    EWBACK;
+                    break;
+                default:
+                    DEFAULT;
+            }
+            break;
+        case 0xBB:
+            INST_NAME("BTC Ew, Gw");
+            SETFLAGS(X_CF, SF_SUBSET);
+            SET_DFNONE();
+            nextop = F8;
+            GETGD;
+            if (MODREG) {
+                ed = xRAX + (nextop & 7) + (rex.b << 3);
+                wback = 0;
+            } else {
+                SMREAD();
+                addr = geted(dyn, addr, ninst, nextop, &wback, x3, x1, &fixedaddress, rex, NULL, 1, 0);
+                SRAIxw(x1, gd, 5 + rex.w);
+                ADDSL(x3, wback, x1, 2 + rex.w, x1);
+                LDxw(x1, x3, fixedaddress);
+                ed = x1;
+                wback = x3;
+            }
+            BEXT(x4, ed, gd, x2); // F_CF is 1
+            ANDI(xFlags, xFlags, ~1);
+            OR(xFlags, xFlags, x4);
+            ADDI(x4, xZR, 1);
+            ANDI(x2, gd, rex.w ? 0x3f : 15);
+            SLL(x4, x4, x2);
+            XOR(ed, ed, x4);
+            if (wback) {
+                SDxw(ed, wback, fixedaddress);
+                SMWRITE();
+            }
+            break;
+        case 0xBC:
+            INST_NAME("BSF Gw, Ew");
+            SETFLAGS(X_ZF, SF_SUBSET);
+            SET_DFNONE();
+            nextop = F8;
+            GETEW(x5, 0);
+            GETGW(x4);
+            BNE_MARK(ed, xZR);
+            ORI(xFlags, xFlags, 1 << F_ZF);
+            B_NEXT_nocond;
+            MARK;
+            // gd is undefined if ed is all zeros, don't worry.
+            CTZxw(gd, ed, 0, x1, x2);
+            ANDI(xFlags, xFlags, ~(1 << F_ZF));
+            GWBACK;
+            break;
+        case 0xBD:
+            INST_NAME("BSR Gw, Ew");
+            SETFLAGS(X_ZF, SF_SUBSET);
+            SET_DFNONE();
+            nextop = F8;
+            GETEW(x5, 0);
+            GETGW(x4);
+            BNE_MARK(ed, xZR);
+            ORI(xFlags, xFlags, 1 << F_ZF);
+            B_NEXT_nocond;
+            MARK;
+            ANDI(xFlags, xFlags, ~(1 << F_ZF));
+            CLZxw(gd, ed, 0, x1, x2, x3);
+            ADDI(x1, xZR, rex.w ? 63 : 31);
+            SUB(gd, x1, gd);
+            GWBACK;
             break;
         case 0xBE:
             INST_NAME("MOVSX Gw, Eb");
@@ -2066,6 +2482,18 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             NOT(x5, x5);
             AND(x1, x1, x5);
             OR(gd, gd, x1);
+            break;
+        case 0xC1:
+            INST_NAME("XADD Ew, Gw");
+            SETFLAGS(X_ALL, SF_SET_PENDING);
+            nextop = F8;
+            GETGW(x1);
+            GETEW(x2, 0);
+            MV(x9, ed);
+            emit_add16(dyn, ninst, ed, gd, x4, x5, x6);
+            MV(gd, x9);
+            EWBACK;
+            GWBACK;
             break;
         case 0xC2:
             INST_NAME("CMPPD Gx, Ex, Ib");
@@ -2155,6 +2583,29 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             LD(x4, wback, fixedaddress + 8 * ((u8 >> 1) & 1));
             SD(x3, gback, gdoffset + 0);
             SD(x4, gback, gdoffset + 8);
+            break;
+        case 0xC8:
+        case 0xC9:
+        case 0xCA:
+        case 0xCB:
+        case 0xCC:
+        case 0xCD:
+        case 0xCE:
+        case 0xCF:                  /* BSWAP reg */
+            INST_NAME("BSWAP Reg");
+            gd = xRAX+(opcode&7)+(rex.b<<3);
+            if(rex.w) {
+                REV8xw(gd, gd, x1, x2, x3, x4);
+            } else {
+                ANDI(x1, gd, 0xff);
+                SLLI(x1, x1, 8);
+                SRLI(x2, gd, 8);
+                ANDI(x2, x2, 0xff);
+                SRLI(x3, gd, 16);
+                SLLI(x4, x3, 16);
+                AND(x1, x4, x1);
+                AND(gd, x1, x2);
+            }
             break;
         case 0xD1:
             INST_NAME("PSRLW Gx,Ex");
@@ -2503,17 +2954,11 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             GETEX(x2, 0);
             for (int i = 0; i < 8; ++i) {
                 // tmp32s = (int32_t)GX->sw[i] - EX->sw[i];
-                // GX->sw[i] = (tmp32s>32767)?32767:((tmp32s<-32768)?-32768:tmp32s);
+                // GX->sw[i] = sat16(tmp32s);
                 LH(x3, gback, gdoffset + 2 * i);
                 LH(x4, wback, fixedaddress + 2 * i);
                 SUBW(x3, x3, x4);
-                LUI(x4, 0xFFFF8); // -32768
-                BGE(x3, x4, 12);
-                SH(x4, gback, gdoffset + 2 * i);
-                J(20);      // continue
-                LUI(x4, 8); // 32768
-                BLT(x3, x4, 8);
-                ADDIW(x3, x4, -1);
+                SAT16(x3, x4);
                 SH(x3, gback, gdoffset + 2 * i);
             }
             break;
@@ -2568,17 +3013,11 @@ uintptr_t dynarec64_660F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             GETEX(x2, 0);
             for (int i = 0; i < 8; ++i) {
                 // tmp32s = (int32_t)GX->sw[i] + EX->sw[i];
-                // GX->sw[i] = (tmp32s>32767)?32767:((tmp32s<-32768)?-32768:tmp32s);
+                // GX->sw[i] = sat16(tmp32s);
                 LH(x3, gback, gdoffset + 2 * i);
                 LH(x4, wback, fixedaddress + 2 * i);
                 ADDW(x3, x3, x4);
-                LUI(x4, 0xFFFF8); // -32768
-                BGE(x3, x4, 12);
-                SH(x4, gback, gdoffset + 2 * i);
-                J(20);      // continue
-                LUI(x4, 8); // 32768
-                BLT(x3, x4, 8);
-                ADDIW(x3, x4, -1);
+                SAT16(x3, x4);
                 SH(x3, gback, gdoffset + 2 * i);
             }
             break;

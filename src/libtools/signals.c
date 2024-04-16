@@ -270,7 +270,18 @@ static void sigstack_key_alloc() {
     pthread_key_create(&sigstack_key, sigstack_destroy);
 }
 
-//1<<8 is mutex_dyndump
+// this allow handling "safe" function that just abort if accessing a bad address
+static __thread JUMPBUFF signal_jmpbuf;
+#ifdef ANDROID
+#define SIG_JMPBUF signal_jmpbuf
+#else
+#define SIG_JMPBUF &signal_jmpbuf
+#endif
+static __thread int signal_jmpbuf_active = 0;
+
+
+//1<<1 is mutex_prot, 1<<8 is mutex_dyndump
+#define is_memprot_locked (1<<1)
 #define is_dyndump_locked (1<<8)
 uint64_t RunFunctionHandler(int* exit, int dynarec, x64_ucontext_t* sigcontext, uintptr_t fnc, int nargs, ...)
 {
@@ -303,13 +314,15 @@ uint64_t RunFunctionHandler(int* exit, int dynarec, x64_ucontext_t* sigcontext, 
     if(box64_dynarec_test)
         emu->test.test = 0;
     #endif
-    
+
     /*SetFS(emu, default_fs);*/
     for (int i=0; i<6; ++i)
         emu->segs_serial[i] = 0;
-        
+
+    int align = nargs&1;
+
     if(nargs>6)
-        R_RSP -= (nargs-6)*sizeof(void*);   // need to push in reverse order
+        R_RSP -= (nargs-6+align)*sizeof(void*);   // need to push in reverse order
 
     uint64_t *p = (uint64_t*)R_RSP;
 
@@ -332,7 +345,7 @@ uint64_t RunFunctionHandler(int* exit, int dynarec, x64_ucontext_t* sigcontext, 
     emu->flags.quitonlongjmp = 2;
     int old_cs = R_CS;
     R_CS = 0x33;
-    
+
     emu->eflags.x64 &= ~(1<<F_TF); // this one needs to cleared
 
     if(dynarec)
@@ -341,7 +354,7 @@ uint64_t RunFunctionHandler(int* exit, int dynarec, x64_ucontext_t* sigcontext, 
         EmuCall(emu, fnc);
 
     if(nargs>6 && !emu->flags.longjmp)
-        R_RSP+=((nargs-6)*sizeof(void*));
+        R_RSP+=((nargs-6+align)*sizeof(void*));
 
     if(!emu->flags.longjmp && R_CS==0x33)
         R_CS = old_cs;
@@ -349,9 +362,10 @@ uint64_t RunFunctionHandler(int* exit, int dynarec, x64_ucontext_t* sigcontext, 
     emu->flags.quitonlongjmp = oldquitonlongjmp;
 
     #ifdef DYNAREC
-    if(box64_dynarec_test)
+    if(box64_dynarec_test) {
         emu->test.test = 0;
         emu->test.clean = 0;
+    }
     #endif
 
     if(emu->flags.longjmp) {
@@ -401,6 +415,13 @@ EXPORT int my_sigaltstack(x64emu_t* emu, const x64_stack_t* ss, x64_stack_t* oss
         errno = EFAULT;
         return -1;
     }
+    signal_jmpbuf_active = 1;
+    if(sigsetjmp(SIG_JMPBUF, 1)) {
+        // segfault while gathering function name...
+        errno = EFAULT;
+        return -1;
+    }
+
     x64_stack_t *new_ss = (x64_stack_t*)pthread_getspecific(sigstack_key);
     if(oss) {
         if(!new_ss) {
@@ -414,6 +435,7 @@ EXPORT int my_sigaltstack(x64emu_t* emu, const x64_stack_t* ss, x64_stack_t* oss
         }
     }
     if(!ss) {
+        signal_jmpbuf_active = 0;
         return 0;
     }
     printf_log(LOG_DEBUG, "%04d|sigaltstack called ss=%p[flags=0x%x, sp=%p, ss=0x%lx], oss=%p\n", GetTID(), ss, ss->ss_flags, ss->ss_sp, ss->ss_size, oss);
@@ -426,7 +448,7 @@ EXPORT int my_sigaltstack(x64emu_t* emu, const x64_stack_t* ss, x64_stack_t* oss
         if(new_ss)
             box_free(new_ss);
         pthread_setspecific(sigstack_key, NULL);
-
+        signal_jmpbuf_active = 0;
         return 0;
     }
 
@@ -437,7 +459,7 @@ EXPORT int my_sigaltstack(x64emu_t* emu, const x64_stack_t* ss, x64_stack_t* oss
     new_ss->ss_size = ss->ss_size;
 
     pthread_setspecific(sigstack_key, new_ss);
-
+    signal_jmpbuf_active = 0;
     return 0;
 }
 
@@ -473,7 +495,7 @@ x64emu_t* getEmuSignal(x64emu_t* emu, ucontext_t* p, dynablock_t* db)
         if(db && p->uc_mcontext.regs[0]>0x10000) {
             emu = (x64emu_t*)p->uc_mcontext.regs[0];
         }
-#elif defined(LA464)
+#elif defined(LA64)
         if(db && p->uc_mcontext.__gregs[4]>0x10000) {
             emu = (x64emu_t*)p->uc_mcontext.__gregs[4];
         }
@@ -487,6 +509,57 @@ x64emu_t* getEmuSignal(x64emu_t* emu, ucontext_t* p, dynablock_t* db)
     return emu;
 }
 #endif
+
+void adjustregs(x64emu_t* emu) {
+// tests some special cases
+    uint8_t* mem = (uint8_t*)R_RIP;
+    rex_t rex = {0};
+    int rep = 0;
+    int is66 = 0;
+    int idx = 0;
+    rex.is32bits = (R_CS==0x0023);
+    while ((mem[idx]>=0x40 && mem[idx]<=0x4f && !rex.is32bits) || mem[idx]==0xF2 || mem[idx]==0xF3 || mem[idx]==0x66) {
+        switch(mem[idx]) {
+            case 0x40 ... 0x4f:
+                rex.rex = mem[idx];
+                break;
+            case 0xF2:
+            case 0xF3:
+                rep = mem[idx]-0xF1;
+                break;
+            case 0x66:
+                is66 = 1;
+                break;
+        }
+        ++idx;
+    }
+    dynarec_log(LOG_INFO, "Checking opcode: rex=%02hhx is32bits=%d, is66=%d %02hhX %02hhX %02hhX %02hhX\n", rex.rex, rex.is32bits, is66, mem[idx+0], mem[idx+1], mem[idx+2], mem[idx+3]);
+#ifdef DYNAREC
+#ifdef ARM64
+    if(mem[idx+0]==0xA4) {
+        // (rep) movsb, read done, write not...
+        if(emu->eflags.f._F_DF)
+            R_RSI++;
+        else
+            R_RSI--;
+        return;
+    }
+    if(mem[idx+0]==0xA5) {
+        // (rep) movsd, read done, write not...
+        int step = (emu->eflags.f._F_DF)?-1:+1;
+        if(rex.w) step*=8;
+        else if(is66) step *=2;
+        else step*=4;
+        R_RSI-=step;
+        return;
+    }
+#elif defined(LA64)
+#elif defined(RV64)
+#else
+#error  Unsupported architecture
+#endif
+#endif
+}
 
 void copyUCTXreg2Emu(x64emu_t* emu, ucontext_t* p, uintptr_t ip) {
 #ifdef DYNAREC
@@ -509,7 +582,7 @@ void copyUCTXreg2Emu(x64emu_t* emu, ucontext_t* p, uintptr_t ip) {
     emu->regs[_R15].q[0] = p->uc_mcontext.regs[25];
     emu->ip.q[0] = ip;
     emu->eflags.x64 = p->uc_mcontext.regs[26];
-#elif defined(LA464)
+#elif defined(LA64)
         emu->regs[_AX].q[0] = p->uc_mcontext.__gregs[12];
         emu->regs[_CX].q[0] = p->uc_mcontext.__gregs[13];
         emu->regs[_DX].q[0] = p->uc_mcontext.__gregs[14];
@@ -569,11 +642,11 @@ int sigbus_specialcases(siginfo_t* info, void * ucntx, void* pc, void* _fpsimd)
         int dest = (opcode>>5)&31;
         uint64_t offset = (opcode>>10)&0b111111111111;
         offset<<=scale;
-        uint8_t* addr = (uint8_t*)(p->uc_mcontext.regs[dest] + offset);
+        volatile uint8_t* addr = (void*)(p->uc_mcontext.regs[dest] + offset);
         uint64_t value = p->uc_mcontext.regs[val];
-        if(scale==3 && ((uintptr_t)addr)&3==0) {
+        if(scale==3 && (((uintptr_t)addr)&3)==0) {
             for(int i=0; i<2; ++i)
-                ((uint32_t*)addr)[i] = (value>>(i*32))&0xffffffff;
+                ((volatile uint32_t*)addr)[i] = (value>>(i*32))&0xffffffff;
         } else
             for(int i=0; i<(1<<scale); ++i)
                 addr[i] = (value>>(i*8))&0xff;
@@ -588,11 +661,11 @@ int sigbus_specialcases(siginfo_t* info, void * ucntx, void* pc, void* _fpsimd)
         int64_t offset = (opcode>>12)&0b111111111;
         if((offset>>(9-1))&1)
             offset |= (0xffffffffffffffffll<<9);
-        uint8_t* addr = (uint8_t*)(p->uc_mcontext.regs[dest] + offset);
+        volatile uint8_t* addr = (void*)(p->uc_mcontext.regs[dest] + offset);
         uint64_t value = p->uc_mcontext.regs[val];
-        if(size==8 && ((uintptr_t)addr)&3==0) {
+        if(size==8 && (((uintptr_t)addr)&3)==0) {
             for(int i=0; i<2; ++i)
-                ((uint32_t*)addr)[i] = (value>>(i*32))&0xffffffff;
+                ((volatile uint32_t*)addr)[i] = (value>>(i*32))&0xffffffff;
         } else
             for(int i=0; i<size; ++i)
                 addr[i] = (value>>(i*8))&0xff;
@@ -612,11 +685,11 @@ int sigbus_specialcases(siginfo_t* info, void * ucntx, void* pc, void* _fpsimd)
         offset<<=scale;
         int val = opcode&31;
         int dest = (opcode>>5)&31;
-        uint8_t* addr = (uint8_t*)(p->uc_mcontext.regs[dest] + offset);
+        volatile uint8_t* addr = (void*)(p->uc_mcontext.regs[dest] + offset);
         __uint128_t value = fpsimd->vregs[val];
-        if(scale>2 && ((uintptr_t)addr)&3==0) {
+        if(scale>2 && (((uintptr_t)addr)&3)==0) {
             for(int i=0; i<(1<<(scale-2)); ++i)
-                ((uint32_t*)addr)[i] = (value>>(i*32))&0xffffffff;
+                ((volatile uint32_t*)addr)[i] = (value>>(i*32))&0xffffffff;
         } else
             for(int i=0; i<(1<<scale); ++i)
                 addr[i] = (value>>(i*8))&0xff;
@@ -637,11 +710,11 @@ int sigbus_specialcases(siginfo_t* info, void * ucntx, void* pc, void* _fpsimd)
             offset |= (0xffffffffffffffffll<<9);
         int val = opcode&31;
         int dest = (opcode>>5)&31;
-        uint8_t* addr = (uint8_t*)(p->uc_mcontext.regs[dest] + offset);
+        volatile uint8_t* addr = (void*)(p->uc_mcontext.regs[dest] + offset);
         __uint128_t value = fpsimd->vregs[val];
-        if(scale>2 && ((uintptr_t)addr)&3==0) {
+        if(scale>2 && (((uintptr_t)addr)&3)==0) {
             for(int i=0; i<(1<<(scale-2)); ++i)
-                ((uint32_t*)addr)[i] = (value>>(i*32))&0xffffffff;
+                ((volatile uint32_t*)addr)[i] = (value>>(i*32))&0xffffffff;
         } else
             for(int i=0; i<(1<<scale); ++i)
                 addr[i] = (value>>(i*8))&0xff;
@@ -661,11 +734,11 @@ int sigbus_specialcases(siginfo_t* info, void * ucntx, void* pc, void* _fpsimd)
         offset<<=scale;
         int val = opcode&31;
         int dest = (opcode>>5)&31;
-        uint8_t* addr = (uint8_t*)(p->uc_mcontext.regs[dest] + offset);
+        volatile uint8_t* addr = (void*)(p->uc_mcontext.regs[dest] + offset);
         __uint128_t value = 0;
-        if(scale>2 && ((uintptr_t)addr)&3==0) {
+        if(scale>2 && (((uintptr_t)addr)&3)==0) {
             for(int i=0; i<(1<<(scale-2)); ++i)
-                value |= ((__uint128_t)(((uint32_t*)addr)[i]))<<(i*32);
+                value |= ((__uint128_t)(((volatile uint32_t*)addr)[i]))<<(i*32);
         } else
             for(int i=0; i<(1<<scale); ++i)
                 value |= ((__uint128_t)addr[i])<<(i*8);
@@ -687,11 +760,11 @@ int sigbus_specialcases(siginfo_t* info, void * ucntx, void* pc, void* _fpsimd)
             offset |= (0xffffffffffffffffll<<9);
         int val = opcode&31;
         int dest = (opcode>>5)&31;
-        uint8_t* addr = (uint8_t*)(p->uc_mcontext.regs[dest] + offset);
+        volatile uint8_t* addr = (void*)(p->uc_mcontext.regs[dest] + offset);
         __uint128_t value = 0;
-        if(scale>2 && ((uintptr_t)addr)&3==0) {
+        if(scale>2 && (((uintptr_t)addr)&3)==0) {
             for(int i=0; i<(1<<(scale-2)); ++i)
-                value |= ((__uint128_t)(((uint32_t*)addr)[i]))<<(i*32);
+                value |= ((__uint128_t)(((volatile  uint32_t*)addr)[i]))<<(i*32);
         } else
             for(int i=0; i<(1<<scale); ++i)
                 value |= ((__uint128_t)addr[i])<<(i*8);
@@ -706,11 +779,11 @@ int sigbus_specialcases(siginfo_t* info, void * ucntx, void* pc, void* _fpsimd)
         int dest = (opcode>>5)&31;
         uint64_t offset = (opcode>>10)&0b111111111111;
         offset<<=scale;
-        uint8_t* addr = (uint8_t*)(p->uc_mcontext.regs[dest] + offset);
+        volatile uint8_t* addr = (void*)(p->uc_mcontext.regs[dest] + offset);
         uint64_t value = 0;
-        if(scale==3 && ((uintptr_t)addr)&3==0) {
+        if(scale==3 && (((uintptr_t)addr)&3)==0) {
             for(int i=0; i<2; ++i)
-                value |= ((uint64_t)((uint32_t*)addr)[i]) << (i*32);
+                value |= ((uint64_t)((volatile  uint32_t*)addr)[i]) << (i*32);
         } else
             for(int i=0; i<(1<<scale); ++i)
                 value |= ((uint64_t)addr[i]) << (i*8);
@@ -726,11 +799,11 @@ int sigbus_specialcases(siginfo_t* info, void * ucntx, void* pc, void* _fpsimd)
         int64_t offset = (opcode>>12)&0b111111111;
         if((offset>>(9-1))&1)
             offset |= (0xffffffffffffffffll<<9);
-        uint8_t* addr = (uint8_t*)(p->uc_mcontext.regs[dest] + offset);
+        volatile uint8_t* addr = (void*)(p->uc_mcontext.regs[dest] + offset);
         uint64_t value = 0;
-        if(size==8 && ((uintptr_t)addr)&3==0) {
+        if(size==8 && (((uintptr_t)addr)&3)==0) {
             for(int i=0; i<2; ++i)
-                value |= ((uint64_t)((uint32_t*)addr)[i]) << (i*32);
+                value |= ((uint64_t)((volatile  uint32_t*)addr)[i]) << (i*32);
         } else
             for(int i=0; i<size; ++i)
                 value |= ((uint64_t)addr[i]) << (i*8);
@@ -745,9 +818,23 @@ int sigbus_specialcases(siginfo_t* info, void * ucntx, void* pc, void* _fpsimd)
         int dest = (opcode>>5)&31;
         uint64_t offset = (opcode>>10)&0b111111111111;
         offset<<=scale;
-        uint8_t* addr = (uint8_t*)(p->uc_mcontext.regs[dest] + offset);
+        volatile uint8_t* addr = (void*)(p->uc_mcontext.regs[dest] + offset);
         uint64_t value = p->uc_mcontext.regs[val];
         for(int i=0; i<(1<<scale); ++i)
+            addr[i] = (value>>(i*8))&0xff;
+        p->uc_mcontext.pc+=4;   // go to next opcode
+        return 1;
+    }
+    if((opcode&0b11111111111000000000110000000000)==0b01111000000000000000000000000000) {
+        // this is STURH
+        int val = opcode&31;
+        int dest = (opcode>>5)&31;
+        int64_t offset = (opcode>>12)&0b111111111;
+        if((offset>>(9-1))&1)
+            offset |= (0xffffffffffffffffll<<9);
+        volatile uint8_t* addr = (void*)(p->uc_mcontext.regs[dest] + offset);
+        uint64_t value = p->uc_mcontext.regs[val];
+        for(int i=0; i<2; ++i)
             addr[i] = (value>>(i*8))&0xff;
         p->uc_mcontext.pc+=4;   // go to next opcode
         return 1;
@@ -763,10 +850,48 @@ int sigbus_specialcases(siginfo_t* info, void * ucntx, void* pc, void* _fpsimd)
         if(option!=0b011)
             return 0;   // only LSL is supported
         uint64_t offset = p->uc_mcontext.regs[dest2]<<S;
-        uint8_t* addr = (uint8_t*)(p->uc_mcontext.regs[dest] + offset);
+        volatile uint8_t* addr = (void*)(p->uc_mcontext.regs[dest] + offset);
         uint64_t value = p->uc_mcontext.regs[val];
         for(int i=0; i<(1<<scale); ++i)
             addr[i] = (value>>(i*8))&0xff;
+        p->uc_mcontext.pc+=4;   // go to next opcode
+        return 1;
+    }
+    if((opcode&0b11111111110000000000000000000000)==0b10101001000000000000000000000000) {
+        // This is STP reg1, reg2, [reg3 + off]
+        int scale = 2+((opcode>>31)&1);
+        int val1 = opcode&31;
+        int val2 = (opcode>>10)&31;
+        int dest = (opcode>>5)&31;
+        int64_t offset = (opcode>>15)&0b1111111;
+        if((offset>>(7-1))&1)
+            offset |= (0xffffffffffffffffll<<7);
+        offset <<= scale;
+        uintptr_t addr= p->uc_mcontext.regs[dest] + offset;
+        if((((uintptr_t)addr)&3)==0) {
+            ((volatile uint32_t*)addr)[0] = p->uc_mcontext.regs[val1];
+            ((volatile uint32_t*)addr)[1] = p->uc_mcontext.regs[val2];
+        } else {
+            __uint128_t value = ((__uint128_t)p->uc_mcontext.regs[val2])<<64 | p->uc_mcontext.regs[val1];
+            for(int i=0; i<(1<<scale); ++i)
+                ((volatile uint8_t*)addr)[i] = (value>>(i*8))&0xff;
+        }
+        p->uc_mcontext.pc+=4;   // go to next opcode
+        return 1;
+    }
+    if((opcode&0b10111111111111111111110000000000)==0b00001101000000001000010000000000) {
+        // this is ST1.D
+        int idx = (opcode>>30)&1;
+        int val = opcode&31;
+        int dest = (opcode>>5)&31;
+        volatile uint8_t* addr = (void*)(p->uc_mcontext.regs[dest]);
+        uint64_t value = fpsimd->vregs[val]>>(idx*64);
+        if((((uintptr_t)addr)&3)==0) {
+            for(int i=0; i<2; ++i)
+                ((volatile uint32_t*)addr)[i] = (value>>(i*32))&0xffffffff;
+        } else
+            for(int i=0; i<8; ++i)
+                addr[i] = (value>>(i*8))&0xff;
         p->uc_mcontext.pc+=4;   // go to next opcode
         return 1;
     }
@@ -784,7 +909,7 @@ void my_sigactionhandler_oldcode(int32_t sig, int simple, siginfo_t* info, void 
     // get that actual ESP first!
     x64emu_t *emu = thread_get_emu();
     uintptr_t frame = R_RSP;
-#if defined(DYNAREC) 
+#if defined(DYNAREC)
 #if defined(ARM64)
     dynablock_t* db = (dynablock_t*)cur_db;//FindDynablockFromNativeAddress(pc);
     ucontext_t *p = (ucontext_t *)ucntx;
@@ -794,7 +919,7 @@ void my_sigactionhandler_oldcode(int32_t sig, int simple, siginfo_t* info, void 
         if(db)
             frame = (uintptr_t)p->uc_mcontext.regs[10+_SP];
     }
-#elif defined(LA464)
+#elif defined(LA64)
     dynablock_t* db = (dynablock_t*)cur_db;//FindDynablockFromNativeAddress(pc);
     ucontext_t *p = (ucontext_t *)ucntx;
     void* pc = NULL;
@@ -887,7 +1012,7 @@ void my_sigactionhandler_oldcode(int32_t sig, int simple, siginfo_t* info, void 
         sigcontext->uc_mcontext.gregs[X64_R15] = p->uc_mcontext.regs[25];
         sigcontext->uc_mcontext.gregs[X64_RIP] = getX64Address(db, (uintptr_t)pc);
     }
-#elif defined(LA464)
+#elif defined(LA64)
     if(db && p) {
         sigcontext->uc_mcontext.gregs[X64_RAX] = p->uc_mcontext.__gregs[12];
         sigcontext->uc_mcontext.gregs[X64_RCX] = p->uc_mcontext.__gregs[13];
@@ -978,7 +1103,7 @@ void my_sigactionhandler_oldcode(int32_t sig, int simple, siginfo_t* info, void 
             if(labs((intptr_t)info->si_addr-(intptr_t)sigcontext->uc_mcontext.gregs[X64_RSP])<16)
                 sigcontext->uc_mcontext.gregs[X64_TRAPNO] = 12; // stack overflow probably
             else
-                sigcontext->uc_mcontext.gregs[X64_TRAPNO] = 13;
+                sigcontext->uc_mcontext.gregs[X64_TRAPNO] = 14;
         } else {
             sigcontext->uc_mcontext.gregs[X64_TRAPNO] = (info->si_code == SEGV_ACCERR)?13:14;
             //X64_ERR seems to be INT:8 CODE:8. So for write access segfault it's 0x0002 For a read it's 0x0004 (and 8 for exec). For an int 2d it could be 0x2D01 for example
@@ -1046,7 +1171,7 @@ void my_sigactionhandler_oldcode(int32_t sig, int simple, siginfo_t* info, void 
     int ret;
     int dynarec = 0;
     #ifdef DYNAREC
-    if(sig!=SIGSEGV && !(Locks&is_dyndump_locked))
+    if(sig!=SIGSEGV && !(Locks&is_dyndump_locked) && !(Locks&is_memprot_locked))
         dynarec = 1;
     #endif
     ret = RunFunctionHandler(&exits, dynarec, sigcontext, my_context->signals[info2->si_signo], 3, info2->si_signo, info2, sigcontext);
@@ -1112,6 +1237,9 @@ void my_sigactionhandler_oldcode(int32_t sig, int simple, siginfo_t* info, void 
             if(Locks & is_dyndump_locked)
                 CancelBlock64(1);
             #endif
+            #ifdef RV64
+            emu->xSPSave = emu->old_savedsp;
+            #endif
             #ifdef ANDROID
             siglongjmp(*emu->jmpbuf, 1);
             #else
@@ -1176,28 +1304,24 @@ static pthread_mutex_t mutex_dynarec_prot = PTHREAD_ERRORCHECK_MUTEX_INITIALIZER
 #define lock_signal()     mutex_lock(&mutex_dynarec_prot)
 #define unlock_signal()   mutex_unlock(&mutex_dynarec_prot)
 #else   // USE_SIGNAL_MUTEX
-#define lock_signal()     
-#define unlock_signal()   
+#define lock_signal()
+#define unlock_signal()
 #endif
 
 extern int box64_quit;
+extern int box64_exit_code;
 
 void my_box64signalhandler(int32_t sig, siginfo_t* info, void * ucntx)
 {
     // sig==SIGSEGV || sig==SIGBUS || sig==SIGILL || sig==SIGABRT here!
     int log_minimum = (box64_showsegv)?LOG_NONE:((sig==SIGSEGV && my_context->is_sigaction[sig])?LOG_DEBUG:LOG_INFO);
-    JUMPBUFF signal_jmpbuf;
-    #ifdef ANDROID
-    #define SIG_JMPBUF signal_jmpbuf
-    #else
-    #define SIG_JMPBUF &signal_jmpbuf
-    #endif
-    int signal_jmpbuf_active = 0;
-    if(signal_jmpbuf_active)
+    if(signal_jmpbuf_active) {
+        signal_jmpbuf_active = 0;
         longjmp(SIG_JMPBUF, 1);
+    }
     if((sig==SIGSEGV || sig==SIGBUS) && box64_quit) {
         printf_log(LOG_INFO, "Sigfault/Segbus while quitting, exiting silently\n");
-        exit(0);    // Hack, segfault while quiting, exit silently
+        _exit(box64_exit_code);    // Hack, segfault while quiting, exit silently
     }
     ucontext_t *p = (ucontext_t *)ucntx;
     void* addr = (void*)info->si_addr;  // address that triggered the issue
@@ -1222,7 +1346,7 @@ void my_box64signalhandler(int32_t sig, siginfo_t* info, void * ucntx)
 #elif defined __powerpc64__
     void * pc = (void*)p->uc_mcontext.gp_regs[PT_NIP];
     void* fpsimd = NULL;
-#elif defined(LA464)
+#elif defined(LA64)
     void * pc = (void*)p->uc_mcontext.__pc;
     void* fpsimd = NULL;
 #elif defined(SW64)
@@ -1247,7 +1371,7 @@ void my_box64signalhandler(int32_t sig, siginfo_t* info, void * ucntx)
     // try to see if the si_code makes sense
     // the RK3588 tend to need a special Kernel that seems to have a weird behaviour sometimes
     if((sig==SIGSEGV) && (addr) && (info->si_code == 1) && prot&(PROT_READ|PROT_WRITE|PROT_EXEC)) {
-        printf_log(LOG_DEBUG, "Workaround for suspicious si_code for %p / prot=0x%x\n", addr, prot);
+        printf_log(LOG_DEBUG, "Workaround for suspicious si_code for %p / prot=0x%hhx\n", addr, prot);
         info->si_code = 2;
     }
     #endif
@@ -1267,24 +1391,24 @@ void my_box64signalhandler(int32_t sig, siginfo_t* info, void * ucntx)
         db = FindDynablockFromNativeAddress(pc);
         db_searched = 1;
         static uintptr_t repeated_page = 0;
-        dynarec_log(LOG_DEBUG, "SIGSEGV with Access error on %p for %p , db=%p(%p), prot=0x%x (old page=%p)\n", pc, addr, db, db?((void*)db->x64_addr):NULL, prot, (void*)repeated_page);
+        dynarec_log(LOG_DEBUG, "SIGSEGV with Access error on %p for %p , db=%p(%p), prot=0x%hhx (old page=%p)\n", pc, addr, db, db?((void*)db->x64_addr):NULL, prot, (void*)repeated_page);
         static int repeated_count = 0;
         if(repeated_page == ((uintptr_t)addr&~(box64_pagesize-1))) {
             ++repeated_count;   // Access eoor multiple time on same page, disable dynarec on this page a few time...
             dynarec_log(LOG_DEBUG, "Detecting a Hotpage at %p (%d)\n", (void*)repeated_page, repeated_count);
-            AddHotPage(repeated_page);
         } else {
             repeated_page = (uintptr_t)addr&~(box64_pagesize-1);
             repeated_count = 0;
         }
         // access error, unprotect the block (and mark them dirty)
         unprotectDB((uintptr_t)addr, 1, 1);    // unprotect 1 byte... But then, the whole page will be unprotected
-        int db_need_test = (db && !box64_dynarec_fastpage)?getNeedTest((uintptr_t)db->x64_addr):0;
+        int db_need_test = db?getNeedTest((uintptr_t)db->x64_addr):0;
         if(db && ((addr>=db->x64_addr && addr<(db->x64_addr+db->x64_size)) || db_need_test)) {
             emu = getEmuSignal(emu, p, db);
             // dynablock got auto-dirty! need to get out of it!!!
             if(emu->jmpbuf) {
                 copyUCTXreg2Emu(emu, p, getX64Address(db, (uintptr_t)pc));
+                adjustregs(emu);
 #ifdef ARM64
                 //TODO: Need proper SIMD/x87 register traking!
                 /*if(fpsimd) {
@@ -1293,7 +1417,7 @@ void my_box64signalhandler(int32_t sig, siginfo_t* info, void * ucntx)
                     emu->xmm[2].u128 = fpsimd->vregs[2];
                     emu->xmm[3].u128 = fpsimd->vregs[3];
                 }*/
-#elif defined(LA464)
+#elif defined(LA64)
                 /*if(fpsimd) {
                     emu->xmm[0].u128 = fpsimd->vregs[0];
                     emu->xmm[1].u128 = fpsimd->vregs[1];
@@ -1311,9 +1435,9 @@ void my_box64signalhandler(int32_t sig, siginfo_t* info, void * ucntx)
 #error  Unsupported architecture
 #endif
                 if(addr>=db->x64_addr && addr<(db->x64_addr+db->x64_size)) {
-                    dynarec_log(LOG_INFO, "Auto-SMC detected, getting out of current Dynablock!\n");
+                    dynarec_log(LOG_INFO, "Auto-SMC detected, getting out of current Dynablock (%p, x64addr=%p, need_test=%d/%d/%d)!\n", db, db->x64_addr, db_need_test, db->dirty, db->always_test);
                 } else {
-                    dynarec_log(LOG_INFO, "Dynablock unprotected, getting out!\n");
+                    dynarec_log(LOG_INFO, "Dynablock (%p, x64addr=%p, need_test=%d/%d/%d) unprotected, getting out at %p (%p)!\n", db, db->x64_addr, db_need_test, db->dirty, db->always_test, (void*)R_RIP, (void*)addr);
                 }
                 //relockMutex(Locks);
                 unlock_signal();
@@ -1344,10 +1468,11 @@ void my_box64signalhandler(int32_t sig, siginfo_t* info, void * ucntx)
             dynarec_log(LOG_INFO, "Warning, addr inside current dynablock!\n");
         }
         // mark stuff as unclean
-        cleanDBFromAddressRange(((uintptr_t)addr)&~(box64_pagesize-1), box64_pagesize, 0);
+        if(box64_dynarec)
+            cleanDBFromAddressRange(((uintptr_t)addr)&~(box64_pagesize-1), box64_pagesize, 0);
         static void* glitch_pc = NULL;
         static void* glitch_addr = NULL;
-        static int glitch_prot = 0;
+        static uint32_t glitch_prot = 0;
         if(addr && pc /*&& db*/) {
             if((glitch_pc!=pc || glitch_addr!=addr || glitch_prot!=prot)) {
                 // probably a glitch due to intensive multitask...
@@ -1399,20 +1524,26 @@ dynarec_log(/*LOG_DEBUG*/LOG_INFO, "Repeated SIGSEGV with Access error on %p for
     static void* old_pc = 0;
     static void* old_addr = 0;
     static int old_tid = 0;
-    static int old_prot = 0;
+    static uint32_t old_prot = 0;
     int tid = GetTID();
     int mapped = getMmapped((uintptr_t)addr);
     const char* signame = (sig==SIGSEGV)?"SIGSEGV":((sig==SIGBUS)?"SIGBUS":((sig==SIGILL)?"SIGILL":"SIGABRT"));
     if(old_code==info->si_code && old_pc==pc && old_addr==addr && old_tid==tid && old_prot==prot) {
         printf_log(log_minimum, "%04d|Double %s (code=%d, pc=%p, addr=%p, prot=%02x)!\n", tid, signame, old_code, old_pc, old_addr, prot);
-exit(-1);
+        exit(-1);
     } else {
-        if((sig==SIGSEGV) && (info->si_code == SEGV_ACCERR) && ((prot&~PROT_CUSTOM)==5 || (prot&~PROT_CUSTOM)==7)) {
+        if((sig==SIGSEGV) && (info->si_code == SEGV_ACCERR) && ((prot&~PROT_CUSTOM)==(PROT_READ|PROT_WRITE) || (prot&~PROT_CUSTOM)==(PROT_READ|PROT_WRITE|PROT_EXEC))) {
             static uintptr_t old_addr = 0;
-        printf_log(/*LOG_DEBUG*/LOG_INFO, "%04d| Strange SIGSEGV with Access error on %p for %p%s, db=%p, prot=0x%x (old_addr=%p)\n", tid, pc, addr, mapped?" mapped":"", db, prot, (void*)old_addr);
             #ifdef DYNAREC
-            cleanDBFromAddressRange(((uintptr_t)addr)&~(box64_pagesize-1), box64_pagesize, 0);
+            if((prot==(PROT_READ|PROT_WRITE|PROT_EXEC)) && isDBFromAddressRange(((uintptr_t)addr)&~(box64_pagesize-1), box64_pagesize)) {
+                printf_log(/*LOG_DEBUG*/LOG_INFO, "%04d| Strange SIGSEGV with Access error on %p for %p with DynaBlock(s) in range, db=%p, Lock=0x%x)\n", tid, pc, addr, db, Locks);
+                cleanDBFromAddressRange(((uintptr_t)addr)&~(box64_pagesize-1), box64_pagesize, 0);
+                refreshProtection((uintptr_t)addr);
+                relockMutex(Locks);
+                return;
+            }
             #endif
+            printf_log(/*LOG_DEBUG*/LOG_INFO, "%04d| Strange SIGSEGV with Access error on %p for %p%s, db=%p, prot=0x%x (old_addr=%p, Lock=0x%x)\n", tid, pc, addr, mapped?" mapped":"", db, prot, (void*)old_addr, Locks);
             if(!(old_addr==(uintptr_t)addr && old_prot==prot) || mapped) {
                 old_addr = (uintptr_t)addr;
                 old_prot = prot;
@@ -1443,7 +1574,7 @@ exit(-1);
             x64pc = getX64Address(db, (uintptr_t)pc);
             rsp = (void*)p->uc_mcontext.regs[10+_SP];
         }
-#elif defined(LA464)
+#elif defined(LA64)
         if(db && p->uc_mcontext.__gregs[4]>0x10000) {
             emu = (x64emu_t*)p->uc_mcontext.__gregs[4];
         }
@@ -1463,7 +1594,7 @@ exit(-1);
 #error Unsupported Architecture
 #endif //arch
 #endif //DYNAREC
-        if(!db && (sig==SIGSEGV) && ((uintptr_t)addr==x64pc-1))
+        if(!db && (sig==SIGSEGV) && ((uintptr_t)addr==(x64pc-1)))
             x64pc--;
         if(log_minimum<=box64_log) {
             signal_jmpbuf_active = 1;
@@ -1494,19 +1625,23 @@ exit(-1);
                 sprintf(myarg, "%d", pid);
                 if(jit_gdb==2)
                     execlp("gdbserver", "gdbserver", "127.0.0.1:1234", "--attach", myarg, (char*)NULL);
-                else
+                else if(jit_gdb==3)
                     execlp("lldb", "lldb", "-p", myarg, (char*)NULL);
+                else
+                    execlp("gdb", "gdb", "-pid", myarg, (char*)NULL);
                 exit(-1);
             }
         }
         print_cycle_log(log_minimum);
-#ifndef ANDROID
+
         if((box64_showbt || sig==SIGABRT) && log_minimum<=box64_log) {
             // show native bt
             #define BT_BUF_SIZE 100
             int nptrs;
             void *buffer[BT_BUF_SIZE];
             char **strings;
+
+#ifndef ANDROID
             nptrs = backtrace(buffer, BT_BUF_SIZE);
             strings = backtrace_symbols(buffer, nptrs);
             if(strings) {
@@ -1515,6 +1650,7 @@ exit(-1);
                 free(strings);
             } else
                 printf_log(log_minimum, "NativeBT: none (%d/%s)\n", errno, strerror(errno));
+#endif
             extern int my_backtrace_ip(x64emu_t* emu, void** buffer, int size);   // in wrappedlibc
             extern char** my_backtrace_symbols(x64emu_t* emu, uintptr_t* buffer, int size);
             // save and set real RIP/RSP
@@ -1569,7 +1705,7 @@ exit(-1);
             GO(RIP);
             #undef GO
         }
-#endif
+
         if(log_minimum<=box64_log) {
             static const char* reg_name[] = {"RAX", "RCX", "RDX", "RBX", "RSP", "RBP", "RSI", "RDI", " R8", " R9","R10","R11", "R12","R13","R14","R15"};
             static const char* seg_name[] = {"ES", "CS", "SS", "DS", "FS", "GS"};
@@ -1578,14 +1714,14 @@ exit(-1);
             uint32_t hash = 0;
             if(db)
                 hash = X31_hash_code(db->x64_addr, db->x64_size);
-            printf_log(log_minimum, "%04d|%s @%p (%s) (x64pc=%p/%s:\"%s\", rsp=%p, stack=%p:%p own=%p fp=%p), for accessing %p (code=%d/prot=%x), db=%p(%p:%p/%p:%p/%s:%s, hash:%x/%x) handler=%p", 
-                GetTID(), signame, pc, name, (void*)x64pc, elfname?elfname:"???", x64name?x64name:"???", rsp, 
-                emu->init_stack, emu->init_stack+emu->size_stack, emu->stack2free, (void*)R_RBP, 
-                addr, info->si_code, 
-                prot, db, db?db->block:0, db?(db->block+db->size):0, 
-                db?db->x64_addr:0, db?(db->x64_addr+db->x64_size):0, 
-                getAddrFunctionName((uintptr_t)(db?db->x64_addr:0)), 
-                (db?getNeedTest((uintptr_t)db->x64_addr):0)?"need_stest":"clean", db?db->hash:0, hash, 
+            printf_log(log_minimum, "%04d|%s @%p (%s) (x64pc=%p/%s:\"%s\", rsp=%p, stack=%p:%p own=%p fp=%p), for accessing %p (code=%d/prot=%x), db=%p(%p:%p/%p:%p/%s:%s, hash:%x/%x) handler=%p",
+                GetTID(), signame, pc, name, (void*)x64pc, elfname?:"???", x64name?:"???", rsp,
+                emu->init_stack, emu->init_stack+emu->size_stack, emu->stack2free, (void*)R_RBP,
+                addr, info->si_code,
+                prot, db, db?db->block:0, db?(db->block+db->size):0,
+                db?db->x64_addr:0, db?(db->x64_addr+db->x64_size):0,
+                getAddrFunctionName((uintptr_t)(db?db->x64_addr:0)),
+                (db?getNeedTest((uintptr_t)db->x64_addr):0)?"need_stest":"clean", db?db->hash:0, hash,
                 (void*)my_context->signals[sig]);
 #if defined(ARM64)
             if(db) {
@@ -1617,11 +1753,26 @@ exit(-1);
                 for (int i=-4; i<4; ++i) {
                     printf_log(log_minimum, "%sRSP%c0x%02x:0x%016lx", (i%4)?" ":"\n", i<0?'-':'+', abs(i)*8, *(uintptr_t*)(rsp+i*8));
                 }
+#elif defined(LA64)
+            if(db) {
+                shown_regs = 1;
+                for (int i=0; i<16; ++i) {
+                    if(!(i%4)) printf_log(log_minimum, "\n");
+                    printf_log(log_minimum, "%s:0x%016llx ", reg_name[i], p->uc_mcontext.__gregs[12+i]);
+                }
+                printf_log(log_minimum, "\n");
+                for (int i=0; i<6; ++i)
+                    printf_log(log_minimum, "%s:0x%04x ", seg_name[i], emu->segs[i]);
+            }
+            if(rsp!=addr && getProtection((uintptr_t)rsp-4*8) && getProtection((uintptr_t)rsp+4*8))
+                for (int i=-4; i<4; ++i) {
+                    printf_log(log_minimum, "%sRSP%c0x%02x:0x%016lx", (i%4)?" ":"\n", i<0?'-':'+', abs(i)*8, *(uintptr_t*)(rsp+i*8));
+                }
 #else
             #warning TODO
 #endif
 #else
-            printf_log(log_minimum, "%04d|%s @%p (%s) (x64pc=%p/%s:\"%s\", rsp=%p), for accessing %p (code=%d)", GetTID(), signame, pc, name, (void*)x64pc, elfname?elfname:"???", x64name?x64name:"???", rsp, addr, info->si_code);
+            printf_log(log_minimum, "%04d|%s @%p (%s) (x64pc=%p/%s:\"%s\", rsp=%p), for accessing %p (code=%d)", GetTID(), signame, pc, name, (void*)x64pc, elfname?:"???", x64name?:"???", rsp, addr, info->si_code);
 #endif
             if(!shown_regs) {
                 for (int i=0; i<16; ++i) {
@@ -1659,7 +1810,7 @@ void my_sigactionhandler(int32_t sig, siginfo_t* info, void * ucntx)
     ucontext_t *p = (ucontext_t *)ucntx;
     #ifdef ARM64
     void * pc = (void*)p->uc_mcontext.pc;
-    #elif defined(LA464)
+    #elif defined(LA64)
     void * pc = (void*)p->uc_mcontext.__pc;
     #elif defined(RV64)
     void * pc = (void*)p->uc_mcontext.__gregs[0];
@@ -1693,6 +1844,10 @@ void emit_signal(x64emu_t* emu, int sig, void* addr, int code)
         if(elf)
             elfname = ElfName(elf);
         printf_log(LOG_NONE, "Emit Signal %d at IP=%p(%s / %s) / addr=%p, code=%d\n", sig, (void*)R_RIP, x64name?x64name:"???", elfname?elfname:"?", addr, code);
+        if(sig==SIGILL) {
+            uint8_t* mem = (uint8_t*)R_RIP;
+            printf_log(LOG_NONE, "SIGILL: Opcode at ip is %02hhx %02hhx %02hhx %02hhx %02hhx %02hhx\n", mem[0], mem[1], mem[2], mem[3], mem[4], mem[5]);
+        }
     }
     my_sigactionhandler_oldcode(sig, 0, &info, NULL, NULL, NULL);
 }
@@ -1759,7 +1914,7 @@ EXPORT sighandler_t my_signal(x64emu_t* emu, int signum, sighandler_t handler)
         newact.sa_sigaction = my_sigactionhandler;
         sigaction(signum, &newact, &oldact);
         return oldact.sa_handler;
-    } else 
+    } else
         return signal(signum, handler);
 }
 EXPORT sighandler_t my___sysv_signal(x64emu_t* emu, int signum, sighandler_t handler) __attribute__((alias("my_signal")));
@@ -1772,7 +1927,7 @@ int EXPORT my_sigaction(x64emu_t* emu, int signum, const x64_sigaction_t *act, x
         errno = EINVAL;
         return -1;
     }
-    
+
     if(signum==SIGSEGV && emu->context->no_sigsegv)
         return 0;
 
@@ -1829,7 +1984,7 @@ int EXPORT my_syscall_rt_sigaction(x64emu_t* emu, int signum, const x64_sigactio
         errno = EINVAL;
         return -1;
     }
-    
+
     if(signum==SIGSEGV && emu->context->no_sigsegv)
         return 0;
     // TODO, how to handle sigsetsize>4?!
@@ -2061,7 +2216,7 @@ EXPORT int my_makecontext(x64emu_t* emu, void* ucp, void* fnc, int32_t argc, int
     --rsp;
     *rsp = my_context->exit_bridge;
     u->uc_mcontext.gregs[X64_RSP] = (uintptr_t)rsp;
-    
+
     return 0;
 }
 
@@ -2080,7 +2235,7 @@ static void atfork_child_dynarec_prot(void)
     #ifdef USE_CUSTOM_MUTEX
     native_lock_store(&mutex_dynarec_prot, 0);
     #else
-    pthread_mutex_t tmp = PTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP; 
+    pthread_mutex_t tmp = PTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP;
     memcpy(&mutex_dynarec_prot, &tmp, sizeof(mutex_dynarec_prot));
     #endif
 }

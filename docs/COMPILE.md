@@ -78,6 +78,13 @@ Warning, you need a 64bit OS:
 -D RPI4ARM64=1 -D CMAKE_BUILD_TYPE=RelWithDebInfo
 ```
 
+#### for Raspberry Pi 5
+
+If your Raspberry Pi OS use 16K pages use `RPI5ARM64PS16K` instead of `RPI5ARM64`:
+```
+-D RPI5ARM64=1 -D CMAKE_BUILD_TYPE=RelWithDebInfo
+```
+
 #### for TEGRA X1
 
 Using a 64bit OS:
@@ -86,6 +93,22 @@ Using a 64bit OS:
 -D TEGRAX1=1 -D CMAKE_BUILD_TYPE=RelWithDebInfo
 ```
 
+#### for Jetson Xavier/T194
+
+Using a 64bit OS:
+
+```
+-D TEGRA_T194=1 -D CMAKE_BUILD_TYPE=RelWithDebInfo
+```
+
+#### for Jetson Orin/T234
+
+Using a 64bit OS:
+
+Caution: please use gcc-11 or higher, older gcc dosen't know cortex-a78ae
+```
+-D TEGRA_T234=1 -D CMAKE_BUILD_TYPE=RelWithDebInfo
+```
 
 #### for ODROID N2/N2+
 
@@ -182,7 +205,7 @@ NOTE: BUILDING BOX64 IN TERMUX NATIVE IS EXPERIMENTAL AND DOESN'T GONNA RUN LINU
 You also needed have `libandroid-sysv-semaphore` and `libandroid-spawn` libraries:
 
 ```
--D TERMUX=1 -D -DCMAKE_C_COMPILER=clang CMAKE_BUILD_TYPE=RelWithDebInfo
+-D TERMUX=1 -DCMAKE_C_COMPILER=clang -D CMAKE_BUILD_TYPE=RelWithDebInfo
 ```
 
 #### for x86_64 Linux
@@ -226,6 +249,11 @@ If you are not building from a git clone (for example, downloading a release sou
 #### Use faster linker
 
 You need to add `-DWITH_MOLD=1` if GNU ld is extremely slow. Then run `mold -run make -j4` to build (make sure [Mold](https://github.com/rui314/mold) is installed).
+
+#### Build a statically linked box64
+
+You can now build box64 staticaly linked, with `-DSTATICBUILD`. This is to use inside an x86_64 chroot. Note that this version of box64 will have just the minimum of wrapped libs. So only libc, libm and libpthread basically are wrapped. Other libs (like libGL or libvulkan, SDL2, etc...) will not be wrapped and x86_64 version will be used. It's designed to be used in docker image, or in headless server.
+Also, the Static Build is highly experimental, but feedback are always welcomed.
 
 ----
 

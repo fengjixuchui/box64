@@ -58,7 +58,7 @@ void fpu_free_reg(dynarec_rv64_t* dyn, int reg)
     int idx = EXTIDX(reg);
     // TODO: check upper limit?
     dyn->e.fpuused[idx] = 0;
-    if(dyn->e.extcache[idx].t!=EXT_CACHE_ST_F && dyn->e.extcache[idx].t!=EXT_CACHE_ST_D)
+    if (dyn->e.extcache[idx].t != EXT_CACHE_ST_F && dyn->e.extcache[idx].t != EXT_CACHE_ST_D && dyn->e.extcache[idx].t != EXT_CACHE_ST_I64)
         dyn->e.extcache[idx].v = 0;
 }
 // Get an MMX double reg
@@ -81,27 +81,41 @@ int fpu_get_reg_xmm(dynarec_rv64_t* dyn, int t, int xmm)
     return EXTREG(i);
 }
 // Reset fpu regs counter
+void fpu_reset_reg_extcache(extcache_t* e)
+{
+    e->fpu_reg = 0;
+    for (int i=0; i<24; ++i) {
+        e->fpuused[i]=0;
+        e->extcache[i].v = 0;
+    }
+}
 void fpu_reset_reg(dynarec_rv64_t* dyn)
 {
-    dyn->e.fpu_reg = 0;
-    for (int i=0; i<24; ++i) {
-        dyn->e.fpuused[i]=0;
-        dyn->e.extcache[i].v = 0;
+    fpu_reset_reg_extcache(&dyn->e);
+}
+
+int extcache_no_i64(dynarec_rv64_t* dyn, int ninst, int st, int a)
+{
+    if (a == EXT_CACHE_ST_I64) {
+        extcache_promote_double(dyn, ninst, st);
+        return EXT_CACHE_ST_D;
     }
+    return a;
 }
 
 int extcache_get_st(dynarec_rv64_t* dyn, int ninst, int a)
 {
     if (dyn->insts[ninst].e.swapped) {
-        if(dyn->insts[ninst].e.combined1 == a)
+        if (dyn->insts[ninst].e.combined1 == a)
             a = dyn->insts[ninst].e.combined2;
-        else if(dyn->insts[ninst].e.combined2 == a)
+        else if (dyn->insts[ninst].e.combined2 == a)
             a = dyn->insts[ninst].e.combined1;
     }
-    for(int i=0; i<24; ++i)
-        if((dyn->insts[ninst].e.extcache[i].t==EXT_CACHE_ST_F
-         || dyn->insts[ninst].e.extcache[i].t==EXT_CACHE_ST_D)
-         && dyn->insts[ninst].e.extcache[i].n==a)
+    for (int i = 0; i < 24; ++i)
+        if ((dyn->insts[ninst].e.extcache[i].t == EXT_CACHE_ST_F
+                || dyn->insts[ninst].e.extcache[i].t == EXT_CACHE_ST_D
+                || dyn->insts[ninst].e.extcache[i].t == EXT_CACHE_ST_I64)
+            && dyn->insts[ninst].e.extcache[i].n == a)
             return dyn->insts[ninst].e.extcache[i].t;
     // not in the cache yet, so will be fetched...
     return EXT_CACHE_ST_D;
@@ -110,12 +124,13 @@ int extcache_get_st(dynarec_rv64_t* dyn, int ninst, int a)
 int extcache_get_current_st(dynarec_rv64_t* dyn, int ninst, int a)
 {
     (void)ninst;
-    if(!dyn->insts)
+    if (!dyn->insts)
         return EXT_CACHE_ST_D;
-    for(int i=0; i<24; ++i)
-        if((dyn->e.extcache[i].t==EXT_CACHE_ST_F
-         || dyn->e.extcache[i].t==EXT_CACHE_ST_D)
-         && dyn->e.extcache[i].n==a)
+    for (int i = 0; i < 24; ++i)
+        if ((dyn->e.extcache[i].t == EXT_CACHE_ST_F
+                || dyn->e.extcache[i].t == EXT_CACHE_ST_D
+                || dyn->e.extcache[i].t == EXT_CACHE_ST_I64)
+            && dyn->e.extcache[i].n == a)
             return dyn->e.extcache[i].t;
     // not in the cache yet, so will be fetched...
     return EXT_CACHE_ST_D;
@@ -129,6 +144,16 @@ int extcache_get_st_f(dynarec_rv64_t* dyn, int ninst, int a)
             return i;
     return -1;
 }
+
+int extcache_get_st_f_i64(dynarec_rv64_t* dyn, int ninst, int a)
+{
+    for (int i = 0; i < 24; ++i)
+        if ((dyn->insts[ninst].e.extcache[i].t == EXT_CACHE_ST_I64 || dyn->insts[ninst].e.extcache[i].t == EXT_CACHE_ST_F)
+            && dyn->insts[ninst].e.extcache[i].n == a)
+            return i;
+    return -1;
+}
+
 int extcache_get_st_f_noback(dynarec_rv64_t* dyn, int ninst, int a)
 {
     for(int i=0; i<24; ++i)
@@ -137,11 +162,30 @@ int extcache_get_st_f_noback(dynarec_rv64_t* dyn, int ninst, int a)
             return i;
     return -1;
 }
+
+int extcache_get_st_f_i64_noback(dynarec_rv64_t* dyn, int ninst, int a)
+{
+    for (int i = 0; i < 24; ++i)
+        if ((dyn->insts[ninst].e.extcache[i].t == EXT_CACHE_ST_I64 || dyn->insts[ninst].e.extcache[i].t == EXT_CACHE_ST_F)
+            && dyn->insts[ninst].e.extcache[i].n == a)
+            return i;
+    return -1;
+}
+
 int extcache_get_current_st_f(dynarec_rv64_t* dyn, int a)
 {
     for(int i=0; i<24; ++i)
         if(dyn->e.extcache[i].t==EXT_CACHE_ST_F
          && dyn->e.extcache[i].n==a)
+            return i;
+    return -1;
+}
+
+int extcache_get_current_st_f_i64(dynarec_rv64_t* dyn, int a)
+{
+    for (int i = 0; i < 24; ++i)
+        if ((dyn->e.extcache[i].t == EXT_CACHE_ST_I64 || dyn->e.extcache[i].t == EXT_CACHE_ST_F)
+            && dyn->e.extcache[i].n == a)
             return i;
     return -1;
 }
@@ -155,7 +199,7 @@ static void extcache_promote_double_combined(dynarec_rv64_t* dyn, int ninst, int
             a = dyn->insts[ninst].e.combined2;
         } else
             a = dyn->insts[ninst].e.combined1;
-        int i = extcache_get_st_f_noback(dyn, ninst, a);
+        int i = extcache_get_st_f_i64_noback(dyn, ninst, a);
         //if(box64_dynarec_dump) dynarec_log(LOG_NONE, "extcache_promote_double_combined, ninst=%d combined%c %d i=%d (stack:%d/%d)\n", ninst, (a == dyn->insts[ninst].e.combined2)?'2':'1', a ,i, dyn->insts[ninst].e.stack_push, -dyn->insts[ninst].e.stack_pop);
         if(i>=0) {
             dyn->insts[ninst].e.extcache[i].t = EXT_CACHE_ST_D;
@@ -174,7 +218,7 @@ static void extcache_promote_double_internal(dynarec_rv64_t* dyn, int ninst, int
         return;
     while(ninst>=0) {
         a+=dyn->insts[ninst].e.stack_pop;    // adjust Stack depth: add pop'd ST (going backward)
-        int i = extcache_get_st_f(dyn, ninst, a);
+        int i = extcache_get_st_f_i64(dyn, ninst, a);
         //if(box64_dynarec_dump) dynarec_log(LOG_NONE, "extcache_promote_double_internal, ninst=%d, a=%d st=%d:%d, i=%d\n", ninst, a, dyn->insts[ninst].e.stack, dyn->insts[ninst].e.stack_next, i);
         if(i<0) return;
         dyn->insts[ninst].e.extcache[i].t = EXT_CACHE_ST_D;
@@ -209,7 +253,7 @@ static void extcache_promote_double_forward(dynarec_rv64_t* dyn, int ninst, int 
             else if (a==dyn->insts[ninst].e.combined2)
                 a = dyn->insts[ninst].e.combined1;
         }
-        int i = extcache_get_st_f_noback(dyn, ninst, a);
+        int i = extcache_get_st_f_i64_noback(dyn, ninst, a);
         //if(box64_dynarec_dump) dynarec_log(LOG_NONE, "extcache_promote_double_forward, ninst=%d, a=%d st=%d:%d(%d/%d), i=%d\n", ninst, a, dyn->insts[ninst].e.stack, dyn->insts[ninst].e.stack_next, dyn->insts[ninst].e.stack_push, -dyn->insts[ninst].e.stack_pop, i);
         if(i<0) return;
         dyn->insts[ninst].e.extcache[i].t = EXT_CACHE_ST_D;
@@ -230,7 +274,7 @@ static void extcache_promote_double_forward(dynarec_rv64_t* dyn, int ninst, int 
 
 void extcache_promote_double(dynarec_rv64_t* dyn, int ninst, int a)
 {
-    int i = extcache_get_current_st_f(dyn, a);
+    int i = extcache_get_current_st_f_i64(dyn, a);
     //if(box64_dynarec_dump) dynarec_log(LOG_NONE, "extcache_promote_double, ninst=%d a=%d st=%d i=%d\n", ninst, a, dyn->e.stack, i);
     if(i<0) return;
     dyn->e.extcache[i].t = EXT_CACHE_ST_D;
@@ -266,19 +310,21 @@ int extcache_combine_st(dynarec_rv64_t* dyn, int ninst, int a, int b)
     return EXT_CACHE_ST_D;
 }
 
-static int isCacheEmpty(dynarec_native_t* dyn, int ninst) {
-    if(dyn->insts[ninst].e.stack_next) {
+static int isCacheEmpty(dynarec_native_t* dyn, int ninst)
+{
+    if (dyn->insts[ninst].e.stack_next) {
         return 0;
     }
-    for(int i=0; i<24; ++i)
-        if(dyn->insts[ninst].e.extcache[i].v) {       // there is something at ninst for i
-            if(!(
-            (dyn->insts[ninst].e.extcache[i].t==EXT_CACHE_ST_F || dyn->insts[ninst].e.extcache[i].t==EXT_CACHE_ST_D)
-            && dyn->insts[ninst].e.extcache[i].n<dyn->insts[ninst].e.stack_pop))
+    for (int i = 0; i < 24; ++i)
+        if (dyn->insts[ninst].e.extcache[i].v) { // there is something at ninst for i
+            if (!(
+                    (dyn->insts[ninst].e.extcache[i].t == EXT_CACHE_ST_F
+                        || dyn->insts[ninst].e.extcache[i].t == EXT_CACHE_ST_D
+                        || dyn->insts[ninst].e.extcache[i].t == EXT_CACHE_ST_I64)
+                    && dyn->insts[ninst].e.extcache[i].n < dyn->insts[ninst].e.stack_pop))
                 return 0;
         }
     return 1;
-
 }
 
 int fpuCacheNeedsTransform(dynarec_rv64_t* dyn, int ninst) {
@@ -295,9 +341,11 @@ int fpuCacheNeedsTransform(dynarec_rv64_t* dyn, int ninst) {
         }
         for(int i=0; i<24 && !ret; ++i)
             if(dyn->insts[ninst].e.extcache[i].v) {       // there is something at ninst for i
-                if(!(
-                (dyn->insts[ninst].e.extcache[i].t==EXT_CACHE_ST_F || dyn->insts[ninst].e.extcache[i].t==EXT_CACHE_ST_D)
-                && dyn->insts[ninst].e.extcache[i].n<dyn->insts[ninst].e.stack_pop))
+                if (!(
+                        (dyn->insts[ninst].e.extcache[i].t == EXT_CACHE_ST_F
+                            || dyn->insts[ninst].e.extcache[i].t == EXT_CACHE_ST_D
+                            || dyn->insts[ninst].e.extcache[i].t == EXT_CACHE_ST_I64)
+                        && dyn->insts[ninst].e.extcache[i].n < dyn->insts[ninst].e.stack_pop))
                     ret = 1;
             }
         return ret;
@@ -329,7 +377,9 @@ void extcacheUnwind(extcache_t* cache)
         int a = -1;
         int b = -1;
         for(int j=0; j<24 && ((a==-1) || (b==-1)); ++j)
-            if((cache->extcache[j].t == EXT_CACHE_ST_D || cache->extcache[j].t == EXT_CACHE_ST_F)) {
+            if ((cache->extcache[j].t == EXT_CACHE_ST_D
+                    || cache->extcache[j].t == EXT_CACHE_ST_F
+                    || cache->extcache[j].t == EXT_CACHE_ST_I64)) {
                 if(cache->extcache[j].n == cache->combined1)
                     a = j;
                 else if(cache->extcache[j].n == cache->combined2)
@@ -362,7 +412,9 @@ void extcacheUnwind(extcache_t* cache)
     if(cache->stack_push) {
         // unpush
         for(int j=0; j<24; ++j) {
-            if((cache->extcache[j].t == EXT_CACHE_ST_D || cache->extcache[j].t == EXT_CACHE_ST_F)) {
+            if ((cache->extcache[j].t == EXT_CACHE_ST_D
+                    || cache->extcache[j].t == EXT_CACHE_ST_F
+                    || cache->extcache[j].t == EXT_CACHE_ST_I64)) {
                 if(cache->extcache[j].n<cache->stack_push)
                     cache->extcache[j].v = 0;
                 else
@@ -411,6 +463,7 @@ void extcacheUnwind(extcache_t* cache)
                     break;
                 case EXT_CACHE_ST_F:
                 case EXT_CACHE_ST_D:
+                case EXT_CACHE_ST_I64:
                     cache->x87cache[x87reg] = cache->extcache[i].n;
                     cache->x87reg[x87reg] = EXTREG(i);
                     ++x87reg;
@@ -482,6 +535,7 @@ const char* getCacheName(int t, int n)
     switch(t) {
         case EXT_CACHE_ST_D: sprintf(buff, "ST%d", n); break;
         case EXT_CACHE_ST_F: sprintf(buff, "st%d", n); break;
+        case EXT_CACHE_ST_I64: sprintf(buff, "STi%d", n); break;
         case EXT_CACHE_MM: sprintf(buff, "MM%d", n); break;
         case EXT_CACHE_SS: sprintf(buff, "SS%d", n); break;
         case EXT_CACHE_SD: sprintf(buff, "SD%d", n); break;
@@ -533,6 +587,7 @@ void inst_name_pass3(dynarec_native_t* dyn, int ninst, const char* name, rex_t r
             switch(dyn->insts[ninst].e.extcache[ii].t) {
                 case EXT_CACHE_ST_D: dynarec_log(LOG_NONE, " %s:%s", fnames[EXTREG(ii)], getCacheName(dyn->insts[ninst].e.extcache[ii].t, dyn->insts[ninst].e.extcache[ii].n)); break;
                 case EXT_CACHE_ST_F: dynarec_log(LOG_NONE, " %s:%s", fnames[EXTREG(ii)], getCacheName(dyn->insts[ninst].e.extcache[ii].t, dyn->insts[ninst].e.extcache[ii].n)); break;
+                case EXT_CACHE_ST_I64: dynarec_log(LOG_NONE, " %s:%s", fnames[EXTREG(ii)], getCacheName(dyn->insts[ninst].e.extcache[ii].t, dyn->insts[ninst].e.extcache[ii].n)); break;
                 case EXT_CACHE_MM: dynarec_log(LOG_NONE, " %s:%s", fnames[EXTREG(ii)], getCacheName(dyn->insts[ninst].e.extcache[ii].t, dyn->insts[ninst].e.extcache[ii].n)); break;
                 case EXT_CACHE_SS: dynarec_log(LOG_NONE, " %s:%s", fnames[EXTREG(ii)], getCacheName(dyn->insts[ninst].e.extcache[ii].t, dyn->insts[ninst].e.extcache[ii].n)); break;
                 case EXT_CACHE_SD: dynarec_log(LOG_NONE, " %s:%s", fnames[EXTREG(ii)], getCacheName(dyn->insts[ninst].e.extcache[ii].t, dyn->insts[ninst].e.extcache[ii].n)); break;
@@ -561,4 +616,53 @@ void print_newinst(dynarec_native_t* dyn, int ninst)
         ninst, dyn->block, dyn->native_size,
         (box64_dynarec_dump>1)?"\e[m":""
         );
+}
+
+// x87 stuffs
+static void x87_reset(extcache_t* e)
+{
+    for (int i=0; i<8; ++i)
+        e->x87cache[i] = -1;
+    e->x87stack = 0;
+    e->stack = 0;
+    e->stack_next = 0;
+    e->stack_pop = 0;
+    e->stack_push = 0;
+    e->combined1 = e->combined2 = 0;
+    e->swapped = 0;
+    e->barrier = 0;
+    for(int i=0; i<24; ++i)
+        if (e->extcache[i].t == EXT_CACHE_ST_F
+            || e->extcache[i].t == EXT_CACHE_ST_D
+            || e->extcache[i].t == EXT_CACHE_ST_I64)
+            e->extcache[i].v = 0;
+}
+
+static void mmx_reset(extcache_t* e)
+{
+    e->mmxcount = 0;
+    for (int i=0; i<8; ++i)
+        e->mmxcache[i] = -1;
+}
+
+static void sse_reset(extcache_t* e)
+{
+    for (int i=0; i<16; ++i)
+        e->ssecache[i].v = -1;
+}
+
+void fpu_reset(dynarec_rv64_t* dyn)
+{
+    x87_reset(&dyn->e);
+    mmx_reset(&dyn->e);
+    sse_reset(&dyn->e);
+    fpu_reset_reg(dyn);
+}
+
+void fpu_reset_ninst(dynarec_rv64_t* dyn, int ninst)
+{
+    x87_reset(&dyn->insts[ninst].e);
+    mmx_reset(&dyn->insts[ninst].e);
+    sse_reset(&dyn->insts[ninst].e);
+    fpu_reset_reg_extcache(&dyn->insts[ninst].e);
 }

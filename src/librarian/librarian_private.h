@@ -18,10 +18,7 @@ typedef struct lib_s {
     library_t             **libraries;
     int                   libsz;
     int                   libcap;
-    int                   ownlibs;
     library_t             *owner;       // in case that maplib is owned by a lib
-
-    bridge_t              *bridge;        // all x86 -> arm bridge
 } lib_t;
 
 #endif //__LIBRARIAN_PRIVATE_H_

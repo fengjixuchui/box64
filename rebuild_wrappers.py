@@ -150,12 +150,12 @@ class FunctionConvention(object):
 		self.ident = ident
 		self.name = convname
 		self.values = valid_chars
-# Free letters:  B   FG  J      QR T   XYZab  e gh jk mno qrst   xyz
+# Free letters:  B   FG  J      QR T    YZa   e gh jk mno qrst    z
 conventions = {
-	'F': FunctionConvention('F', "System V", ['E', 'v', 'c', 'w', 'i', 'I', 'C', 'W', 'u', 'U', 'f', 'd', 'D', 'K', 'l', 'L', 'p', 'V', 'O', 'S', 'N', 'M', 'H', 'P', 'A', 'x', 'X']),
+	'F': FunctionConvention('F', "System V", ['E', 'v', 'c', 'w', 'i', 'I', 'C', 'W', 'u', 'U', 'f', 'd', 'D', 'K', 'l', 'L', 'p', 'V', 'O', 'S', 'N', 'M', 'H', 'P', 'A', 'x', 'X', 'Y', 'y', 'b']),
 	'W': FunctionConvention('W', "Windows",  ['E', 'v', 'c', 'w', 'i', 'I', 'C', 'W', 'u', 'U', 'f', 'd',      'K', 'l', 'L', 'p', 'V', 'O', 'S', 'N', 'M',      'P', 'A'])
 }
-sortedvalues = ['E', 'v', 'c', 'w', 'i', 'I', 'C', 'W', 'u', 'U', 'f', 'd', 'D', 'K', 'l', 'L', 'p', 'V', 'O', 'S', 'N', 'M', 'H', 'P', 'A', 'x', 'X', '0', '1']
+sortedvalues = ['E', 'v', 'c', 'w', 'i', 'I', 'C', 'W', 'u', 'U', 'f', 'd', 'D', 'K', 'l', 'L', 'p', 'V', 'O', 'S', 'N', 'M', 'H', 'P', 'A', 'x', 'X', 'Y', 'y', 'b', '0', '1']
 assert(all(all(c not in conv.values[:i] and c in sortedvalues for i, c in enumerate(conv.values)) for conv in conventions.values()))
 
 class FunctionType(str):
@@ -197,7 +197,7 @@ class FunctionType(str):
 		except ValueError as e:
 			raise ValueError("Value is " + self) from e
 	
-	def __getitem__(self, i: Union[int, slice]) -> 'FunctionType':
+	def __getitem__(self, i: Union[int, slice]) -> 'FunctionType': # type: ignore [override]
 		return FunctionType(super().__getitem__(i))
 
 RedirectType = NewType('RedirectType', FunctionType)
@@ -399,7 +399,9 @@ def readFiles(files: Iterable[Filename]) -> Tuple[JumbledGlobals, JumbledRedirec
 							 or match("sdl1mixer", "sdl2mixer") \
 							 or match("sdl1net", "sdl2net") \
 							 or match("sdl1ttf", "sdl2ttf") \
-							 or match("libGL", "libEGL") \
+							 or match("libgl", "libegl") \
+							 or match("libgl", "glesv2") \
+							 or match("libegl", "glesv2") \
 							 or match("libc", "tcmallocminimal") \
 							 or match("libc", "tbbmallocproxy") \
 							 or match("libc", "androidshmem") \
@@ -816,62 +818,75 @@ def main(root: str, files: Iterable[Filename], ver: str):
 		return 0
 	
 	# Detect simple wrappings
-	simple_wraps: Dict[ClausesStr, List[Tuple[FunctionType, int]]] = {}
 	allowed_conv_ident = "F"
 	allowed_conv = conventions[allowed_conv_ident]
 	
 	# H could be allowed maybe?
-	allowed_simply: str = "v"
-	allowed_regs  : str = "cCwWiuIUlLp"
-	allowed_fpr   : str = "fd"
+	allowed_simply: Dict[str, str] = {"ARM64": "v", "RV64": "v"}
+	allowed_regs  : Dict[str, str] = {"ARM64": "cCwWiuIUlLp", "RV64": "CWuIUlLp"}
+	allowed_fpr   : Dict[str, str] = {"ARM64": "fd", "RV64": "fd"}
 	
 	# Detect functions which return in an x87 register
 	retx87_wraps: Dict[ClausesStr, List[FunctionType]] = {}
 	return_x87: str = "DK"
 	
 	# Sanity checks
-	forbidden_simple: str = "EDKVOSNMHPAxX"
-	assert(len(allowed_simply) + len(allowed_regs) + len(allowed_fpr) + len(forbidden_simple) == len(allowed_conv.values))
-	assert(all(c not in allowed_regs for c in allowed_simply))
-	assert(all(c not in allowed_simply + allowed_regs for c in allowed_fpr))
-	assert(all(c not in allowed_simply + allowed_regs + allowed_fpr for c in forbidden_simple))
-	assert(all(c in allowed_simply + allowed_regs + allowed_fpr + forbidden_simple for c in allowed_conv.values))
+	forbidden_simple: Dict[str, str] = {"ARM64": "EDKVOSNMHPAxXYyb", "RV64": "EcwiDKVOSNMHPAxXYyb"}
+	assert(all(k in allowed_simply for k in forbidden_simple))
+	assert(all(k in allowed_regs for k in forbidden_simple))
+	assert(all(k in allowed_fpr for k in forbidden_simple))
+	for k1 in forbidden_simple:
+		assert(len(allowed_simply[k1]) + len(allowed_regs[k1]) + len(allowed_fpr[k1]) + len(forbidden_simple[k1]) == len(allowed_conv.values))
+		assert(all(c not in allowed_regs[k1] for c in allowed_simply[k1]))
+		assert(all(c not in allowed_simply[k1] + allowed_regs[k1] for c in allowed_fpr[k1]))
+		assert(all(c not in allowed_simply[k1] + allowed_regs[k1] + allowed_fpr[k1] for c in forbidden_simple[k1]))
+		assert(all(c in allowed_simply[k1] + allowed_regs[k1] + allowed_fpr[k1] + forbidden_simple[k1] for c in allowed_conv.values))
 	assert(all(c in allowed_conv.values for c in return_x87))
 	
-	def check_simple(v: FunctionType) -> Optional[int]:
+	simple_wraps: Dict[str, Dict[ClausesStr, List[Tuple[FunctionType, int]]]] = {
+		k1: {} for k1 in forbidden_simple
+	}
+	
+	def check_simple(v: FunctionType) -> Dict[str, int]:
 		regs_count: int = 0
 		fpr_count : int = 0
 		
-		if v.get_convention() is not allowed_conv:
-			return None
-		if v[0] in forbidden_simple:
-			return None
-		for c in v[2:]:
-			if c in allowed_regs:
-				regs_count = regs_count + 1
-			elif c in allowed_fpr:
-				fpr_count = fpr_count + 1
-			elif c in allowed_simply:
+		ret = {}
+		for k in forbidden_simple:
+			if v.get_convention() is not allowed_conv:
 				continue
+			if v[0] in forbidden_simple[k]:
+				continue
+			for c in v[2:]:
+				if c in allowed_regs[k]:
+					regs_count = regs_count + 1
+				elif c in allowed_fpr[k]:
+					fpr_count = fpr_count + 1
+				elif c in allowed_simply[k]:
+					continue
+				else:
+					break
 			else:
-				return None
-		# No character in forbidden_simply
-		if (regs_count <= 6) and (fpr_count <= 8):
-			# All checks passed!
-			ret_val = 1 + fpr_count
-			if v[0] in allowed_fpr:
-				ret_val = -ret_val
-			return ret_val
-		else:
-			# Too many arguments...
-			return None
+				# No character in forbidden_simply
+				if (regs_count <= 6) and (fpr_count <= 8):
+					# All checks passed!
+					ret_val = 1 + fpr_count
+					if v[0] in allowed_fpr[k]:
+						ret_val = -ret_val
+					ret[k] = ret_val
+				# Else, too many arguments
+		return ret
 	
 	# Only search in real wrappers (mapped ones are nearly always not simple)
 	for k in gbls:
-		tmp = [ (v, ret_val) for v, ret_val in map(lambda v: (v, check_simple(v)), gbls[k]) if ret_val is not None ]
-		if tmp:
-			simple_wraps[k] = tmp
-	simple_idxs = sorted(simple_wraps.keys(), key=lambda x: Clauses(x).splitdef())
+		for v in gbls[k]:
+			simples = check_simple(v)
+			for k1, i in simples.items():
+				if k in simple_wraps[k1]:
+					simple_wraps[k1][k].append((v, i))
+				else:
+					simple_wraps[k1][k] = [(v, i)]
+	simple_idxs = { k1: sorted(v1.keys(), key=lambda x: Clauses(x).splitdef()) for k1, v1 in simple_wraps.items() }
 	
 	def check_return_x87(v: FunctionType) -> bool:
 		return v[0] in return_x87
@@ -918,6 +933,8 @@ def main(root: str, files: Iterable[Filename], ver: str):
 		#define ST0val ST0.d
 		
 		int of_convert(int);
+		void* align_xcb_connection(void* src);
+		void unalign_xcb_connection(void* src, void* dst);
 		
 		""",
 		"wrapper.h": """
@@ -954,6 +971,7 @@ def main(root: str, files: Iterable[Filename], ver: str):
 		// 0 = constant 0, 1 = constant 1
 		// x = float complex
 		// X = double complex
+		// b = xcb_connection_t*
 		
 		""",
 		"fntypes.h": """
@@ -1015,8 +1033,8 @@ def main(root: str, files: Iterable[Filename], ver: str):
 	# Rewrite the wrapper.c file:
 	# i and u should only be 32 bits
 	td_types = {
-		#      E            v       c         w          i          I          C          W           u           U           f        d         D              K         l           L            p        V        O          S        N      M      H                    P        A			x				X
-		'F': ["x64emu_t*", "void", "int8_t", "int16_t", "int32_t", "int64_t", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "float", "double", "long double", "double", "intptr_t", "uintptr_t", "void*", "void*", "int32_t", "void*", "...", "...", "unsigned __int128", "void*", "void*", "complexf_t", "complex_t"],
+		#      E            v       c         w          i          I          C          W           u           U           f        d         D              K         l           L            p        V        O          S        N      M      H                    P        A			x				X           Y              y         b
+		'F': ["x64emu_t*", "void", "int8_t", "int16_t", "int32_t", "int64_t", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "float", "double", "long double", "double", "intptr_t", "uintptr_t", "void*", "void*", "int32_t", "void*", "...", "...", "unsigned __int128", "void*", "void*", "complexf_t", "complex_t", "complexl_t", "complex_t", "void*"],
 		#      E            v       c         w          i          I          C          W           u           U           f        d         K         l           L            p        V        O          S        N      M      P        A
 		'W': ["x64emu_t*", "void", "int8_t", "int16_t", "int32_t", "int64_t", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "float", "double", "double", "intptr_t", "uintptr_t", "void*", "void*", "int32_t", "void*", "...", "...", "void*", "void*"]
 	}
@@ -1074,8 +1092,11 @@ def main(root: str, files: Iterable[Filename], ver: str):
 				"unsigned __int128 u128 = fn({0}); R_RAX=(u128&0xFFFFFFFFFFFFFFFFL); R_RDX=(u128>>64)&0xFFFFFFFFFFFFFFFFL;", # H
 				"\n#error Invalid return type: pointer in the stack\n",    # P
 				"\n#error Invalid return type: va_list\n",                 # A
-				'from_complexf(emu, fn({0})));', 	                          # x
-				'from_complex(emu, fn({0})));'                             # X
+				'from_complexf(emu, fn({0}));', 	                       # x
+				'from_complex(emu, fn({0}));',                             # X
+				'from_complexl(emu, fn({0}));', 	                       # Y
+				'from_complexk(emu, fn({0}));',                            # y
+				"\n#error Invalid return type: xcb_connection_t*\n",       # b
 			],
 			conventions['W']: [
 				"\n#error Invalid return type: emulator\n",                # E
@@ -1105,17 +1126,17 @@ def main(root: str, files: Iterable[Filename], ver: str):
 		}
 		
 		# vreg: value is in a general register
-		#         E  v  c  w  i  I  C  W  u  U  f  d  D  K  l  L  p  V  O  S  N  M  H  P  A  x  X
-		vreg   = [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 2, 2, 0, 1, 0, 0]
+		#         E  v  c  w  i  I  C  W  u  U  f  d  D  K  l  L  p  V  O  S  N  M  H  P  A  x  X  Y  y  b
+		vreg   = [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 2, 2, 0, 1, 0, 0, 0, 0, 1]
 		# vxmm: value is in a XMM register
-		#         E  v  c  w  i  I  C  W  u  U  f  d  D  K  l  L  p  V  O  S  N  M  H  P  A  x  X
-		vxmm   = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2]
+		#         E  v  c  w  i  I  C  W  u  U  f  d  D  K  l  L  p  V  O  S  N  M  H  P  A  x  X  Y  y  b
+		vxmm   = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 0, 0, 0]
 		# vother: value is elsewere
-		#         E  v  c  w  i  I  C  W  u  U  f  d  D  K  l  L  p  V  O  S  N  M  H  P  A  x  X
-		vother = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+		#         E  v  c  w  i  I  C  W  u  U  f  d  D  K  l  L  p  V  O  S  N  M  H  P  A  x  X  Y  y  b
+		vother = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 		# vstack: value is on the stack (or out of register)
-		#         E  v  c  w  i  I  C  W  u  U  f  d  D  K  l  L  p  V  O  S  N  M  H  P  A  x  X
-		vstack = [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 0, 1, 1, 1, 2, 2, 1, 1, 1, 2]
+		#         E  v  c  w  i  I  C  W  u  U  f  d  D  K  l  L  p  V  O  S  N  M  H  P  A  x  X  Y  y  b
+		vstack = [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 0, 1, 1, 1, 2, 2, 1, 1, 1, 2, 4, 4, 1]
 		arg_r = [
 			"",                            # E
 			"",                            # v
@@ -1144,64 +1165,73 @@ def main(root: str, files: Iterable[Filename], ver: str):
 			"(void*){p}, ",                # A
 			"",	                           # x
 			"",                            # X
+			"",							   # Y
+			"",							   # y
+			"aligned_xcb, ",               # b
 		]
 		arg_x = [
-			"",                      # E
-			"",                      # v
-			"",                      # c
-			"",                      # w
-			"",                      # i
-			"",                      # I
-			"",                      # C
-			"",                      # W
-			"",                      # u
-			"",                      # U
-			"emu->xmm[{p}].f[0], ",  # f
-			"emu->xmm[{p}].d[0], ",  # d
-			"",                      # D
-			"",                      # K
-			"",                      # l
-			"",                      # L
-			"",                      # p
-			"",                      # V
-			"",                      # O
-			"",                      # S
-			"",                      # N
-			"",                      # M
-			"",                      # H
-			"",                      # P
-			"",                      # A
-			"to_complexf(emu, {p}),",# x
-			"to_complex(emu, {p}),"  # X
+			"",                       # E
+			"",                       # v
+			"",                       # c
+			"",                       # w
+			"",                       # i
+			"",                       # I
+			"",                       # C
+			"",                       # W
+			"",                       # u
+			"",                       # U
+			"emu->xmm[{p}].f[0], ",   # f
+			"emu->xmm[{p}].d[0], ",   # d
+			"",                       # D
+			"",                       # K
+			"",                       # l
+			"",                       # L
+			"",                       # p
+			"",                       # V
+			"",                       # O
+			"",                       # S
+			"",                       # N
+			"",                       # M
+			"",                       # H
+			"",                       # P
+			"",                       # A
+			"to_complexf(emu, {p}), ", # x
+			"to_complex(emu, {p}), ",  # X
+			"", 				      # Y
+			"", 				      # y
+			"",                       # b
 		]
 		arg_o = [
-			"emu, ",                   # E
-			"",                        # v
-			"",                        # c
-			"",                        # w
-			"",                        # i
-			"",                        # I
-			"",                        # C
-			"",                        # W
-			"",                        # u
-			"",                        # U
-			"",                        # f
-			"",                        # d
-			"",                        # D
-			"",                        # K
-			"",                        # l
-			"",                        # L
-			"",                        # p
-			"(void*)(R_RSP + {p}), ",  # V
-			"",                        # O
-			"",                        # S
-			"",                        # N
-			"",                        # M
-			"",                        # H
-			"",                        # P
-			"",                        # A
-			"",                        # x
-			"",                        # X
+			"emu, ",                  # E
+			"",                       # v
+			"",                       # c
+			"",                       # w
+			"",                       # i
+			"",                       # I
+			"",                       # C
+			"",                       # W
+			"",                       # u
+			"",                       # U
+			"",                       # f
+			"",                       # d
+			"",                       # D
+			"",                       # K
+			"",                       # l
+			"",                       # L
+			"",                       # p
+			"(void*)(R_RSP + {p}), ", # V
+			"",                       # O
+			"",                       # S
+			"",                       # N
+			"",                       # M
+			"",                       # H
+			"",                       # P
+			"",                       # A
+			"",                       # x
+			"",                       # X
+			"",						  # Y
+			"",						  # y
+			"",                       # b
 		]
 		arg_s = [
 			"",                                         # E
@@ -1226,11 +1256,14 @@ def main(root: str, files: Iterable[Filename], ver: str):
 			"io_convert(*(void**)(R_RSP + {p})), ",     # S
 			"*(void**)(R_RSP + {p}), ",                 # N
 			"*(void**)(R_RSP + {p}),*(void**)(R_RSP + {p} + 8), ", # M
-			"*(unsigned __int128)(R_RSP + {p}), ",      # H
+			"*(unsigned __int128*)(R_RSP + {p}), ",     # H
 			"*(void**)(R_RSP + {p}), ",                 # P
 			"*(void**)(R_RSP + {p}), ",                 # A
 			"*(complexf_t*)(R_RSP + {p}), ",            # x
 			"*(complex_t*)(R_RSP + {p}), ",             # X
+			"to_complexl(emu, R_RSP + {p}), ",		    # Y
+			"to_complexk(emu, R_RSP + {p}), ",		    # y
+			"aligned_xcb, ",                            # b
 		]
 		
 		# Asserts
@@ -1258,7 +1291,7 @@ def main(root: str, files: Iterable[Filename], ver: str):
 		for k in conventions:
 			c = conventions[k]
 			if c not in vals:
-				raise NotImplementedError("[{k}]values not in vals".format(k=k, lenval=len(c.values), lenvals=len(vals[c])))
+				raise NotImplementedError("convention {k} not in vals".format(k=k))
 			if len(c.values) != len(vals[c]):
 				raise NotImplementedError("len([{k}]values) = {lenval} != len(vals[...]) = {lenvals}".format(k=k, lenval=len(c.values), lenvals=len(vals[c])))
 		# When arg_* is not empty, v* should not be 0
@@ -1282,6 +1315,50 @@ def main(root: str, files: Iterable[Filename], ver: str):
 		
 		# Helper functions to write the function definitions
 		systemVconv = conventions['F']
+		def function_pre_systemV(args: FunctionType, d: int = 8, r: int = 0, x: int = 0) -> Tuple[Optional[str], str]:
+			# args: string of argument types
+			# d: delta (in the stack)
+			# r: general register no
+			# x: XMM register no
+			if len(args) == 0:
+				return None, ""
+			
+			# Redirections
+			if args[0] == "0":
+				return function_pre_systemV(args[1:], d, r, x)
+			elif args[0] == "1":
+				return function_pre_systemV(args[1:], d, r, x)
+			
+			idx = systemVconv.values.index(args[0])
+			# Name of the registers
+			reg_arg = ["R_RDI", "R_RSI", "R_RDX", "R_RCX", "R_R8", "R_R9"]
+			if args[0] == "b":
+				if 'b' in args[1:]:
+					raise NotImplementedError("Multiple XCB connections unsupported")
+				content = ""
+				if r < len(reg_arg):
+					content = reg_arg[r]
+				else:
+					content = "(R_RSP + " + str(d) + ")"
+				return "(void*)" + content, f"void *aligned_xcb = align_xcb_connection((void*){content}); "
+			elif (r < len(reg_arg)) and (vreg[idx] > 0):
+				for _ in range(vreg[idx]):
+					if r < len(reg_arg):
+						r = r + 1
+					else:
+						d = d + 8
+				return function_pre_systemV(args[1:], d, r, x)
+			elif (x < 8) and (vxmm[idx] > 0):
+				return function_pre_systemV(args[1:], d, r, x+1)
+			elif vstack[idx] > 0:
+				return function_pre_systemV(args[1:], d+8*vstack[idx], r, x)
+			else:
+				return function_pre_systemV(args[1:], d, r, x)
+		def function_post_systemV(content: Optional[str]) -> str:
+			if content is not None:
+				return f" unalign_xcb_connection(aligned_xcb, {content});"
+			else:
+				return ""
 		def function_args_systemV(args: FunctionType, d: int = 8, r: int = 0, x: int = 0) -> str:
 			# args: string of argument types
 			# d: delta (in the stack)
@@ -1314,7 +1391,7 @@ def main(root: str, files: Iterable[Filename], ver: str):
 				return ret + function_args_systemV(args[1:], d, r, x)
 			elif (x < 8) and (vxmm[idx] > 0):
 				# Value is in an XMM register
-				return arg_x[idx].format(p=x) + function_args_systemV(args[1:], d, r, x+1)
+				return arg_x[idx].format(p=x) + function_args_systemV(args[1:], d, r, x+vxmm[idx])
 			elif vstack[idx] > 0:
 				# Value is in the stack
 				return arg_s[idx].format(p=d) + function_args_systemV(args[1:], d+8*vstack[idx], r, x)
@@ -1361,9 +1438,11 @@ def main(root: str, files: Iterable[Filename], ver: str):
 			# Generic function
 			conv = N.get_convention()
 			if conv is systemVconv:
-				f.write(vals[conv][conv.values.index(N[0])].format(function_args_systemV(N[2:])[:-2]) + " }\n")
+				prepost, pre = function_pre_systemV(N[2:])
+				f.write(pre + vals[conv][conv.values.index(N[0])].format(function_args_systemV(N[2:])[:-2]) + function_post_systemV(prepost))
 			else:
-				f.write(vals[conv][conv.values.index(N[0])].format(function_args_windows(N[2:])[:-2]) + " }\n")
+				f.write(vals[conv][conv.values.index(N[0])].format(function_args_windows(N[2:])[:-2]))
+			f.write(" }\n")
 		
 		for k in gbls:
 			if k != str(Clauses()):
@@ -1386,15 +1465,20 @@ def main(root: str, files: Iterable[Filename], ver: str):
 				file.write("#endif\n")
 		
 		# Write the isSimpleWrapper function
-		file.write("\nint isSimpleWrapper(wrapper_t fun) {\n")
-		for k in simple_idxs:
-			if k != str(Clauses()):
-				file.write("#if " + k + "\n")
-			for vf, val in simple_wraps[k]:
-				file.write("\tif (fun == &" + vf + ") return " + str(val) + ";\n")
-			if k != str(Clauses()):
-				file.write("#endif\n")
-		file.write("\treturn 0;\n}\n")
+		inttext = ""
+		file.write("\n")
+		for k1 in simple_idxs:
+			file.write("#{inttext}if defined({k1})\nint isSimpleWrapper(wrapper_t fun) {{\n".format(inttext=inttext, k1=k1))
+			inttext = "el"
+			for k in simple_idxs[k1]:
+				if k != str(Clauses()):
+					file.write("#if " + k + "\n")
+				for vf, val in simple_wraps[k1][k]:
+					file.write("\tif (fun == &" + vf + ") return " + str(val) + ";\n")
+				if k != str(Clauses()):
+					file.write("#endif\n")
+			file.write("\treturn 0;\n}\n")
+		file.write("\n#else\nint isSimpleWrapper(wrapper_t fun) {\n\treturn 0;\n}\n#endif\n")
 		
 		# Write the isRetX87Wrapper function
 		file.write("\nint isRetX87Wrapper(wrapper_t fun) {\n")
@@ -1480,6 +1564,6 @@ if __name__ == '__main__':
 		if v == "--":
 			limit.append(i)
 	Define.defines = list(map(DefineType, sys.argv[2:limit[0]]))
-	if main(sys.argv[1], sys.argv[limit[0]+1:], "2.2.0.18") != 0:
+	if main(sys.argv[1], sys.argv[limit[0]+1:], "2.4.0.21") != 0:
 		exit(2)
 	exit(0)

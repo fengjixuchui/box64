@@ -19,8 +19,12 @@
 #include "myalign.h"
 #include "gtkclass.h"
 
-const char* gtkx112Name = "libgtk-x11-2.0.so.0";
-static char* libname = NULL;
+#ifdef ANDROID
+    const char* gtkx112Name = "libgtk-x11-2.0.so";
+#else
+    const char* gtkx112Name = "libgtk-x11-2.0.so.0";
+#endif
+
 #define LIBNAME gtkx112
 
 typedef size_t        (*LFv_t)(void);
@@ -1030,7 +1034,7 @@ static void my_gtk_builder_connect_signals_custom(void* builder,
 
     uintptr_t offs = 0;
     uintptr_t end = 0;
-    GetGlobalSymbolStartEnd(my_context->maplib, handler_name, &offs, &end, NULL, -1, NULL, NULL, NULL);
+    GetGlobalSymbolStartEnd(my_context->maplib, handler_name, &offs, &end, NULL, -1, NULL, 0, NULL);
     if(!offs) {
         if (args->module == NULL)
             args->my->g_log("Gtk", 1<<2 ,"gtk_builder_connect_signals() requires working GModule");
@@ -1189,8 +1193,6 @@ EXPORT void my_gtk_print_job_send(x64emu_t* emu, void* job, void* f, void* data,
         return -1;
 
 #define CUSTOM_INIT \
-    libname = lib->name;                                                        \
-    getMy(lib);                                                                 \
     SetGtkObjectID(my->gtk_object_get_type());                                  \
     SetGtkWidget2ID(my->gtk_widget_get_type());                                 \
     SetGtkContainer2ID(my->gtk_container_get_type());                           \
@@ -1213,10 +1215,12 @@ EXPORT void my_gtk_print_job_send(x64emu_t* emu, void* job, void* f, void* data,
     SetGtkFrame2ID(my->gtk_frame_get_type());                                   \
     SetGtkMenuShell2ID(my->gtk_menu_shell_get_type());                          \
     SetGtkMenuBar2ID(my->gtk_menu_bar_get_type());                              \
-    SetGtkTextView2ID(my->gtk_text_view_get_type());                            \
-    setNeededLibs(lib, 2, "libgdk-x11-2.0.so.0", "libpangocairo-1.0.so.0");
+    SetGtkTextView2ID(my->gtk_text_view_get_type());
 
-#define CUSTOM_FINI \
-    freeMy();
+#ifdef ANDROID
+#define NEEDED_LIBS "libgdk-x11-2.0.so", "libpangocairo-1.0.so"
+#else
+#define NEEDED_LIBS "libgdk-x11-2.0.so.0", "libpangocairo-1.0.so.0"
+#endif
 
 #include "wrappedlib_init.h"

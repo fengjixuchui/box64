@@ -20,8 +20,6 @@
 const char* openalName = "libopenal.so.1";
 #define LIBNAME openal
 
-static char* libname = NULL;
-
 #include "generated/wrappedopenaltypes.h"
 
 #include "wrappercallback.h"
@@ -62,13 +60,6 @@ void* my_alGetProcAddress(x64emu_t* emu, void* name);
 void* my_alcGetProcAddress(x64emu_t* emu, void* device, void* name);
 void my_alRequestFoldbackStart(x64emu_t *emu, int32_t mode, int32_t count, int32_t length, void* mem, void* cb);
 void my_alRequestFoldbackStop(x64emu_t* emu);
-
-#define CUSTOM_INIT \
-    libname = lib->name;                \
-    getMy(lib);
-
-#define CUSTOM_FINI \
-    freeMy();
 
 #include "wrappedlib_init.h"
 
@@ -146,7 +137,7 @@ EXPORT void* my_alGetProcAddress(x64emu_t* emu, void* name)
     symbol1_t *s = &kh_value(emu->context->alwrappers, k);
     if(!s->resolved) {
         const char* constname = kh_key(emu->context->alwrappers, k);
-        s->addr = AddBridge(emu->context->system, s->w, symbol, 0, constname);
+        s->addr = AddCheckBridge(emu->context->system, s->w, symbol, 0, constname);
         s->resolved = 1;
     }
     return (void*)s->addr;
@@ -182,7 +173,7 @@ EXPORT void* my_alcGetProcAddress(x64emu_t* emu, void* device, void* name)
     symbol1_t *s = &kh_value(emu->context->alwrappers, k);
     if(!s->resolved) {
         const char* constname = kh_key(emu->context->alwrappers, k);
-        s->addr = AddBridge(emu->context->system, s->w, symbol, 0, constname);
+        s->addr = AddCheckBridge(emu->context->system, s->w, symbol, 0, constname);
         s->resolved = 1;
     }
     return (void*)s->addr;

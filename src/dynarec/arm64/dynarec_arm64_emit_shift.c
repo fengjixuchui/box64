@@ -82,6 +82,8 @@ void emit_shl32(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3
 // emit SHL32 instruction, from s1 , constant c, store result in s1 using s3 and s4 as scratch
 void emit_shl32c(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4)
 {
+    if (!c) return;
+
     IFX(X_PEND) {
         MOV32w(s3, c);
         STRxw_U12(s1, xEmu, offsetof(x64emu_t, op1));
@@ -185,6 +187,8 @@ void emit_shr32(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, int s2, int s3
 // emit SHR32 instruction, from s1 , constant c, store result in s1 using s3 and s4 as scratch
 void emit_shr32c(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4)
 {
+    if (!c) return;
+
     IFX(X_PEND) {
         MOV32w(s3, c);
         STRxw_U12(s1, xEmu, offsetof(x64emu_t, op1));
@@ -238,6 +242,8 @@ void emit_shr32c(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, i
 // emit SAR32 instruction, from s1 , constant c, store result in s1 using s3 and s4 as scratch
 void emit_sar32c(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4)
 {
+    if (!c) return;
+
     IFX(X_PEND) {
         MOV32w(s3, c);
         STRxw_U12(s1, xEmu, offsetof(x64emu_t, op1));
@@ -309,7 +315,7 @@ void emit_shl8(dynarec_arm_t* dyn, int ninst, int s1, int s2, int s3, int s4)
     COMP_ZFSF(s1, 8)
     IFX(X_OF) {
         CMPSw_U12(s2, 1);   // if s2==1
-            IFX(X_SF && !arm64_flagm) {} else {LSRw(s3, s1, 7);}
+            IFX2(X_SF, && !arm64_flagm) {} else {LSRw(s3, s1, 7);}
             EORw_REG(s4, s3, xFlags);  // CF is set if OF is asked
             CSELw(s4, s4, wZR, cEQ);
             BFIw(xFlags, s4, F_OF, 1);
@@ -348,7 +354,7 @@ void emit_shl8c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s
         COMP_ZFSF(s1, 8)
         IFX(X_OF) {
             if(c==1) {
-                IFX(X_SF && !arm64_flagm) {} else {LSRw(s3, s1, 7);}
+                IFX2(X_SF, && !arm64_flagm) {} else {LSRw(s3, s1, 7);}
                 EORw_REG(s4, s3, xFlags);  // CF is set if OF is asked
                 BFIw(xFlags, s4, F_OF, 1);
             } else {
@@ -430,8 +436,7 @@ void emit_shr8(dynarec_arm_t* dyn, int ninst, int s1, int s2, int s3, int s4)
 // emit SHR8 instruction, from s1 , constant c, store result in s1 using s3 and s4 as scratch
 void emit_shr8c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s4)
 {
-    if(!c)
-        return;
+    if (!c) return;
     IFX(X_PEND) {
         MOV32w(s3, c);
         STRB_U12(s1, xEmu, offsetof(x64emu_t, op1));
@@ -505,8 +510,7 @@ void emit_sar8(dynarec_arm_t* dyn, int ninst, int s1, int s2, int s3, int s4)
 // emit SAR8 instruction, from s1 , constant c, store result in s1 using s3 and s4 as scratch
 void emit_sar8c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s4)
 {
-    if(!c)
-        return;
+    if (!c) return;
     IFX(X_PEND) {
         MOV32w(s3, c);
         STRB_U12(s1, xEmu, offsetof(x64emu_t, op1));
@@ -570,7 +574,7 @@ void emit_shl16(dynarec_arm_t* dyn, int ninst, int s1, int s2, int s3, int s4)
     COMP_ZFSF(s1, 16)
     IFX(X_OF) {
         CMPSw_U12(s2, 1);   // if s2==1
-            IFX(X_SF && !arm64_flagm) {} else {LSRw(s3, s1, 15);}
+            IFX2(X_SF, && !arm64_flagm) {} else {LSRw(s3, s1, 15);}
             EORw_REG(s4, s3, xFlags);  // CF is set if OF is asked
             CSELw(s4, s4, wZR, cEQ);
             BFIw(xFlags, s4, F_OF, 1);
@@ -587,8 +591,7 @@ void emit_shl16(dynarec_arm_t* dyn, int ninst, int s1, int s2, int s3, int s4)
 // emit SHL16 instruction, from s1 , constant c, store result in s1 using s3 and s4 as scratch
 void emit_shl16c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s4)
 {
-    if(!c)
-        return;
+    if (!c) return;
     IFX(X_PEND) {
         MOV32w(s3, c);
         STRH_U12(s1, xEmu, offsetof(x64emu_t, op1));
@@ -610,7 +613,7 @@ void emit_shl16c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int 
         COMP_ZFSF(s1, 16)
         IFX(X_OF) {
             if(c==1) {
-                IFX(X_SF && !arm64_flagm) {} else {LSRw(s3, s1, 15);}
+                IFX2(X_SF, && !arm64_flagm) {} else {LSRw(s3, s1, 15);}
                 EORw_REG(s4, s3, xFlags);  // CF is set if OF is asked
                 BFIw(xFlags, s4, F_OF, 1);
             } else {
@@ -665,7 +668,7 @@ void emit_shr16(dynarec_arm_t* dyn, int ninst, int s1, int s2, int s3, int s4)
     IFX(X_OF) {
         CMPSw_U12(s2, 1);   // if s2==1
             Bcond(cNE, 4+2*4);
-            LSRw(s4, s1, 7);
+            LSRw(s4, s1, 15);
             BFIw(xFlags, s4, F_OF, 1);
     }
     LSRw_REG(s1, s1, s2);
@@ -760,8 +763,7 @@ void emit_sar16(dynarec_arm_t* dyn, int ninst, int s1, int s2, int s3, int s4)
 // emit SAR16 instruction, from s1 , constant c, store result in s1 using s3 and s4 as scratch
 void emit_sar16c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s4)
 {
-    if(!c)
-        return;
+    if (!c) return;
     IFX(X_PEND) {
         MOV32w(s3, c);
         STRH_U12(s1, xEmu, offsetof(x64emu_t, op1));
@@ -795,6 +797,9 @@ void emit_sar16c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int 
 void emit_rol32c(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4)
 {
     MAYUSE(rex); MAYUSE(s1); MAYUSE(s3); MAYUSE(s4);
+
+    if (!c) return;
+
     IFX(X_PEND) {
         MOV32w(s3, c);
         STRxw_U12(s3, xEmu, offsetof(x64emu_t, op2));
@@ -827,6 +832,9 @@ void emit_rol32c(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, i
 void emit_ror32c(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, int s3, int s4)
 {
     MAYUSE(s1); MAYUSE(s3); MAYUSE(s4);
+
+    if (!c) return;
+
     IFX(X_PEND) {
         MOV32w(s3, c);
         STRxw_U12(s3, xEmu, offsetof(x64emu_t, op2));
@@ -860,6 +868,9 @@ void emit_ror32c(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, uint32_t c, i
 void emit_rol8c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s4)
 {
     MAYUSE(s1); MAYUSE(s3); MAYUSE(s4);
+
+    if (!c) return;
+
     IFX(X_PEND) {
         MOV32w(s3, c);
         STRB_U12(s3, xEmu, offsetof(x64emu_t, op2));
@@ -867,15 +878,11 @@ void emit_rol8c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s
     } else IFX(X_ALL) {
         SET_DFNONE(s4);
     }
-    if(!c) {
-        IFX(X_PEND) {
-            STRB_U12(s1, xEmu, offsetof(x64emu_t, res));
-        }
-        return;
+    if(c&7) {
+        int rc = 8-(c&7);
+        ORRw_REG_LSL(s1, s1, s1, 8);
+        LSRw(s1, s1, rc);
     }
-    int rc = 8-(c&7);
-    ORRw_REG_LSL(s1, s1, s1, 8);
-    LSRw(s1, s1, rc);
     IFX(X_PEND) {
         STRB_U12(s1, xEmu, offsetof(x64emu_t, res));
     }
@@ -894,6 +901,9 @@ void emit_rol8c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s
 void emit_ror8c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s4)
 {
     MAYUSE(s1); MAYUSE(s3); MAYUSE(s4);
+
+    if (!c) return;
+
     IFX(X_PEND) {
         MOV32w(s3, c);
         STRB_U12(s3, xEmu, offsetof(x64emu_t, op2));
@@ -901,14 +911,10 @@ void emit_ror8c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s
     } else IFX(X_ALL) {
         SET_DFNONE(s4);
     }
-    if(!c) {
-        IFX(X_PEND) {
-            STRB_U12(s1, xEmu, offsetof(x64emu_t, res));
-        }
-        return;
+    if(c&7) {
+        ORRw_REG_LSL(s1, s1, s1, 8);
+        LSRw(s1, s1, c&7);
     }
-    ORRw_REG_LSL(s1, s1, s1, 8);
-    LSRw(s1, s1, c&7);
     IFX(X_PEND) {
         STRB_U12(s1, xEmu, offsetof(x64emu_t, res));
     }
@@ -928,6 +934,9 @@ void emit_ror8c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s
 void emit_rol16c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s4)
 {
     MAYUSE(s1); MAYUSE(s3); MAYUSE(s4);
+
+    if (!c) return;
+
     IFX(X_PEND) {
         MOV32w(s3, c);
         STRH_U12(s3, xEmu, offsetof(x64emu_t, op2));
@@ -935,9 +944,11 @@ void emit_rol16c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int 
     } else IFX(X_ALL) {
         SET_DFNONE(s4);
     }
-    int rc = 16-(c&15);
-    ORRw_REG_LSL(s1, s1, s1, 16);
-    LSRw(s1, s1, rc);
+    if(c&15) {
+        int rc = 16-(c&15);
+        ORRw_REG_LSL(s1, s1, s1, 16);
+        LSRw(s1, s1, rc);
+    }
     IFX(X_PEND) {
         STRH_U12(s1, xEmu, offsetof(x64emu_t, res));
     }
@@ -956,6 +967,9 @@ void emit_rol16c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int 
 void emit_ror16c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s4)
 {
     MAYUSE(s1); MAYUSE(s3); MAYUSE(s4);
+
+    if (!c) return;
+
     IFX(X_PEND) {
         MOV32w(s3, c);
         STRH_U12(s3, xEmu, offsetof(x64emu_t, op2));
@@ -963,8 +977,10 @@ void emit_ror16c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int 
     } else IFX(X_ALL) {
         SET_DFNONE(s4);
     }
-    ORRw_REG_LSL(s1, s1, s1, 16);
-    LSRw(s1, s1, c&15);
+    if(c&15) {
+        ORRw_REG_LSL(s1, s1, s1, 16);
+        LSRw(s1, s1, c&15);
+    }
     IFX(X_PEND) {
         STRH_U12(s1, xEmu, offsetof(x64emu_t, res));
     }
@@ -977,6 +993,88 @@ void emit_ror16c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int 
             EORw_REG_LSR(s3, s3, s3, 1);
             BFIw(xFlags, s3, F_OF, 1);
         }
+    }
+}
+
+// emit RCL8 instruction, from s1 , constant c, store result in s1 using s3 and s4 as scratch
+void emit_rcl8c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s4)
+{
+    MAYUSE(s1); MAYUSE(s3); MAYUSE(s4);
+
+    if (!c) return;
+
+    IFX(X_PEND) {
+        MOV32w(s3, c);
+        STRB_U12(s1, xEmu, offsetof(x64emu_t, op1));
+        STRB_U12(s3, xEmu, offsetof(x64emu_t, op2));
+        SET_DF(s4, d_rcl8);
+    } else IFX(X_ALL) {
+        SET_DFNONE(s4);
+    }
+    BFIw(x1, xFlags, 8, 1); // insert cf
+    IFX(X_OF|X_CF) {
+        LSRw_IMM(x2, x1, 8-(c%9));
+    }
+    ORRw_REG_LSL(x1, x1, x1, 9);    // insert x1 again
+    if(c%9) {
+        LSRw_IMM(x1, x1, 9-(c%9)); // do the rcl
+    }
+    IFX(X_PEND) {
+        STRB_U12(s1, xEmu, offsetof(x64emu_t, res));
+    }
+    IFX(X_OF|X_CF) {
+        BFIw(xFlags, x2, F_CF, 1);
+        IFX(X_OF) {
+            if(c==1) {
+                EORw_REG_LSR(x2, x2, x1, 7);
+                BFIw(xFlags, x2, F_OF, 1);
+            }
+        }
+    }
+}
+
+// emit RCR8 instruction, from s1 , constant c, store result in s1 using s3 and s4 as scratch
+void emit_rcr8c(dynarec_arm_t* dyn, int ninst, int s1, uint32_t c, int s3, int s4)
+{
+    MAYUSE(s1); MAYUSE(s3); MAYUSE(s4);
+
+    if (!c) return;
+
+    IFX(X_PEND) {
+        MOV32w(s3, c);
+        STRB_U12(s1, xEmu, offsetof(x64emu_t, op1));
+        STRB_U12(s3, xEmu, offsetof(x64emu_t, op2));
+        SET_DF(s4, d_rcr8);
+    } else IFX(X_ALL) {
+        SET_DFNONE(s4);
+    }
+    IFX(X_OF|X_CF) {
+        if(c%9) {
+            if((c%9)==1) {
+                MOVx_REG(x2, x1);
+            } else {
+                LSRw_IMM(x2, x1, (c%9)-1);
+            }
+        } else {
+            MOVw_REG(x2, xFlags);
+        }
+    }
+    BFIw(x1, xFlags, 8, 1); // insert cf
+    ORRw_REG_LSL(x1, x1, x1, 9);    // insert x1 again
+    if(c%9) {
+        LSRw_IMM(x1, x1, (c%9)); // do the rcr
+    }
+    IFX(X_PEND) {
+        STRB_U12(s1, xEmu, offsetof(x64emu_t, res));
+    }
+    IFX(X_OF|X_CF) {
+        IFX(X_OF) {
+            if(c==1) {
+                EORw_REG_LSR(x2, x2, x1, 7);
+                BFIw(xFlags, x2, F_OF, 1);
+            }
+        }
+        BFIw(xFlags, x2, F_CF, 1);
     }
 }
 
@@ -1022,9 +1120,8 @@ void emit_shrd32c(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, int s2, uint
     }
     IFX(X_OF) {
         if(c==1) {
-            LSRxw(s4, s1, rex.w?63:31);
-            EORw_REG_LSR(s4, s4, xFlags, F_OF); // set if sign changed
-            BFIw(xFlags, s4, F_OF, 1);
+            UBFXx(s3, s1, rex.w?63:31, 1);
+            EORw_REG_LSL(xFlags, xFlags, s3, F_OF);  // OF is set if sign changed
         }
     }
     IFX(X_PF) {
@@ -1076,9 +1173,8 @@ void emit_shld32c(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, int s2, uint
     }
     IFX(X_OF) {
         if(c==1) {
-            LSRxw(s3, s1, rex.w?63:31);
-            EORxw_REG_LSR(s3, s3, xFlags, F_OF);  // OF is set if sign changed
-            BFIw(xFlags, s3, F_OF, 1);
+            UBFXx(s3, s1, rex.w?63:31, 1);
+            EORw_REG_LSL(xFlags, xFlags, s3, F_OF);  // OF is set if sign changed
         } else {
             BFCw(xFlags, F_OF, 1);
         }
@@ -1127,10 +1223,9 @@ void emit_shrd32(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, int s2, int s
     }
     IFX(X_OF) {
         CMPSw_U12(s5, 1);
-        Bcond(cNE, 4+3*4);
-            LSRxw(s4, s1, rex.w?63:31);
-            EORw_REG_LSR(s4, s4, xFlags, F_OF); // Set if sign changed
-            BFIw(xFlags, s4, F_OF, 1);
+        Bcond(cNE, 4+2*4);
+            UBFXx(s3, s1, rex.w?63:31, 1);
+            EORw_REG_LSL(xFlags, xFlags, s3, F_OF);  // OF is set if sign changed
     }
     IFX(X_PF) {
         emit_pf(dyn, ninst, s1, s3, s4);
@@ -1174,10 +1269,9 @@ void emit_shld32(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, int s2, int s
     }
     IFX(X_OF) {
         CMPSw_U12(s5, 1);
-        Bcond(cNE, 4+3*4);
-            LSRxw(s3, s1, rex.w?63:31);
-            EORxw_REG_LSR(s3, s3, xFlags, F_OF);  // OF is set if sign changed
-            BFIw(xFlags, s3, F_OF, 1);
+        Bcond(cNE, 4+2*4);
+            UBFXx(s3, s1, rex.w?63:31, 1);
+            EORw_REG_LSL(xFlags, xFlags, s3, F_OF);  // OF is set if sign changed
     }
     IFX(X_PF) {
         emit_pf(dyn, ninst, s1, s3, s4);
@@ -1219,9 +1313,8 @@ void emit_shrd16c(dynarec_arm_t* dyn, int ninst, int s1, int s2, uint32_t c, int
     COMP_ZFSF(s1, 16)
     IFX(X_OF) {
         if(c==1) {
-            LSRw(s4, s1, 15);
-            EORw_REG_LSR(s4, s4, xFlags, F_OF); // set if sign changed
-            BFIw(xFlags, s4, F_OF, 1);
+            UBFXw(s3, s1, 15, 1);
+            EORw_REG_LSL(xFlags, xFlags, s3, F_OF);  // OF is set if sign changed
         }
     }
     IFX(X_PF) {
@@ -1257,10 +1350,9 @@ void emit_shrd16(dynarec_arm_t* dyn, int ninst, int s1, int s2, int s5, int s3, 
     COMP_ZFSF(s1, 16)
     IFX(X_OF) {
         CMPSw_U12(s5, 1);
-        Bcond(cNE, 4+3*4);
-            LSRw(s4, s1, 15);
-            EORw_REG_LSR(s4, s4, xFlags, F_OF); // Set if sign changed
-            BFIw(xFlags, s4, F_OF, 1);
+        Bcond(cNE, 4+2*4);
+            UBFXw(s3, s1, 15, 1);
+            EORw_REG_LSL(xFlags, xFlags, s3, F_OF);  // OF is set if sign changed
     }
     IFX(X_PF) {
         emit_pf(dyn, ninst, s1, s3, s4);
@@ -1289,7 +1381,10 @@ void emit_shld16c(dynarec_arm_t* dyn, int ninst, int s1, int s2, uint32_t c, int
     }
     ORRw_REG_LSL(s1, s1, s2, 16);   // create concat first
     IFX(X_CF) {
-        LSRw(s3, s1, 16-c);
+        if(c<16)
+            LSRw(s3, s1, 16-c);
+        else
+            LSRw(s3, s2, 32-c);
         BFIw(xFlags, s3, F_CF, 1);
     }
     IFX(X_OF) {
@@ -1304,9 +1399,8 @@ void emit_shld16c(dynarec_arm_t* dyn, int ninst, int s1, int s2, uint32_t c, int
     COMP_ZFSF(s1, 16)
     IFX(X_OF) {
         if(c==1) {
-            LSRw(s3, s1, 15);
-            EORw_REG_LSR(s3, s3, xFlags, F_OF);  // OF is set if sign changed
-            BFIw(xFlags, s3, F_OF, 1);
+            UBFXw(s3, s1, 15, 1);
+            EORw_REG_LSL(xFlags, xFlags, s3, F_OF);  // OF is set if sign changed
         } else {
             BFCw(xFlags, F_OF, 1);
         }
@@ -1325,17 +1419,18 @@ void emit_shld16(dynarec_arm_t* dyn, int ninst, int s1, int s2, int s5, int s3, 
     } else IFX(X_ALL) {
         SET_DFNONE(s4);
     }
-    ORRw_REG_LSL(s1, s1, s2, 16);   // create concat first
     IFX(X_CF) {
-        MOV32w(s3, 16);
+        ORRw_REG_LSL(s4, s2, s1, 16);
+        MOV32w(s3, 32);
         SUBw_REG(s3, s3, s5);
-        LSRw_REG(s3, s1, s3);
+        LSRw_REG(s3, s4, s3);
         BFIw(xFlags, s3, F_CF, 1);
     }
     IFX(X_OF) {
         LSRw(s3, s1, 15);
         BFIw(xFlags, s3, F_OF, 1);  // store current sign for later use
     }
+    ORRw_REG_LSL(s1, s1, s2, 16);   // create concat first
     MOV32w(s3, 32);
     SUBw_REG(s3, s3, s5);
     RORw_REG(s1, s1, s3);
@@ -1346,10 +1441,9 @@ void emit_shld16(dynarec_arm_t* dyn, int ninst, int s1, int s2, int s5, int s3, 
     COMP_ZFSF(s1, 16)
     IFX(X_OF) {
         CMPSw_U12(s5, 1);
-        Bcond(cNE, 4+3*4);
-            LSRw(s3, s1, 15);
-            EORw_REG_LSR(s3, s3, xFlags, F_OF);  // OF is set if sign changed
-            BFIw(xFlags, s3, F_OF, 1);
+        Bcond(cNE, 4+2*4);
+            UBFXw(s3, s1, 15, 1);
+            EORw_REG_LSL(xFlags, xFlags, s3, F_OF);  // OF is set if sign changed
     }
     IFX(X_PF) {
         emit_pf(dyn, ninst, s1, s3, s4);

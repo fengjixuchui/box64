@@ -11,7 +11,6 @@
 typedef struct lib_s            lib_t;
 typedef struct bridge_s         bridge_t;
 typedef struct elfheader_s      elfheader_t;
-typedef struct kh_bridgemap_s   kh_bridgemap_t;
 typedef struct kh_mapsymbols_s  kh_mapsymbols_t;
 typedef struct x64emu_s         x64emu_t;
 
@@ -31,9 +30,20 @@ typedef struct symbol2_s {
     uintptr_t    addr;
 } symbol2_t;
 
+#ifdef STATICBUILD
+typedef struct datamap_s {
+    uint64_t    size;
+    uintptr_t   addr;
+} datamap_t;
+#endif
+
 KHASH_MAP_DECLARE_STR(symbolmap, symbol1_t)
 KHASH_MAP_DECLARE_STR(symbol2map, symbol2_t)
+#ifdef STATICBUILD
+KHASH_MAP_DECLARE_STR(datamap, datamap_t)
+#else
 KHASH_MAP_DECLARE_STR(datamap, uint64_t)
+#endif
 
 
 #ifndef MAX_PATH
@@ -68,8 +78,9 @@ typedef struct elib_s {
 typedef struct library_s {
     char*               name;   // <> path
     char*               path;   // original path
-    int                 nbdot;  // nombre of "." after .so
-    int                 type;   // 0: native(wrapped) 1: emulated(elf) -1: undetermined
+    int8_t              nbdot;  // nombre of "." after .so
+    int8_t              type;   // 0: native(wrapped) 1: emulated(elf) -1: undetermined
+    uint8_t             deepbind;
     wrappedlib_fini_t   fini;
     wrappedlib_get_t    getglobal;  // get global (non-weak)
     wrappedlib_get_t    getweak;    // get weak symbol
@@ -79,10 +90,8 @@ typedef struct library_s {
         elib_t  e;
     };                              // private lib data
     lib_t               *maplib;        // local maplib, for dlopen'd library with LOCAL binding (most of the dlopen)
-    kh_bridgemap_t      *gbridgemap;    // global symbol bridgemap
-    kh_bridgemap_t      *wbridgemap;    // weak symbol bridgemap
-    kh_bridgemap_t      *lbridgemap;    // local symbol bridgemap
-    int                 dlopen;   // idx to the dlopen idx (or 0 if not dlopen)
+    int                 maplib_ref;     // ref to maplib (not owned)
+    size_t              dlopen;   // idx to the dlopen idx (or 0 if not dlopen)
 } library_t;
 
 // type for map elements
@@ -90,20 +99,29 @@ typedef struct map_onesymbol_s {
     const char* name;
     wrapper_t   w;
     int         weak;
+#ifdef STATICBUILD
+    void*       addr;
+#endif
 } map_onesymbol_t;
 typedef struct map_onesymbol2_s {
     const char* name;
     wrapper_t   w;
     int         weak;
     const char* name2;
+#ifdef STATICBUILD
+    void*       addr;
+#endif
 } map_onesymbol2_t;
 typedef struct map_onedata_s {
     const char* name;
     uint32_t    sz;                 // TODO: convert to size_t
     int         weak;
+#ifdef STATICBUILD
+    void*       addr;
+#endif
 } map_onedata_t;
 
-int getSymbolInMaps(library_t *lib, const char* name, int noweak, uintptr_t *addr, uintptr_t *size, int *weak, int version, const char* vername, int local);  // Add bridges to functions
+int getSymbolInMaps(library_t *lib, const char* name, int noweak, uintptr_t *addr, uintptr_t *size, int *weak, int version, const char* vername, int local, int veropt);  // Add bridges to functions
 
 typedef struct linkmap_s {
     // actual struct link_map
@@ -124,6 +142,6 @@ void removeLinkMapLib(library_t* lib);
 int FiniLibrary(library_t* lib, x64emu_t* emu);
 void Free1Library(library_t **lib, x64emu_t* emu);
 
-void RemoveDlopen(library_t** lib, int idx); // defined in wrappedlibdl.c
+void RemoveDlopen(library_t** lib, size_t idx); // defined in wrappedlibdl.c
 
 #endif //__LIBRARY_PRIVATE_H_

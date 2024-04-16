@@ -376,6 +376,18 @@ f28–31  ft8–11  FP temporaries                  Caller
         PUSH1(reg);     \
     }
 
+#define PUSH1_16(reg)        \
+    do {                     \
+        SH(reg, xRSP, -2);   \
+        SUBI(xRSP, xRSP, 2); \
+    } while (0)
+
+#define POP1_16(reg)                          \
+    do {                                      \
+        LHU(reg, xRSP, 0);                    \
+        if (reg != xRSP) ADDI(xRSP, xRSP, 2); \
+    } while (0)
+
 #define FENCE_gen(pred, succ) (((pred) << 24) | ((succ) << 20) | 0b0001111)
 #define FENCE()               EMIT(FENCE_gen(3, 3))
 
@@ -438,8 +450,22 @@ f28–31  ft8–11  FP temporaries                  Caller
 // rd = rs1>>rs2 arithmetic
 #define SRAW(rd, rs1, rs2) EMIT(R_type(0b0100000, rs2, rs1, 0b101, rd, 0b0111011))
 
-#define SLLxw(rd, rs1, rs2) EMIT(R_type(0b0000000, rs2, rs1, 0b001, rd, rex.w ? 0b0110011 : 0b0111011))
-#define SRLxw(rd, rs1, rs2) EMIT(R_type(0b0000000, rs2, rs1, 0b101, rd, rex.w ? 0b0110011 : 0b0111011))
+#define SLLxw(rd, rs1, rs2) \
+    if (rex.w) {            \
+        SLL(rd, rs1, rs2);  \
+    } else {                \
+        SLLW(rd, rs1, rs2); \
+        ZEROUP(rd);         \
+    }
+
+#define SRLxw(rd, rs1, rs2) \
+    if (rex.w) {            \
+        SRL(rd, rs1, rs2);  \
+    } else {                \
+        SRLW(rd, rs1, rs2); \
+        ZEROUP(rd);         \
+    }
+
 #define SRAxw(rd, rs1, rs2) \
     if (rex.w) {            \
         SRA(rd, rs1, rs2);  \
@@ -456,15 +482,17 @@ f28–31  ft8–11  FP temporaries                  Caller
         SLLI(rd, rs1, imm);  \
     } else {                 \
         SLLIW(rd, rs1, imm); \
+        ZEROUP(rd);          \
     }
 // Shift Right Logical Immediate, 32-bit, sign-extended
 #define SRLIW(rd, rs1, imm5) EMIT(I_type(imm5, rs1, 0b101, rd, 0b0011011))
 // Shift Right Logical Immediate
-#define SRLIxw(rd, rs1, imm) \
-    if (rex.w) {             \
-        SRLI(rd, rs1, imm);  \
-    } else {                 \
-        SRLIW(rd, rs1, imm); \
+#define SRLIxw(rd, rs1, imm)      \
+    if (rex.w) {                  \
+        SRLI(rd, rs1, imm);       \
+    } else {                      \
+        SRLIW(rd, rs1, imm);      \
+        if (imm == 0) ZEROUP(rd); \
     }
 // Shift Right Arithmetic Immediate, 32-bit, sign-extended
 #define SRAIW(rd, rs1, imm5) EMIT(I_type((imm5) | (0b0100000 << 5), rs1, 0b101, rd, 0b0011011))
@@ -474,6 +502,7 @@ f28–31  ft8–11  FP temporaries                  Caller
         SRAI(rd, rs1, imm);  \
     } else {                 \
         SRAIW(rd, rs1, imm); \
+        ZEROUP(rd);          \
     }
 
 #define CSRRW(rd, rs1, csr)  EMIT(I_type(csr, rs1, 0b001, rd, 0b1110011))
@@ -711,13 +740,70 @@ f28–31  ft8–11  FP temporaries                  Caller
 // Count leading zero bits in word
 #define CLZW(rd, rs) EMIT(R_type(0b0110000, 0b00000, rs, 0b001, rd, 0b0011011))
 // Count leading zero bits
-#define CLZxw(rd, rs) EMIT(R_type(0b0110000, 0b00000, rs, 0b001, rd, rex.w ? 0b0010011 : 0b0011011))
+#define CLZxw(rd, rs, x, s1, s2, s3)       \
+    if (rv64_zbb) {                        \
+        if (x)                             \
+            CLZ(rd, rs);                   \
+        else                               \
+            CLZW(rd, rs);                  \
+    } else {                               \
+        if (rs != rd)                      \
+            u8 = rd;                       \
+        else                               \
+            u8 = s1;                       \
+        ADDI(u8, xZR, rex.w ? 63 : 31);    \
+        if (rex.w) {                       \
+            MV(s2, rs);                    \
+            SRLI(s3, s2, 32);              \
+            BEQZ(s3, 4 + 2 * 4);           \
+            SUBI(u8, u8, 32);              \
+            MV(s2, s3);                    \
+        } else {                           \
+            AND(s2, rs, xMASK);            \
+        }                                  \
+        SRLI(s3, s2, 16);                  \
+        BEQZ(s3, 4 + 2 * 4);               \
+        SUBI(u8, u8, 16);                  \
+        MV(s2, s3);                        \
+        SRLI(s3, s2, 8);                   \
+        BEQZ(s3, 4 + 2 * 4);               \
+        SUBI(u8, u8, 8);                   \
+        MV(s2, s3);                        \
+        SRLI(s3, s2, 4);                   \
+        BEQZ(s3, 4 + 2 * 4);               \
+        SUBI(u8, u8, 4);                   \
+        MV(s2, s3);                        \
+        ANDI(s2, s2, 0b1111);              \
+        TABLE64(s3, (uintptr_t)&lead0tab); \
+        ADD(s3, s3, s2);                   \
+        LBU(s2, s3, 0);                    \
+        SUB(rd, u8, s2);                   \
+    }
+
 // Count trailing zero bits
 #define CTZ(rd, rs) EMIT(R_type(0b0110000, 0b00001, rs, 0b001, rd, 0b0010011))
 // Count trailing zero bits in word
 #define CTZW(rd, rs) EMIT(R_type(0b0110000, 0b00001, rs, 0b001, rd, 0b0011011))
 // Count trailing zero bits
-#define CTZxw(rd, rs) EMIT(R_type(0b0110000, 0b00001, rs, 0b001, rd, rex.w ? 0b0010011 : 0b0011011))
+// BEWARE: You should take care of the all zeros situation yourself,
+//         and clear the high 32bit when x is 1.
+#define CTZxw(rd, rs, x, s1, s2)                \
+    if (rv64_zbb) {                             \
+        if (x)                                  \
+            CTZ(rd, rs);                        \
+        else                                    \
+            CTZW(rd, rs);                       \
+    } else {                                    \
+        NEG(s2, ed);                            \
+        AND(s2, s2, ed);                        \
+        TABLE64(x3, 0x03f79d71b4ca8b09ULL);     \
+        MUL(s2, s2, x3);                        \
+        SRLI(s2, s2, 64 - 6);                   \
+        TABLE64(s1, (uintptr_t)&deBruijn64tab); \
+        ADD(s1, s1, s2);                        \
+        LBU(gd, s1, 0);                         \
+    }
+
 // Count set bits
 #define CPOP(rd, rs) EMIT(R_type(0b0110000, 0b00010, rs, 0b001, rd, 0b0010011))
 // Count set bits in word
@@ -825,7 +911,10 @@ f28–31  ft8–11  FP temporaries                  Caller
             AND(s3, s3, s2);           \
             OR(rd, s1, s3);            \
         }                              \
-    }
+    }                                  \
+    if (!rex.w)                        \
+        AND(rd, rd, xMASK);
+
 
 // Zbc
 //  Carry-less multily (low-part)

@@ -15,6 +15,7 @@
 #include "box64context.h"
 #include "librarian.h"
 #include "callback.h"
+#include "myalign.h"
 
 //extern char* libvulkan;
 
@@ -24,7 +25,6 @@ const char* vulkanName = "libvulkan.so.1";
 typedef void(*vFpUp_t)      (void*, uint64_t, void*);
 
 #define ADDED_FUNCTIONS()                           \
-    GO(vkDestroySamplerYcbcrConversion, vFpUp_t)    \
 
 #include "generated/wrappedvulkantypes.h"
 
@@ -74,7 +74,7 @@ static void* resolveSymbol(x64emu_t* emu, void* symbol, const char* rname)
     if(!s->resolved) {
         khint_t k = kh_get(symbolmap, emu->context->vkwrappers, rname);
         const char* constname = kh_key(emu->context->vkwrappers, k);
-        s->addr = AddBridge(emu->context->system, s->w, symbol, 0, constname);
+        s->addr = AddCheckBridge(emu->context->system, s->w, symbol, 0, constname);
         s->resolved = 1;
     }
     void* ret = (void*)s->addr;
@@ -224,6 +224,14 @@ typedef struct my_VkDebugReportCallbackCreateInfoEXT_s {
     void*       pfnCallback;
     void*       pUserData;
 } my_VkDebugReportCallbackCreateInfoEXT_t;
+
+typedef struct my_VkXcbSurfaceCreateInfoKHR_s {
+    int         sType;
+    const void* pNext;
+    uint32_t    flags;
+    void**      connection;
+    int         window;
+} my_VkXcbSurfaceCreateInfoKHR_t;
 
 typedef struct my_VkStruct_s {
     int         sType;
@@ -401,12 +409,8 @@ static void* find_DebugUtilsMessengerCallback_Fct(void* fct)
         return -1;
 
 #define CUSTOM_INIT \
-    getMy(lib);     \
     lib->w.priv = dlsym(lib->w.lib, "vkGetInstanceProcAddr"); \
     box64->vkprocaddress = lib->w.priv;
-
-#define CUSTOM_FINI \
-    freeMy();
 
 #include "wrappedlib_init.h"
 
@@ -582,7 +586,16 @@ EXPORT int my_vkCreateSharedSwapchainsKHR(x64emu_t* emu, void* device, uint32_t 
 
 CREATE(vkCreateSwapchainKHR)
 CREATE(vkCreateWaylandSurfaceKHR)
-CREATE(vkCreateXcbSurfaceKHR)
+EXPORT int my_vkCreateXcbSurfaceKHR(x64emu_t* emu, void* instance, void* info, my_VkAllocationCallbacks_t* pAllocator, void* pFence)
+{
+    my_VkAllocationCallbacks_t my_alloc;
+    my_VkXcbSurfaceCreateInfoKHR_t* surfaceinfo = info;
+    void* old_conn = surfaceinfo->connection;
+    surfaceinfo->connection = align_xcb_connection(old_conn);
+    int ret = my->vkCreateXcbSurfaceKHR(instance, info, find_VkAllocationCallbacks(&my_alloc, pAllocator), pFence);
+    surfaceinfo->connection = old_conn;
+    return ret;
+}
 CREATE(vkCreateXlibSurfaceKHR)
 CREATE(vkCreateRenderPass2)
 CREATE(vkCreateRenderPass2KHR)
@@ -599,6 +612,16 @@ EXPORT int my_vkRegisterDisplayEventEXT(x64emu_t* emu, void* device, uint64_t di
 }
 
 CREATE(vkCreateValidationCacheEXT)
+
+EXPORT int my_vkCreateShadersEXT(x64emu_t* emu, void* device, uint32_t count, void** pCreateInfos, my_VkAllocationCallbacks_t* pAllocator, void* pShaders)
+{
+    my_VkAllocationCallbacks_t my_alloc;
+    int ret = my->vkCreateShadersEXT(device, count, pCreateInfos, find_VkAllocationCallbacks(&my_alloc, pAllocator), pShaders);
+    return ret;
+}
+
+DESTROY64(vkDestroyShaderEXT)
+
 
 DESTROY64(vkDestroyBuffer)
 DESTROY64(vkDestroyBufferView)
@@ -703,6 +726,14 @@ DESTROY64(vkDestroyAccelerationStructureNV)
 
 CREATE(vkCreateOpticalFlowSessionNV)
 DESTROY64(vkDestroyOpticalFlowSessionNV)
+
+CREATE(vkCreateMicromapEXT)
+DESTROY64(vkDestroyMicromapEXT)
+
+CREATE(vkCreateCudaFunctionNV)
+CREATE(vkCreateCudaModuleNV)
+DESTROY64(vkDestroyCudaFunctionNV)
+DESTROY64(vkDestroyCudaModuleNV)
 
 EXPORT void my_vkGetPhysicalDeviceProperties(x64emu_t* emu, void* device, void* pProps)
 {

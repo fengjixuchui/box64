@@ -104,6 +104,16 @@ Call XInitThreads when loading X11. (This is mostly for old Loki games with the 
  * 0 : Don't force call XInitThreads. (Default.)
  * 1 : Call XInitThreads as soon as libX11 is loaded.
 
+#### BOX64_MMAP32 *
+Will use 32bits address in priority for external MMAP (when 32bits process are detected)
+ * 0 : Use regular mmap (default, except for Snapdragron build)
+ * 1 : Use 32bits address space mmap in priority for external mmap as soon a 32bits process are detected (default for SnapDragon and TegraX1 build)
+
+#### BOX64_IGNOREINT3 *
+What to do when a CC INT3 opcode is encounter in the code being run
+ * 0 : Trigger a TRAP signal if a handler is present
+ * 1 : Just skip silently the opcode
+
 #### BOX64_X11GLX *
 Force libX11's GLX extension to be present.
 * 0 : Do not force libX11's GLX extension to be present. 
@@ -184,17 +194,7 @@ Handling of flags on CALL/RET opcodes
 #### BOX64_DYNAREC_CALLRET *
 Optimisation of CALL/RET opcodes (not compatible with jit/dynarec/smc)
 * 0 : Don't optimize CALL/RET, use Jump Table for boths (Default)
-* 1 : Try to optimized CALL/RET, skipping the use of the JumpTable when possible (will crash if blacks are invalidate, so probably incompatible with JIT/Dynarec)
-
-#### BOX64_DYNAREC_HOTPAGE *
-Handling of HotPage (Page being both executed and written)
-* 0 : Don't track hotpage (Default)
-* 1-255 : Track HotPage, and disable execution of a page being written for N attempts
-
-#### BOX64_DYNAREC_FASTPAGE *
-Will use a faster handling of HotPage (Page being both executed and written)
-* 0 : use regular hotpage (Default)
-* 1 : Use faster hotpage, taking the risk of running obsolete JIT code (might be faster, but more prone to crash)
+* 1 : Try to optimized CALL/RET, skipping the use of the JumpTable when possible
 
 #### BOX64_DYNAREC_ALIGNED_ATOMICS *
 Generated code for aligned atomics only
@@ -230,6 +230,11 @@ Handling of SSE Flush to 0 flags
 Handling of x87 80bits long double
 * 0 : Try to handle 80bits long double as precise as possible (Default)
 * 1 : Handle them as double
+
+#### BOX64_MAXCPU
+Maximum CPU Core exposed
+* 0 : Don't cap the number of cpu core exposed (Default)
+* XXX : Cap the maximum CPU Core exposed to XXX (usefull with wine64 or GridAutosport for example)
 
 #### BOX64_SYNC_ROUNDING *
 Box64 will sync rounding mode with fesetround/fegetround.
@@ -315,7 +320,7 @@ Define x86_64 bash to launch script
  * XXX=yyyy
  will add XXX=yyyy env. var.
 
-#### BOX64_ENV1
+#### BOX64_ENV1 *
  * XXX=yyyy
  will add XXX=yyyy env. var. and continue with BOX86_ENV2 ... until var doesn't exist
 
@@ -333,9 +338,13 @@ Define x86_64 bash to launch script
  * 2 : Launch `gdbserver` when a segfault, bus error or illegal instruction signal is trapped, attached to the offending process, and go in an endless loop, waiting.
  Use `gdb /PATH/TO/box64` and then `target remote 127.0.0.1:1234` to connect to the gdbserver (or use actual IP if not on the machine). After that, the procedure is the same as with ` BOX64_JITGDB=1`.
  This mode can be usefullwhen programs redirect all console output to a file (like Unity3D Games)
+ * 3 : Launch `lldb` when a segfault, bus error or illegal instruction signal is trapped, attached to the offending process and go in an endless loop, waiting.
 
 #### BOX64_NORCFILES
 If the env var exist, no rc files (like /etc/box64.box64rc and ~/.box64rc) will be loaded
+
+#### BOX64_RCFILE
+If the env var is set and file exists, this variable will be used as path to the box64rc file instead of default paths (BOX64_RCFILE is loaded first, default paths are not loaded)
 
 ----
 
@@ -349,6 +358,14 @@ Those variables are only valid inside a rcfile:
 #### BOX64_INPROCESSGPU
  * 0 : Nothing special
  * 1 : Added "--in-process-gpu" to command line arguments (usefull for chrome based programs)
+
+#### BOX64_CEFDISABLEGPU
+ * 0 : Nothing special
+ * 1 : Added "-cef-disable-gpu" to command line arguments (usefull for steamwebhelper/cef based programs)
+
+#### BOX64_CEFDISABLEGPUCOMPOSITOR
+ * 0 : Nothing special
+ * 1 : Added "-cef-disable-gpu-compositor" to command line arguments (usefull for steamwebhelper/cef based programs)
 
 #### BOX64_EXIT
  * 0 : Nothing special

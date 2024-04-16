@@ -184,6 +184,7 @@ GO(vkCmdSetDeviceMask, vFpu)
 GOM(vkCreateDescriptorUpdateTemplate, iFEpppp)
 GOM(vkCreateSamplerYcbcrConversion, iFEpppp)
 GOM(vkDestroyDescriptorUpdateTemplate, vFEpUp)
+GOM(vkDestroySamplerYcbcrConversion, vFEpUp)
 GO(vkEnumerateInstanceVersion, iFp)
 GO(vkEnumeratePhysicalDeviceGroups, iFppp)  //VkPhysicalDeviceGroupProperties seems OK
 GO(vkGetBufferMemoryRequirements2, iFppp)
@@ -304,7 +305,7 @@ GO(vkGetPhysicalDeviceSurfaceSupportKHR, iFpuUp)
 
 // VK_KHR_xcb_surface
 GOM(vkCreateXcbSurfaceKHR, iFEpppp)
-GO(vkGetPhysicalDeviceXcbPresentationSupportKHR, iFpupp)
+GO(vkGetPhysicalDeviceXcbPresentationSupportKHR, iFpubp)
 
 // VK_KHR_xlib_surface
 GOM(vkCreateXlibSurfaceKHR, iFEpppp)
@@ -507,6 +508,8 @@ GO(vkDebugMarkerSetObjectTagEXT, iFpp)
 
 // VK_EXT_discard_rectangles
 GO(vkCmdSetDiscardRectangleEXT, vFpuup)
+GO(vkCmdSetDiscardRectangleEnableEXT, vFpu)
+GO(vkCmdSetDiscardRectangleModeEXT, vFpu)
 
 // VK_EXT_display_control
 GO(vkDisplayPowerControlEXT, iFpUp)
@@ -557,6 +560,7 @@ GO(vkCmdDrawMeshTasksIndirectNV, vFpUUuu)
 GO(vkCmdDrawMeshTasksNV, vFpuu)
 
 // VK_NV_scissor_exclusive
+GO(vkCmdSetExclusiveScissorEnableNV, vFpuup)
 GO(vkCmdSetExclusiveScissorNV, vFpuup)
 
 // VK_NV_shading_rate_image
@@ -718,6 +722,8 @@ GO(vkCmdDecodeVideoKHR, vFpp)
 
 // VK_KHR_video_encode_queue
 GO(vkCmdEncodeVideoKHR, vFpp)
+GO(vkGetEncodedVideoSessionParametersKHR, iFppppp)
+GO(vkGetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR, iFppp)
 
 // VK_NVX_binary_import
 GO(vkCmdCuLaunchKernelNVX, vFpp)
@@ -842,3 +848,111 @@ GO(vkGetRenderingAreaGranularityKHR, vFppp)
 // VK_NV_memory_decompression
 GO(vkCmdDecompressMemoryIndirectCountNV, vFpUUu)
 GO(vkCmdDecompressMemoryNV, vFpup)
+
+// VK_EXT_merge_shader
+GO(vkCmdDrawMeshTasksEXT, vFpuuu)
+GO(vkCmdDrawMeshTasksIndirectCountEXT, vFpUUUUuu)
+GO(vkCmdDrawMeshTasksIndirectEXT, vFpUUuu)
+
+// VK_EXT_opacity_micromap
+GO(vkBuildMicromapsEXT, iFpiup)
+GO(vkCmdBuildMicromapsEXT, vFpup)
+GO(vkCmdCopyMemoryToMicromapEXT, vFpp)
+GO(vkCmdCopyMicromapEXT, vFpp)
+GO(vkCmdCopyMicromapToMemoryEXT, vFpp)
+GO(vkCmdWriteMicromapsPropertiesEXT, vFpupiUu)
+GO(vkCopyMemoryToMicromapEXT, iFpUp)
+GO(vkCopyMicromapEXT, iFpUp)
+GO(vkCopyMicromapToMemoryEXT, iFpUp)
+GOM(vkCreateMicromapEXT, iFEpppp)
+GOM(vkDestroyMicromapEXT, vFEpUp)
+GO(vkGetDeviceMicromapCompatibilityEXT, vFppp)
+GO(vkGetMicromapBuildSizesEXT, vFpipp)
+GO(vkWriteMicromapsPropertiesEXT, iFpupiLpL)
+
+// VK_KHR_ray_tracing_maintenance1
+GO(vkCmdTraceRaysIndirect2KHR, vFpU)
+
+// VK_EXT_depth_bias_control
+GO(vkCmdSetDepthBias2EXT, vFpp)
+
+// VK_EXT_host_image_copy
+GO(vkCopyImageToImageEXT, iFpp)
+GO(vkCopyImageToMemoryEXT, iFpp)
+GO(vkCopyMemoryToImageEXT, iFpp)
+GO(vkGetImageSubresourceLayout2EXT, vFpUpp)
+GO(vkTransitionImageLayoutEXT, iFpup)
+
+// VK_KHR_map_memory2
+GO(vkMapMemory2KHR, iFppp)
+GO(vkUnmapMemory2KHR, iFpp)
+
+// VK_EXT_device_fault
+GO(vkGetDeviceFaultInfoEXT, iFppp)
+
+// VK_EXT_acquire_drm_display
+GO(vkAcquireDrmDisplayEXT, iFpiU)
+GO(vkGetDrmDisplayEXT, iFpiup)
+
+// VK_EXT_shader_object
+GO(vkCmdBindShadersEXT, vFpupp)
+GOM(vkCreateShadersEXT, iFEpuppp)
+GOM(vkDestroyShaderEXT, vFpUp)
+GO(vkGetShaderBinaryDataEXT, iFpUpp)
+
+// VK_NV_copy_memory_indirect
+GO(vkCmdCopyMemoryIndirectNV, vFpUuu)
+GO(vkCmdCopyMemoryToImageIndirectNV, vFpUuuUup)
+
+// VK_HUAWEI_cluster_culling_shader
+GO(vkCmdDrawClusterHUAWEI, vFpuuu)
+GO(vkCmdDrawClusterIndirectHUAWEI, vFpUU)
+
+// VK_EXT_attachment_feedback_loop_dynamic_state
+GO(vkCmdSetAttachmentFeedbackLoopEnableEXT, vFpu)
+
+// VK_NV_device_generated_commands_compute
+GO(vkCmdUpdatePipelineIndirectBufferNV, vFpuU)
+GO(vkGetPipelineIndirectDeviceAddressNV, UFpp)
+GO(vkGetPipelineIndirectMemoryRequirementsNV, vFppp)
+
+// VK_QCOM_tile_properties
+GO(vkGetDynamicRenderingTilePropertiesQCOM, iFppp)
+GO(vkGetFramebufferTilePropertiesQCOM, iFpUpp)
+
+// VK_NV_external_memory_capabilities
+GO(vkGetPhysicalDeviceExternalImageFormatPropertiesNV, iFpuuuuup)
+
+// VK_EXT_pipeline_properties
+GO(vkGetPipelinePropertiesEXT, iFppp)
+
+// VK_EXT_direct_mode_display
+GO(vkReleaseDisplayEXT, iFpU)
+
+// VK_KHR_calibrated_timestamps
+GO(vkGetCalibratedTimestampsKHR, iFpuppp)
+GO(vkGetPhysicalDeviceCalibrateableTimeDomainsKHR, iFppp)
+
+// VK_KHR_video_encode_h264
+// no functions
+
+// VK_KHR_video_encode_h265
+// no functions
+
+// VK_KHR_video_maintenance1
+// no functions
+
+// VK_NV_cuda_kernel_launch
+GO(vkCmdCudaLaunchKernelNV, vFpp)
+GOM(vkCreateCudaFunctionNV, iFEpppp)
+GOM(vkCreateCudaModuleNV, iFEpppp)
+GOM(vkDestroyCudaFunctionNV, vFEpUp)
+GOM(vkDestroyCudaModuleNV, vFEpUp)
+GO(vkGetCudaModuleCacheNV, iFpUpp)
+
+// VK_NV_low_latency2
+GO(vkGetLatencyTimingsNV, vFpUp)
+GO(vkLatencySleepNV, iFpUp)
+GO(vkQueueNotifyOutOfBandNV, vFpp)
+GO(vkSetLatencyMarkerNV, vFpUp)
+GO(vkSetLatencySleepModeNV, iFpUp)

@@ -64,6 +64,13 @@
 #include "bridge.h"
 #include "globalsymbols.h"
 #include "rcfile.h"
+#ifndef LOG_INFO
+#define LOG_INFO 1
+#endif
+#ifndef LOG_DEBUG
+#define LOG_DEBUG 2
+#endif
+
 
 #define LIBNAME libc
 const char* libcName = 
@@ -158,6 +165,29 @@ static void* findcompareFct(void* fct)
     SUPER()
     #undef GO
     printf_log(LOG_NONE, "Warning, no more slot for libc compare callback\n");
+    return NULL;
+}
+// action
+#define GO(A)   \
+static uintptr_t my_action_fct_##A = 0;                 \
+static void my_action_##A(void* a, uint32_t b, int c)   \
+{                                                       \
+    RunFunctionFmt(my_action_fct_##A, "pui", a, b, c);  \
+}
+SUPER()
+#undef GO
+static void* findactionFct(void* fct)
+{
+    if(!fct) return NULL;
+    void* p;
+    if((p = GetNativeFnc((uintptr_t)fct))) return p;
+    #define GO(A) if(my_action_fct_##A == (uintptr_t)fct) return my_action_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_action_fct_##A == 0) {my_action_fct_##A = (uintptr_t)fct; return my_action_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for libc action callback\n");
     return NULL;
 }
 
@@ -424,7 +454,7 @@ static void* findprintf_typeFct(void* fct)
 #undef SUPER
 
 // some my_XXX declare and defines
-int32_t my___libc_start_main(x64emu_t* emu, int *(main) (int, char * *, char * *),
+int32_t my___libc_start_main(x64emu_t* emu, int (*main) (int, char * *, char * *),
     int argc, char * * ubp_av, void (*init) (void), void (*fini) (void),
     void (*rtld_fini) (void), void (* stack_end)); // implemented in x64run_private.c
 EXPORT void my___libc_init_first(x64emu_t* emu, int argc, char* arg0, char** b)
@@ -455,7 +485,7 @@ void EXPORT my___gmon_start__(x64emu_t *emu)
 
 int EXPORT my___cxa_atexit(x64emu_t* emu, void* p, void* a, void* dso_handle)
 {
-    AddCleanup1Arg(emu, p, a, dso_handle);
+    AddCleanup1Arg(emu, p, a, FindElfAddress(my_context, (uintptr_t)dso_handle));
     return 0;
 }
 void EXPORT my___cxa_finalize(x64emu_t* emu, void* p)
@@ -465,11 +495,11 @@ void EXPORT my___cxa_finalize(x64emu_t* emu, void* p)
         CallAllCleanup(emu);
         return;
     }
-    CallCleanup(emu, p);
+    CallCleanup(emu, FindElfAddress(my_context, (uintptr_t)p));
 }
 int EXPORT my_atexit(x64emu_t* emu, void *p)
 {
-    AddCleanup(emu, p, NULL);   // should grab current dso_handle?
+    AddCleanup(emu, p);
     return 0;
 }
 
@@ -492,7 +522,7 @@ pid_t EXPORT my_fork(x64emu_t* emu)
 {
     #if 1
     emu->quit = 1;
-    emu->fork = 3;  // use regular fork...
+    emu->fork = 1;  // use regular fork...
     return 0;
     #else
     // execute atforks prepare functions, in reverse order
@@ -545,6 +575,7 @@ int EXPORT my_uname(struct utsname *buf)
 // X86_O_RDONLY 0x00
 #define X86_O_WRONLY       0x01     // octal     01
 #define X86_O_RDWR         0x02     // octal     02
+#define X86_FMODE_EXEC     0x20
 #define X86_O_CREAT        0x40     // octal     0100
 #define X86_O_EXCL         0x80     // octal     0200
 #define X86_O_NOCTTY       0x100    // octal     0400
@@ -563,14 +594,23 @@ int EXPORT my_uname(struct utsname *buf)
 #define X86_O_CLOEXEC      02000000
 #define X86_O_PATH         010000000
 #define X86_O_TMPFILE      020200000
+#define X86_FMODE_NONOTIFY 0x4000000
 
 #ifndef O_TMPFILE
 #define O_TMPFILE (020000000 | O_DIRECTORY)
 #endif
 
+#ifndef FMODE_EXEC
+#define FMODE_EXEC 0x20
+#endif
+#ifndef FMODE_NONOTIFY
+#define FMODE_NONOTIFY 0x4000000
+#endif
+
 #define SUPER()     \
     GO(O_WRONLY)    \
     GO(O_RDWR)      \
+    GO(FMODE_EXEC)  \
     GO(O_CREAT)     \
     GO(O_EXCL)      \
     GO(O_NOCTTY)    \
@@ -589,6 +629,7 @@ int EXPORT my_uname(struct utsname *buf)
     GO(O_NOATIME)   \
     GO(O_CLOEXEC)   \
     GO(O_PATH)      \
+    GO(FMODE_NONOTIFY)
 
 // x86->arm
 int of_convert(int a)
@@ -881,7 +922,7 @@ EXPORT int my_vsscanf(x64emu_t* emu, void* stream, void* fmt, x64_va_list_t b)
     return vsscanf(stream, fmt, VARARGS);
 }
 
-EXPORT int my__vsscanf(x64emu_t* emu, void* stream, void* fmt, void* b) __attribute__((alias("my_vsscanf")));
+EXPORT int my___vsscanf(x64emu_t* emu, void* stream, void* fmt, void* b) __attribute__((alias("my_vsscanf")));
 
 EXPORT int my_vswscanf(x64emu_t* emu, void* stream, void* fmt, x64_va_list_t b)
 {
@@ -902,8 +943,21 @@ EXPORT int my_sscanf(x64emu_t* emu, void* stream, void* fmt, uint64_t* b)
 
     return vsscanf(stream, fmt, VARARGS);
 }
+EXPORT int my_vscanf(x64emu_t* emu, void* fmt, x64_va_list_t b)
+{
+    (void)emu;
+    #ifdef CONVERT_VALIST
+    CONVERT_VALIST(b);
+    #else
+    myStackAlignScanfValist(emu, (const char*)fmt, emu->scratch, b);
+    PREPARE_VALIST;
+    #endif
+    return vscanf(fmt, VARARGS);
+}
+
 EXPORT int my__IO_vfscanf(x64emu_t* emu, void* stream, void* fmt, void* b) __attribute__((alias("my_vfscanf")));
 EXPORT int my___isoc99_vsscanf(x64emu_t* emu, void* stream, void* fmt, void* b) __attribute__((alias("my_vsscanf")));
+EXPORT int my___isoc99_vscanf(x64emu_t* emu, void* fmt, void* b) __attribute__((alias("my_vscanf")));
 EXPORT int my___isoc99_vswscanf(x64emu_t* emu, void* stream, void* fmt, void* b) __attribute__((alias("my_vswscanf")));
 EXPORT int my___isoc99_vfscanf(x64emu_t* emu, void* stream, void* fmt, void* b) __attribute__((alias("my_vfscanf")));
 
@@ -1384,6 +1438,11 @@ EXPORT void* my_tfind(x64emu_t* emu, void* key, void** root, void* fnc)
     (void)emu;
     return tfind(key, root, findcompareFct(fnc));
 }
+EXPORT void my_twalk(x64emu_t* emu, void* root, void* fnc)
+{
+    (void)emu;
+    twalk(root, findactionFct(fnc));
+}
 EXPORT void* my_lfind(x64emu_t* emu, void* key, void* base, size_t* nmemb, size_t size, void* fnc)
 {
     (void)emu;
@@ -1542,7 +1601,6 @@ void CreateCPUInfoFile(int fd)
     }
     int n = getNCpu();
     // generate fake CPUINFO
-    int gigahertz=(freq>=1000.);
     #define P \
     dummy = write(fd, buff, strlen(buff))
     for (int i=0; i<n; ++i) {
@@ -1568,7 +1626,7 @@ void CreateCPUInfoFile(int fd)
         P;
         sprintf(buff, "bogomips\t: %g\n", getBogoMips());
         P;
-        sprintf(buff, "flags\t\t: fpu cx8 sep ht cmov clflush mmx sse sse2 syscall tsc lahf_lm ssse3 ht tm lm fma fxsr cpuid pclmulqdq cx16 aes movbe pni sse4_1 sse4_2 lzcnt popcnt\n");
+        sprintf(buff, "flags\t\t: fpu cx8 sep ht cmov clflush mmx sse sse2 syscall tsc lahf_lm ssse3 ht tm lm fxsr cpuid pclmulqdq cx16 aes movbe pni sse4_1 sse4_2 lzcnt popcnt\n");
         P;
         sprintf(buff, "address sizes\t: 48 bits physical, 48 bits virtual\n");
         P;
@@ -1577,6 +1635,22 @@ void CreateCPUInfoFile(int fd)
     }
     (void)dummy;
     #undef P
+}
+void CreateCPUPresentFile(int fd)
+{
+    size_t dummy;
+    char buff[600];
+    int n = getNCpu();
+    // generate fake CPUINFO
+    sprintf(buff, "0-%d\n", n-1);
+    dummy = write(fd, buff, strlen(buff));
+    (void)dummy;
+}
+void CreateClocksourceFile(int fd)
+{
+    size_t dummy;
+    dummy = write(fd, "tsc\n", strlen("tsc\n"));
+    (void)dummy;
 }
 
 #ifdef ANDROID
@@ -1590,9 +1664,11 @@ static int shm_unlink(const char *name) {
 
 #define TMP_CPUINFO "box64_tmpcpuinfo"
 #define TMP_CPUTOPO "box64_tmpcputopo%d"
+#define TMP_CLOCKSOURCE "box64_tmpclocksource"
 #endif
 #define TMP_MEMMAP  "box64_tmpmemmap"
 #define TMP_CMDLINE "box64_tmpcmdline"
+#define TMP_CPUPRESENT "box64_cpupresent"
 EXPORT int32_t my_open(x64emu_t* emu, void* pathname, int32_t flags, uint32_t mode)
 {
     if(isProcSelf((const char*) pathname, "cmdline")) {
@@ -1631,6 +1707,15 @@ EXPORT int32_t my_open(x64emu_t* emu, void* pathname, int32_t flags, uint32_t mo
         if(tmp<0) return open(pathname, flags, mode); // error fallback
         shm_unlink(TMP_CPUINFO);    // remove the shm file, but it will still exist because it's currently in use
         CreateCPUInfoFile(tmp);
+        lseek(tmp, 0, SEEK_SET);
+        return tmp;
+    }
+    if(!strcmp((const char*)pathname, "/sys/bus/clocksource/devices/clocksource0/current_clocksource")) {
+        // special case to say tsc as current clocksource
+        int tmp = shm_open(TMP_CLOCKSOURCE, O_RDWR | O_CREAT, S_IRWXU);
+        if(tmp<0) return open(pathname, flags, mode); // error fallback
+        shm_unlink(TMP_CLOCKSOURCE);    // remove the shm file, but it will still exist because it's currently in use
+        CreateClocksourceFile(tmp);
         lseek(tmp, 0, SEEK_SET);
         return tmp;
     }
@@ -1712,36 +1797,26 @@ EXPORT int32_t my_open64(x64emu_t* emu, void* pathname, int32_t flags, uint32_t 
         lseek(tmp, 0, SEEK_SET);
         return tmp;
     }
+    if(box64_maxcpu && (!strcmp(pathname, "/sys/devices/system/cpu/present") || !strcmp(pathname, "/sys/devices/system/cpu/online")) && (getNCpu()>=box64_maxcpu)) {
+        // special case for cpu present (to limit to 64 cores)
+        int tmp = shm_open(TMP_CPUPRESENT, O_RDWR | O_CREAT, S_IRWXU);
+        if(tmp<0) return open64(pathname, mode); // error fallback
+        shm_unlink(TMP_CPUPRESENT);    // remove the shm file, but it will still exist because it's currently in use
+        CreateCPUPresentFile(tmp);
+        lseek(tmp, 0, SEEK_SET);
+        return tmp;
+    }
+    if(!strcmp((const char*)pathname, "/sys/bus/clocksource/devices/clocksource0/current_clocksource")) {
+        // special case to say tsc as current clocksource
+        int tmp = shm_open(TMP_CLOCKSOURCE, O_RDWR | O_CREAT, S_IRWXU);
+        if(tmp<0) return open64(pathname, flags, mode); // error fallback
+        shm_unlink(TMP_CLOCKSOURCE);    // remove the shm file, but it will still exist because it's currently in use
+        CreateClocksourceFile(tmp);
+        lseek(tmp, 0, SEEK_SET);
+        return tmp;
+    }
     #endif
     return open64(pathname, flags, mode);
-}
-
-EXPORT FILE* my_fopen(x64emu_t* emu, const char* path, const char* mode)
-{
-    if(isProcSelf(path, "maps")) {
-        // special case for self memory map
-        int tmp = shm_open(TMP_MEMMAP, O_RDWR | O_CREAT, S_IRWXU);
-        if(tmp<0) return fopen(path, mode); // error fallback
-        shm_unlink(TMP_MEMMAP);    // remove the shm file, but it will still exist because it's currently in use
-        CreateMemorymapFile(emu->context, tmp);
-        lseek(tmp, 0, SEEK_SET);
-        return fdopen(tmp, mode);
-    }
-    #ifndef NOALIGN
-    if(strcmp(path, "/proc/cpuinfo")==0) {
-        // special case for cpuinfo
-        int tmp = shm_open(TMP_CPUINFO, O_RDWR | O_CREAT, S_IRWXU);
-        if(tmp<0) return fopen(path, mode); // error fallback
-        shm_unlink(TMP_CPUINFO);    // remove the shm file, but it will still exist because it's currently in use
-        CreateCPUInfoFile(tmp);
-        lseek(tmp, 0, SEEK_SET);
-        return fdopen(tmp, mode);
-    }
-    #endif
-    if(isProcSelf(path, "exe")) {
-        return fopen(emu->context->fullpath, mode);
-    }
-    return fopen(path, mode);
 }
 
 EXPORT FILE* my_fopen64(x64emu_t* emu, const char* path, const char* mode)
@@ -1765,12 +1840,31 @@ EXPORT FILE* my_fopen64(x64emu_t* emu, const char* path, const char* mode)
         lseek(tmp, 0, SEEK_SET);
         return fdopen(tmp, mode);
     }
+    if(box64_maxcpu && (!strcmp(path, "/sys/devices/system/cpu/present") || !strcmp(path, "/sys/devices/system/cpu/online")) && (getNCpu()>=box64_maxcpu)) {
+        // special case for cpu present (to limit to 64 cores)
+        int tmp = shm_open(TMP_CPUPRESENT, O_RDWR | O_CREAT, S_IRWXU);
+        if(tmp<0) return fopen64(path, mode); // error fallback
+        shm_unlink(TMP_CPUPRESENT);    // remove the shm file, but it will still exist because it's currently in use
+        CreateCPUPresentFile(tmp);
+        lseek(tmp, 0, SEEK_SET);
+        return fdopen(tmp, mode);
+    }
+    if(strcmp(path, "/sys/bus/clocksource/devices/clocksource0/current_clocksource")==0) {
+        // special case to say tsc as current clocksource
+        int tmp = shm_open(TMP_CLOCKSOURCE, O_RDWR | O_CREAT, S_IRWXU);
+        if(tmp<0) return fopen64(path, mode); // error fallback
+        shm_unlink(TMP_CLOCKSOURCE);    // remove the shm file, but it will still exist because it's currently in use
+        CreateClocksourceFile(tmp);
+        lseek(tmp, 0, SEEK_SET);
+        return fdopen(tmp, mode);
+    }
     #endif
     if(isProcSelf(path, "exe")) {
         return fopen64(emu->context->fullpath, mode);
     }
     return fopen64(path, mode);
 }
+EXPORT FILE* my_fopen(x64emu_t* emu, const char* path, const char* mode) __attribute__((alias("my_fopen64")));
 
 #if 0
 EXPORT int32_t my_ftw(x64emu_t* emu, void* pathname, void* B, int32_t nopenfd)
@@ -1904,6 +1998,14 @@ EXPORT int32_t my_execv(x64emu_t* emu, const char* path, char* const argv[])
         if(my_environ!=my_context->envv) envv = my_environ;
         if(my__environ!=my_context->envv) envv = my__environ;
         if(my___environ!=my_context->envv) envv = my___environ;
+/*if(!envv && n>2 && strstr(newargv[2], "fxc.exe")) {
+setenv("BOX64_LOG", "2", 1);
+setenv("BOX64_TRACE_FILE", "/home/seb/trace-%pid.txt", 1);
+setenv("BOX64_TRACE","server_init_process_done", 1);
+setenv("BOX64_DYNAREC", "0", 1);
+setenv("WINEDEBUG", "+server", 1);
+//setenv("BOX64_DYNAREC", "0", 1);
+}*/
         int ret;
         if(envv)
             ret = execve(newargv[0], (char* const*)newargv, envv);
@@ -2263,9 +2365,7 @@ EXPORT int32_t my___cxa_thread_atexit_impl(x64emu_t* emu, void* dtor, void* obj,
 {
     (void)emu;
     //printf_log(LOG_INFO, "Warning, call to __cxa_thread_atexit_impl(%p, %p, %p) ignored\n", dtor, obj, dso);
-    AddCleanup1Arg(emu, dtor, obj, dso);
-    return 0;
-
+    AddCleanup1Arg(emu, dtor, obj, FindElfAddress(my_context, (uintptr_t)dso));
     return 0;
 }
 
@@ -2559,6 +2659,7 @@ EXPORT int my_readlinkat(x64emu_t* emu, int fd, void* path, void* buf, size_t bu
 #ifndef MAP_32BIT
 #define MAP_32BIT 0x40
 #endif
+extern int have48bits;
 EXPORT void* my_mmap64(x64emu_t* emu, void *addr, unsigned long length, int prot, int flags, int fd, ssize_t offset)
 {
     (void)emu;
@@ -2577,32 +2678,41 @@ EXPORT void* my_mmap64(x64emu_t* emu, void *addr, unsigned long length, int prot
             addr = find47bitBlock(length);
     }
     #endif
-    void* ret = mmap64(addr, length, prot, new_flags, fd, offset);
+    void* ret = internal_mmap(addr, length, prot, new_flags, fd, offset);
     #ifndef NOALIGN
     if((ret!=MAP_FAILED) && (flags&MAP_32BIT) &&
-      (((uintptr_t)ret>0xffffffffLL) || (box64_wine && ((uintptr_t)ret&0xffff) && (ret!=addr)))) {
-        printf_log(LOG_DEBUG, "Warning, mmap on 32bits didn't worked, ask %p, got %p ", addr, ret);
+      (((uintptr_t)ret>0xffffffffLL) || ((box64_wine) && ((uintptr_t)ret&0xffff) && (ret!=addr)))) {
+        int olderr = errno;
+        if(emu && (box64_log>=LOG_DEBUG || box64_dynarec_log>=LOG_DEBUG)) printf_log(LOG_NONE, "Warning, mmap on 32bits didn't worked, ask %p, got %p ", addr, ret);
         munmap(ret, length);
         loadProtectionFromMap();    // reload map, because something went wrong previously
         addr = find31bitBlockNearHint(old_addr, length, 0); // is this the best way?
         new_flags = (addr && isBlockFree(addr, length) )? (new_flags|MAP_FIXED) : new_flags;
-        if(new_flags&(MAP_FIXED|MAP_FIXED_NOREPLACE)==(MAP_FIXED|MAP_FIXED_NOREPLACE)) new_flags&=~MAP_FIXED_NOREPLACE;
-        ret = mmap64(addr, length, prot, new_flags, fd, offset);
-        printf_log(LOG_DEBUG, " tried again with %p, got %p\n", addr, ret);
-    } else if((ret!=MAP_FAILED) && !(flags&MAP_FIXED) && (box64_wine) && (old_addr) && (addr!=ret) &&
+        if((new_flags&(MAP_FIXED|MAP_FIXED_NOREPLACE))==(MAP_FIXED|MAP_FIXED_NOREPLACE)) new_flags&=~MAP_FIXED_NOREPLACE;
+        ret = internal_mmap(addr, length, prot, new_flags, fd, offset);
+        if(emu && (box64_log>=LOG_DEBUG || box64_dynarec_log>=LOG_DEBUG)) printf_log(LOG_NONE, " tried again with %p, got %p\n", addr, ret);
+        if(old_addr && ret!=old_addr && ret!=MAP_FAILED)
+            errno = olderr;
+    } else if((ret!=MAP_FAILED) && !(flags&MAP_FIXED) && ((box64_wine)) && (addr && (addr!=ret)) &&
              (((uintptr_t)ret>0x7fffffffffffLL) || ((uintptr_t)ret&~0xffff))) {
-        printf_log(LOG_DEBUG, "Warning, mmap on 47bits didn't worked, ask %p, got %p ", addr, ret);
+        int olderr = errno;
+        if(emu && (box64_log>=LOG_DEBUG || box64_dynarec_log>=LOG_DEBUG)) printf_log(LOG_NONE, "Warning, mmap on 47bits didn't worked, ask %p, got %p ", addr, ret);
         munmap(ret, length);
         loadProtectionFromMap();    // reload map, because something went wrong previously
         addr = find47bitBlockNearHint(old_addr, length, 0); // is this the best way?
         new_flags = (addr && isBlockFree(addr, length)) ? (new_flags|MAP_FIXED) : new_flags;
-        if(new_flags&(MAP_FIXED|MAP_FIXED_NOREPLACE)==(MAP_FIXED|MAP_FIXED_NOREPLACE)) new_flags&=~MAP_FIXED_NOREPLACE;
-        ret = mmap64(addr, length, prot, new_flags, fd, offset);
-        printf_log(LOG_DEBUG, " tried again with %p, got %p\n", addr, ret);
+        if((new_flags&(MAP_FIXED|MAP_FIXED_NOREPLACE))==(MAP_FIXED|MAP_FIXED_NOREPLACE)) new_flags&=~MAP_FIXED_NOREPLACE;
+        ret = internal_mmap(addr, length, prot, new_flags, fd, offset);
+        if(emu && (box64_log>=LOG_DEBUG || box64_dynarec_log>=LOG_DEBUG)) printf_log(LOG_NONE, " tried again with %p, got %p\n", addr, ret);
+        if(old_addr && ret!=old_addr && ret!=MAP_FAILED) {
+            errno = olderr;
+            if(old_addr>(void*)0x7fffffffff && !have48bits)
+                errno = EEXIST;
+        }
     }
     #endif
     if((ret!=MAP_FAILED) && (flags&MAP_FIXED_NOREPLACE) && (ret!=addr)) {
-        munmap(ret, length);
+        internal_munmap(ret, length);
         errno = EEXIST;
         return MAP_FAILED;
     }
@@ -2622,6 +2732,13 @@ EXPORT void* my_mmap64(x64emu_t* emu, void *addr, unsigned long length, int prot
     }
     #endif
     if(ret!=MAP_FAILED) {
+        if((flags&MAP_SHARED) && (fd>0)) {
+            uint32_t flags = fcntl(fd, F_GETFL);
+            if((flags&O_ACCMODE)==O_RDWR) {
+                if((box64_log>=LOG_DEBUG || box64_dynarec_log>=LOG_DEBUG)) {printf_log(LOG_NONE, "Note: Marking the region as NEVERCLEAN because fd have O_RDWR attribute\n");}
+                prot |= PROT_NEVERCLEAN;
+            }
+        }
         if(emu)
             setProtection_mmap((uintptr_t)ret, length, prot);
         else
@@ -2685,7 +2802,7 @@ EXPORT int my_munmap(x64emu_t* emu, void* addr, unsigned long length)
 {
     (void)emu;
     if(emu && (box64_log>=LOG_DEBUG || box64_dynarec_log>=LOG_DEBUG)) {printf_log(LOG_NONE, "munmap(%p, %lu)\n", addr, length);}
-    int ret = munmap(addr, length);
+    int ret = internal_munmap(addr, length);
     #ifdef DYNAREC
     if(!ret && box64_dynarec && length) {
         cleanDBFromAddressRange((uintptr_t)addr, length, 1);
@@ -2713,13 +2830,7 @@ EXPORT int my_mprotect(x64emu_t* emu, void *addr, unsigned long len, int prot)
     }
     #endif
     if(!ret && len) {
-        if(prot)
-            updateProtection((uintptr_t)addr, len, prot);
-        else {
-            // avoid allocating detailled protection for a no prot 0
-            freeProtection((uintptr_t)addr, len);
-            setProtection_mmap((uintptr_t)addr, len, prot);
-        }
+        updateProtection((uintptr_t)addr, len, prot);
     }
     return ret;
 }
@@ -2739,6 +2850,11 @@ EXPORT void* my_mallinfo(x64emu_t* emu, void* p)
         memset(p, 0, sizeof(struct mallinfo));
     return p;
 }
+
+#ifdef STATICBUILD
+void my_updateGlobalOpt() {}
+void my_checkGlobalOpt() {}
+#endif
 
 EXPORT int my_getopt(int argc, char* const argv[], const char *optstring)
 {
@@ -3012,7 +3128,7 @@ EXPORT int my_semctl(int semid, int semnum, int cmd, union semun b)
     return ret;
 }
 
-EXPORT uint64_t userdata_sign = 0x1234598765ABCEF0;
+EXPORT int64_t userdata_sign = 0x1234598765ABCEF0;
 EXPORT uint32_t userdata[1024]; 
 
 EXPORT long my_ptrace(x64emu_t* emu, int request, pid_t pid, void* addr, uint32_t* data)
@@ -3041,7 +3157,6 @@ EXPORT long my_ptrace(x64emu_t* emu, int request, pid_t pid, void* addr, uint32_
 
 // Backtrace stuff
 
-#ifndef ANDROID
 #include "elfs/elfdwarf_private.h"
 EXPORT int my_backtrace(x64emu_t* emu, void** buffer, int size)
 {
@@ -3167,7 +3282,6 @@ EXPORT void my_backtrace_symbols_fd(x64emu_t* emu, uintptr_t* buffer, int size, 
         (void)dummy;
     }
 }
-#endif
 
 EXPORT int my_iopl(x64emu_t* emu, int level)
 {
@@ -3319,6 +3433,27 @@ EXPORT int my_register_printf_type(x64emu_t* emu, void* f)
 }
 
 extern int box64_quit;
+extern int box64_exit_code;
+void endBox64();
+static void* timed_exit_thread(void* a)
+{
+    // this is a workaround for some NVidia drivers on ARM64 that may freeze at exit
+    // waiting on a pthread_cond_destroy
+    usleep(5000000); // wait 5 seconds
+    printf_log(LOG_DEBUG, "Too late, forced exit...\n");
+    _exit(box64_exit_code); // force exit, something is wrong
+}
+
+void startTimedExit()
+{
+    static int started = 0;
+    if(started)
+        return;
+    started = 1;
+    pthread_t exit_thread;
+    pthread_create(&exit_thread, NULL, timed_exit_thread, NULL);
+}
+
 EXPORT void my_exit(x64emu_t* emu, int code)
 {
     if(emu->flags.quitonexit) {
@@ -3328,7 +3463,9 @@ EXPORT void my_exit(x64emu_t* emu, int code)
         return;
     }
     emu->quit = 1;
-    box64_quit = 1;
+    box64_exit_code = code;
+    endBox64();
+    startTimedExit();
     exit(code);
 }
 
@@ -3339,6 +3476,11 @@ EXPORT int my_prctl(x64emu_t* emu, int option, unsigned long arg2, unsigned long
     if(option==PR_SET_NAME) {
         printf_log(LOG_DEBUG, "BOX64: set process name to \"%s\"\n", (char*)arg2);
         ApplyParams((char*)arg2);
+        size_t l = strlen((char*)arg2);
+        if(l>4 && !strcasecmp((char*)arg2+l-4, ".exe")) {
+            printf_log(LOG_DEBUG, "BOX64: hacking orig command line to \"%s\"\n", (char*)arg2);
+            strcpy(my_context->orig_argv[0], (char*)arg2);
+        }
     }
     if(option==PR_SET_SECCOMP) {
         printf_log(LOG_INFO, "BOX64: ignoring prctl(PR_SET_SECCOMP, ...)\n");
@@ -3347,6 +3489,22 @@ EXPORT int my_prctl(x64emu_t* emu, int option, unsigned long arg2, unsigned long
     return prctl(option, arg2, arg3, arg4, arg5);
 }
 
+#ifndef _SC_NPROCESSORS_ONLN
+#define _SC_NPROCESSORS_ONLN    84
+#endif 
+#ifndef _SC_NPROCESSORS_CONF
+#define _SC_NPROCESSORS_CONF    83
+#endif 
+EXPORT long my_sysconf(x64emu_t* emu, int what) {
+    if(what==_SC_NPROCESSORS_ONLN) {
+        return getNCpu();
+    }
+    if(what==_SC_NPROCESSORS_CONF) {
+        return getNCpu();
+    }
+    return sysconf(what);
+}
+EXPORT long my___sysconf(x64emu_t* emu, int what) __attribute__((alias("my_sysconf")));
 
 EXPORT char* my___progname = NULL;
 EXPORT char* my___progname_full = NULL;
@@ -3356,21 +3514,30 @@ EXPORT char* my_program_invocation_short_name = NULL;
 // ignoring this for now
 EXPORT char my___libc_single_threaded = 0;
 
+#ifdef STATICBUILD
+#include "libtools/static_libc.h"
+#endif
+
+#ifndef STATICBUILD
 #define PRE_INIT\
     if(1)                                                      \
         lib->w.lib = dlopen(NULL, RTLD_LAZY | RTLD_GLOBAL);    \
     else
+#endif
 
 #ifdef ANDROID
-#define NEEDED_LIBS   1,    \
+#define NEEDED_LIBS_DEF   4,\
+    "libpthread.so",        \
+    "libdl.so" ,            \
+    "libm.so",              \
     "libbsd.so"
 #define NEEDED_LIBS_234 4,  \
-    "libpthread.so.0",      \
-    "libdl.so.2" ,          \
+    "libpthread.so",        \
+    "libdl.so" ,            \
     "libm.so",              \
     "libbsd.so"
 #else
-#define NEEDED_LIBS   6,    \
+#define NEEDED_LIBS_DEF   6,\
     "ld-linux-x86-64.so.2", \
     "libpthread.so.0",      \
     "libdl.so.2",           \
@@ -3387,6 +3554,8 @@ EXPORT char my___libc_single_threaded = 0;
     "libbsd.so.0"
 #endif
 
+#undef HAS_MY
+
 #define CUSTOM_INIT         \
     box64->libclib = lib;   \
     /*InitCpuModel();*/         \
@@ -3400,9 +3569,10 @@ EXPORT char my___libc_single_threaded = 0;
     if(box64_isglibc234)                                                        \
         setNeededLibs(lib, NEEDED_LIBS_234);                                    \
     else                                                                        \
-        setNeededLibs(lib, NEEDED_LIBS);
+        setNeededLibs(lib, NEEDED_LIBS_DEF);
 
 #define CUSTOM_FINI \
-    freeMy();
+    freeMy();       \
+    return;     // do not unload...
 
 #include "wrappedlib_init.h"

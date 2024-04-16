@@ -20,6 +20,7 @@
 
 const char* libtinfoName = "libtinfo.so.5";
 #define LIBNAME libtinfo
+#define ALTNAME "libtinfo.so.6"
 
 #include "generated/wrappedlibtinfotypes.h"
 
@@ -63,11 +64,5 @@ EXPORT int my_tputs(x64emu_t* emu, void* str, int affcnt, void* f)
 {
     return my->tputs(str, affcnt, find_putc_Fct(f));
 }
-
-#define CUSTOM_INIT \
-    getMy(lib);
-
-#define CUSTOM_FINI \
-    freeMy();
 
 #include "wrappedlib_init.h"

@@ -448,7 +448,28 @@ uintptr_t dynarec64_67(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             } else
                 emit_cmp32_0(dyn, ninst, rex, xRAX, x3, x4);
             break;
-        
+        case 0x63:
+            INST_NAME("MOVSXD Gd, Ed");
+            nextop = F8;
+            GETGD;
+            if (rex.w) {
+                if (MODREG) { // reg <= reg
+                    ADDIW(gd, xRAX + (nextop & 7) + (rex.b << 3), 0);
+                } else { // mem <= reg
+                    SMREAD();
+                    addr = geted32(dyn, addr, ninst, nextop, &ed, x2, x1, &fixedaddress, rex, &lock, 1, 0);
+                    LW(gd, ed, fixedaddress);
+                }
+            } else {
+                if (MODREG) { // reg <= reg
+                    AND(gd, xRAX + (nextop & 7) + (rex.b << 3), xMASK);
+                } else { // mem <= reg
+                    SMREAD();
+                    addr = geted32(dyn, addr, ninst, nextop, &ed, x2, x1, &fixedaddress, rex, &lock, 1, 0);
+                    LWU(gd, ed, fixedaddress);
+                }
+            }
+            break;
         case 0x66:
             opcode = F8;
             switch (opcode) {
@@ -633,6 +654,34 @@ uintptr_t dynarec64_67(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             }
             break;
 
+        case 0xC1:
+            nextop = F8;
+            switch ((nextop >> 3) & 7) {
+                case 5:
+                    INST_NAME("SHR Ed, Ib");
+                    u8 = geted_ib(dyn, addr, ninst, nextop) & (rex.w ? 0x3f : 0x1f);
+                    // flags are not affected if count is 0, we make it a nop if possible.
+                    if (u8) {
+                        SETFLAGS(X_ALL, SF_SET_PENDING); // some flags are left undefined
+                        GETED32(1);
+                        F8;
+                        emit_shr32c(dyn, ninst, rex, ed, u8, x3, x4);
+                        WBACK;
+                    } else {
+                        if (MODREG && !rex.w) {
+                            GETED(1);
+                            ZEROUP(ed);
+                        } else {
+                            FAKEED;
+                        }
+                        F8;
+                    }
+                    break;
+                default:
+                    DEFAULT;
+            }
+            break;
+
         case 0xC7:
             INST_NAME("MOV Ed, Id");
             nextop = F8;
@@ -660,7 +709,7 @@ uintptr_t dynarec64_67(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
                 if(dyn->insts[ninst].x64.jmp_insts==-1) {               \
                     if(!(dyn->insts[ninst].x64.barrier&BARRIER_FLOAT))  \
                         fpu_purgecache(dyn, ninst, 1, x1, x2, x3);      \
-                    jump_to_next(dyn, addr+i8, 0, ninst);               \
+                    jump_to_next(dyn, addr+i8, 0, ninst, rex.is32bits); \
                 } else {                                                \
                     CacheTransform(dyn, ninst, cacheupd, x1, x2, x3);   \
                     i32 = dyn->insts[dyn->insts[ninst].x64.jmp_insts].address-(dyn->native_size);    \
@@ -706,6 +755,34 @@ uintptr_t dynarec64_67(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int ni
             break;
         #undef GO
 
+        case 0xF7:
+            nextop = F8;
+            switch ((nextop >> 3) & 7) {
+                case 4:
+                    INST_NAME("MUL EAX, Ed");
+                    SETFLAGS(X_ALL, SF_PENDING);
+                    GETED32(0);
+                    if (rex.w) {
+                        if (ed == xRDX)
+                            gd = x3;
+                        else
+                            gd = xRDX;
+                        MULHU(gd, xRAX, ed);
+                        MUL(xRAX, xRAX, ed);
+                        if (gd != xRDX) MV(xRDX, gd);
+                    } else {
+                        MUL(xRDX, xRAX, ed); // 64 <- 32x32
+                        AND(xRAX, xRDX, xMASK);
+                        SRLIW(xRDX, xRDX, 32);
+                    }
+                    UFLAG_RES(xRAX);
+                    UFLAG_OP1(xRDX);
+                    UFLAG_DF(x2, rex.w ? d_mul64 : d_mul32);
+                    break;
+                default:
+                    DEFAULT;
+            }
+            break;
         default:
             DEFAULT;
     }

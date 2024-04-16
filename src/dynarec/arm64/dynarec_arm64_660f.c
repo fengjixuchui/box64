@@ -234,24 +234,30 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
                 VFCVTZSQD(q0, v1);
                 SQXTN_32(q0, q0);
             } else {
-                MRS_fpsr(x5);
-                BFCw(x5, FPSR_IOC, 1);   // reset IOC bit
-                MSR_fpsr(x5);
-                ORRw_mask(x2, xZR, 1, 0);    //0x80000000
-                d0 = fpu_get_scratch(dyn);
-                for (int i=0; i<2; ++i) {
+                if(arm64_frintts) {
+                    VFRINT32ZD(q0, q0);
+                    VFCVTZSQD(q0, q0);
+                    SQXTN_32(q0, q0);
+                } else {
+                    MRS_fpsr(x5);
                     BFCw(x5, FPSR_IOC, 1);   // reset IOC bit
-                    if (i) {
-                        VMOVeD(d0, 0, v1, i);
-                        FRINTZD(d0, d0);
-                    } else {
-                        FRINTZD(d0, v1);
+                    MSR_fpsr(x5);
+                    ORRw_mask(x2, xZR, 1, 0);    //0x80000000
+                    d0 = fpu_get_scratch(dyn);
+                    for (int i=0; i<2; ++i) {
+                        BFCw(x5, FPSR_IOC, 1);   // reset IOC bit
+                        if (i) {
+                            VMOVeD(d0, 0, v1, i);
+                            FRINTZD(d0, d0);
+                        } else {
+                            FRINTZD(d0, v1);
+                        }
+                        FCVTZSwD(x1, d0);
+                        MRS_fpsr(x5);   // get back FPSR to check the IOC bit
+                        TBZ(x5, FPSR_IOC, 4+4);
+                        MOVw_REG(x1, x2);
+                        VMOVQSfrom(q0, i, x1);
                     }
-                    FCVTZSwD(x1, d0);
-                    MRS_fpsr(x5);   // get back FPSR to check the IOC bit
-                    TBZ(x5, FPSR_IOC, 4+4);
-                    MOVw_REG(x1, x2);
-                    VMOVQSfrom(q0, i, x1);
                 }
             }
             break;
@@ -268,24 +274,30 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
                 VFCVTZSS(q0, q0);
             } else {
                 u8 = sse_setround(dyn, ninst, x1, x2, x3);
-                MRS_fpsr(x5);
-                BFCw(x5, FPSR_IOC, 1);   // reset IOC bit
-                MSR_fpsr(x5);
-                ORRw_mask(x2, xZR, 1, 0);    //0x80000000
-                d0 = fpu_get_scratch(dyn);
-                for (int i=0; i<2; ++i) {
+                if(arm64_frintts) {
+                    VFRINT32XD(q0, q0);
+                    VFCVTZSQD(q0, q0);
+                    SQXTN_32(q0, q0);
+                } else {
+                    MRS_fpsr(x5);
                     BFCw(x5, FPSR_IOC, 1);   // reset IOC bit
-                    if (i) {
-                        VMOVeD(d0, 0, v1, i);
-                        FRINTID(d0, d0);
-                    } else {
-                        FRINTID(d0, v1);
+                    MSR_fpsr(x5);
+                    ORRw_mask(x2, xZR, 1, 0);    //0x80000000
+                    d0 = fpu_get_scratch(dyn);
+                    for (int i=0; i<2; ++i) {
+                        BFCw(x5, FPSR_IOC, 1);   // reset IOC bit
+                        if (i) {
+                            VMOVeD(d0, 0, v1, i);
+                            FRINTID(d0, d0);
+                        } else {
+                            FRINTID(d0, v1);
+                        }
+                        FCVTZSwD(x1, d0);
+                        MRS_fpsr(x5);   // get back FPSR to check the IOC bit
+                        TBZ(x5, FPSR_IOC, 4+4);
+                        MOVw_REG(x1, x2);
+                        VMOVQSfrom(q0, i, x1);
                     }
-                    FCVTZSwD(x1, d0);
-                    MRS_fpsr(x5);   // get back FPSR to check the IOC bit
-                    TBZ(x5, FPSR_IOC, 4+4);
-                    MOVw_REG(x1, x2);
-                    VMOVQSfrom(q0, i, x1);
                 }
                 x87_restoreround(dyn, ninst, u8);
             }
@@ -1097,7 +1109,7 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
                         MOVx_REG(ed, xZR);
                         VMOVSto(ed, q0, u8);
                     } else {
-                        addr = geted(dyn, addr, ninst, nextop, &wback, x2, &fixedaddress, NULL, 0xfff<<2, 3, rex, NULL, 0, 1);
+                        addr = geted(dyn, addr, ninst, nextop, &wback, x2, &fixedaddress, &unscaled, 0xfff<<2, 3, rex, NULL, 0, 1);
                         u8 = F8&0b11;
                         VMOVSto(x1, q0, u8);
                         STW(x1, wback, fixedaddress);
@@ -1271,7 +1283,7 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
                     break;
                 case 0x61:
                     INST_NAME("PCMPESTRI Gx, Ex, Ib");
-                    SETFLAGS(X_OF|X_CF|X_AF|X_ZF|X_SF|X_PF, SF_SET);
+                    SETFLAGS(X_ALL, SF_SET);
                     nextop = F8;
                     GETG;
                     sse_reflect_reg(dyn, ninst, gd);
@@ -2410,7 +2422,7 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
             }
             break;
         case 0xBC:
-            INST_NAME("BSF Ew,Gw");
+            INST_NAME("BSF Gw,Ew");
             SETFLAGS(X_ZF, SF_SUBSET);
             SET_DFNONE(x1);
             nextop = F8;
@@ -2426,7 +2438,7 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
             BFIw(xFlags, x1, F_ZF, 1);
             break;
         case 0xBD:
-            INST_NAME("BSR Ew,Gw");
+            INST_NAME("BSR Gw,Ew");
             SETFLAGS(X_ZF, SF_SUBSET);
             SET_DFNONE(x1);
             nextop = F8;
@@ -2651,6 +2663,7 @@ uintptr_t dynarec64_660F(dynarec_arm_t* dyn, uintptr_t addr, uintptr_t ip, int n
                 v1 = sse_get_reg_empty(dyn, ninst, x1, (nextop&7) + (rex.b<<3));
                 FMOVD(v1, v0);
             } else {
+                WILLWRITE2();
                 addr = geted(dyn, addr, ninst, nextop, &ed, x1, &fixedaddress, &unscaled, 0xfff<<3, 7, rex, NULL, 0, 0);
                 VST64(v0, ed, fixedaddress);
                 SMWRITE2();

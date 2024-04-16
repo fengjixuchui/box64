@@ -17,7 +17,6 @@ void pressure_vessel(int argc, const char** argv, int nextarg, const char* prog)
 {
     // skip all the parameter, but parse some of them
     const char* runtime = getenv("PRESSURE_VESSEL_RUNTIME");
-    int ld_lib_path = 0;
     // look for the comand first
     const char* cmd = argv[nextarg];
     int i = 0;
@@ -33,7 +32,6 @@ void pressure_vessel(int argc, const char** argv, int nextarg, const char* prog)
                     strcat(tmp, argv[nextarg]+strlen("--env-if-host=PRESSURE_VESSEL_APP_"));
                     char *p = strchr(tmp, '=');
                     *p ='\0'; ++p;
-                    ld_lib_path = 1;
                     setenv(tmp, p, 1);
                     printf_log(LOG_DEBUG, "setenv(%s, %s, 1)\n", tmp, p);
                 }
@@ -61,6 +59,10 @@ void pressure_vessel(int argc, const char** argv, int nextarg, const char* prog)
             }
             ++nextarg;
         }
+    if(argv[nextarg] && !strcmp(argv[nextarg], "steamwebhelper")) {
+        // just launch it...
+        runtime = NULL;
+    }
     if(runtime) {
         char sniper[MAX_PATH] = {0};
         // build sniper path
@@ -79,17 +81,27 @@ void pressure_vessel(int argc, const char** argv, int nextarg, const char* prog)
         strcat(sniper, "/files");  // this is the sniper root
         // do LD_LIBRARY_PATH
         {
+            const char* usrsbinldconfig = "/usr/sbin/ldconfig";
+            const char* sbinldconfig = "/sbin/ldconfig";
+            const char* ldconfig = "ldconfig";
+            const char* ldcmd = ldconfig;
+            if(FileExist(usrsbinldconfig, IS_FILE))
+                ldcmd = usrsbinldconfig;
+            else if(FileExist(sbinldconfig, IS_FILE))
+                ldcmd = sbinldconfig;
             char tmp[MAX_PATH*4] = {0};
             // prepare folders, using ldconfig
-            snprintf(tmp, sizeof(tmp), "ldconfig -i -n %s/lib/x86_64-linux-gnu", sniper);
+            snprintf(tmp, sizeof(tmp), "%s -i -n %s/lib/x86_64-linux-gnu", ldcmd, sniper);
             if(system(tmp)<0) printf_log(LOG_INFO, "%s failed\n", tmp);
-            snprintf(tmp, sizeof(tmp), "ldconfig -i -n %s/lib/i386-linux-gnu", sniper);
+            snprintf(tmp, sizeof(tmp), "%s -i -n %s/lib/i386-linux-gnu", ldcmd, sniper);
             if(system(tmp)<0) printf_log(LOG_INFO, "%s failed\n", tmp);
-            snprintf(tmp, sizeof(tmp), "ldconfig -i -n %s/lib", sniper);
+            snprintf(tmp, sizeof(tmp), "%s -i -n %s/lib", ldcmd, sniper);
+            if(system(tmp)<0) printf_log(LOG_INFO, "%s failed\n", tmp);
+            snprintf(tmp, sizeof(tmp), "%s -i -n %s/lib64", ldcmd, sniper);
             if(system(tmp)<0) printf_log(LOG_INFO, "%s failed\n", tmp);
             // setup LD_LIBRARY_PATH
             const char* ld = getenv("LD_LIBRARY_PATH");
-            snprintf(tmp, sizeof(tmp), "%s/lib/x86_64-linux-gnu:%s/lib/i386-linux-gnu:%s/lib:%s", sniper, sniper, sniper, ld?ld:"");
+            snprintf(tmp, sizeof(tmp), "%s/lib/x86_64-linux-gnu:%s/lib/i386-linux-gnu:%s/lib:%s/lib64:%s", sniper, sniper, sniper, sniper, ld?ld:"");
             setenv("LD_LIBRARY_PATH", tmp, 1);
             printf_log(LOG_DEBUG, "setenv(%s, %s, 1)\n", "LD_LIBRARY_PATH", tmp);
         }
@@ -148,7 +160,9 @@ void pressure_vessel(int argc, const char** argv, int nextarg, const char* prog)
 //setenv("BOX86_LOG", "1", 1);
 //setenv("BOX64_LOG", "1", 1);
 //setenv("BOX86_SHOWSEGV", "1", 1);
+//setenv("BOX64_DLSYM_ERROR", "1", 1);
 //setenv("BOX64_SHOWSEGV", "1", 1);
+//setenv("BOX64_SHOWBT", "1", 1);
 //setenv("BOX64_DYNAREC_LOG", "1", 1);
 
     printf_log(LOG_DEBUG, "Run %s %s and wait\n", x86?"i386":(x64?"x86_64":""), argv[nextarg]);

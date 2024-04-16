@@ -457,7 +457,7 @@ EXPORT void my_SSL_set_psk_client_callback(x64emu_t* emu, void* ctx, void* cb)
 EXPORT void my_SSL_set_psk_server_callback(x64emu_t* emu, void* ctx, void* cb)
 {
     (void)emu;
-    my->SSL_set_psk_server_callback(ctx, find_client_cb_Fct(cb));
+    my->SSL_set_psk_server_callback(ctx, find_server_cb_Fct(cb));
 }
 
 EXPORT void my_SSL_set_psk_use_session_callback(x64emu_t* emu, void* ctx, void* cb)
@@ -514,11 +514,6 @@ EXPORT void my_SSL_CTX_set_alpn_select_cb(x64emu_t* emu, void* ctx, void* f ,voi
     my->SSL_CTX_set_alpn_select_cb(ctx, find_alpn_select_Fct(f), arg);
 }
 
-#define CUSTOM_INIT \
-    getMy(lib);     \
-    setNeededLibs(lib, 2, "libcrypto.so.1.1", "libpthread.so.0");
-
-#define CUSTOM_FINI \
-    freeMy();
+#define NEEDED_LIBS "libcrypto.so.1.1", "libpthread.so.0"
 
 #include "wrappedlib_init.h"

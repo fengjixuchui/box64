@@ -566,7 +566,7 @@ static int get_sdl_priv(x64emu_t* emu, const char *sym_str, void **w, void **f)
 
 int EXPORT my2_SDL_DYNAPI_entry(x64emu_t* emu, uint32_t version, uintptr_t *table, uint32_t tablesize)
 {
-    int i = 0;
+    uint32_t i = 0;
     uintptr_t tab[tablesize];
     int r = my->SDL_DYNAPI_entry(version, tab, tablesize);
     (void)r;
@@ -820,17 +820,17 @@ EXPORT void my2_SDL_GetJoystickGUIDInfo(SDL_JoystickGUID guid, uint16_t *vend, u
     }
 }
 
+#undef HAS_MY
+
+#define ALTMY my2_
+
 #define CUSTOM_INIT \
     box64->sdl2lib = lib;                   \
     getMy(lib);                             \
     box64->sdl2allocrw = my->SDL_AllocRW;   \
-    box64->sdl2freerw  = my->SDL_FreeRW;    \
-    SETALT(my2_);                           \
-    setNeededLibs(lib, 4,                   \
-        "libdl.so.2",                       \
-        "libm.so.6",                        \
-        "librt.so.1",                       \
-        "libpthread.so.0");
+    box64->sdl2freerw  = my->SDL_FreeRW;
+
+#define NEEDED_LIBS "libdl.so.2", "libm.so.6", "librt.so.1", "libpthread.so.0"
 
 #define CUSTOM_FINI \
     my->SDL_Quit();                                             \
@@ -840,6 +840,5 @@ EXPORT void my2_SDL_GetJoystickGUIDInfo(SDL_JoystickGUID guid, uint16_t *vend, u
     my_context->sdl2lib = NULL;                                 \
     my_context->sdl2allocrw = NULL;                             \
     my_context->sdl2freerw = NULL;
-
 
 #include "wrappedlib_init.h"

@@ -27,6 +27,7 @@ typedef struct kh_mapsymbols_s kh_mapsymbols_t;
 typedef struct library_s library_t;
 typedef struct linkmap_s linkmap_t;
 typedef struct kh_threadstack_s kh_threadstack_t;
+typedef struct rbtree rbtree;
 typedef struct atfork_fnc_s {
     uintptr_t prepare;
     uintptr_t parent;
@@ -57,6 +58,7 @@ void free_tlsdatasize(void* p);
 typedef struct needed_libs_s {
     int         cap;
     int         size;
+    int         init_size;
     char**      names;
     library_t** libs;
     int         nb_done;
@@ -67,6 +69,7 @@ needed_libs_t* new_neededlib(int n);
 needed_libs_t* copy_neededlib(needed_libs_t* needed);
 void add1_neededlib(needed_libs_t* needed);
 void add1lib_neededlib(needed_libs_t* needed, library_t* lib, const char* name);
+void add1libref_neededlib(needed_libs_t* needed, library_t* lib);
 
 typedef struct base_segment_s {
     uintptr_t       base;
@@ -97,6 +100,9 @@ typedef struct box64context_s {
     int                 envc;
     char**              envv;
 
+    int                 orig_argc;
+    char**              orig_argv;
+
     char*               fullpath;
     char*               box64path;      // path of current box64 executable
     char*               box86path;      // path of box86 executable (if present)
@@ -120,6 +126,7 @@ typedef struct box64context_s {
     lib_t               *local_maplib;  // libs and symbols openned has local (only collection of libs, no symbols)
     dic_t               *versym;        // dictionnary of versioned symbols
     kh_mapsymbols_t     *globdata;      // GLOBAL_DAT relocation for COPY mapping in main elf
+    kh_mapsymbols_t     *uniques;       // symbols with STB_GNU_UNIQUE bindings
 
     kh_threadstack_t    *stacksizes;    // stack sizes attributes for thread (temporary)
     bridge_t            *system;        // other bridges
@@ -154,6 +161,7 @@ typedef struct box64context_s {
     pthread_mutex_t     mutex_bridge;
     #endif
     uintptr_t           max_db_size;    // the biggest (in x86_64 instructions bytes) built dynablock
+    rbtree*             db_sizes;
     int                 trace_dynarec;
     pthread_mutex_t     mutex_lock;     // this is for the Test interpreter
     #ifdef __riscv

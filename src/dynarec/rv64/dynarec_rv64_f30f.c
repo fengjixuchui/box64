@@ -89,12 +89,27 @@ uintptr_t dynarec64_F30F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
 
             // GX->ud[1] = GX->ud[0] = EX->ud[0];
             // GX->ud[3] = GX->ud[2] = EX->ud[2];
-            LD(x3, wback, fixedaddress + 0);
-            SD(x3, gback, gdoffset + 0);
-            SD(x3, gback, gdoffset + 4);
-            LD(x3, wback, fixedaddress + 8);
-            SD(x3, gback, gdoffset + 8);
-            SD(x3, gback, gdoffset + 12);
+            LW(x3, wback, fixedaddress + 0);
+            SW(x3, gback, gdoffset + 0);
+            SW(x3, gback, gdoffset + 4);
+            LW(x3, wback, fixedaddress + 8);
+            SW(x3, gback, gdoffset + 8);
+            SW(x3, gback, gdoffset + 12);
+            break;
+        case 0x16:
+            INST_NAME("MOVSHDUP Gx, Ex");
+            nextop = F8;
+            GETGX();
+            GETEX(x2, 0);
+
+            // GX->ud[1] = GX->ud[0] = EX->ud[1];
+            // GX->ud[3] = GX->ud[2] = EX->ud[3];
+            LW(x3, wback, fixedaddress + 4);
+            SW(x3, gback, gdoffset + 0);
+            SW(x3, gback, gdoffset + 4);
+            LW(x3, wback, fixedaddress + 12);
+            SW(x3, gback, gdoffset + 8);
+            SW(x3, gback, gdoffset + 12);
             break;
         case 0x1E:
             INST_NAME("NOP / ENDBR32 / ENDBR64");
@@ -167,6 +182,17 @@ uintptr_t dynarec64_F30F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             GETEXSS(v0, 0);
             GETGXSS_empty(v1);
             FSQRTS(v1, v0);
+            break;
+        case 0x52:
+            INST_NAME("RSQRTSS Gx, Ex");
+            nextop = F8;
+            GETEXSS(v0, 0);
+            GETGXSS_empty(v1);
+            q0 = fpu_get_scratch(dyn);
+            LUI(x3, 0x3F800); // 1.0f
+            FMVWX(q0, x3);
+            FSQRTS(v1, v0);
+            FDIVS(v1, q0, v1);
             break;
         case 0x53:
             INST_NAME("RCPSS Gx, Ex");
@@ -382,18 +408,7 @@ uintptr_t dynarec64_F30F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             MOV32w(gd, rex.w ? 64 : 32);
             B_NEXT_nocond;
             MARK;
-            if (rv64_zbb) {
-                CTZxw(gd, ed);
-            } else {
-                NEG(x2, ed);
-                AND(x2, x2, ed);
-                TABLE64(x3, 0x03f79d71b4ca8b09ULL);
-                MUL(x2, x2, x3);
-                SRLI(x2, x2, 64 - 6);
-                TABLE64(x1, (uintptr_t)&deBruijn64tab);
-                ADD(x1, x1, x2);
-                LBU(gd, x1, 0);
-            }
+            CTZxw(gd, ed, rex.w, x1, x2);
             BNE(gd, xZR, 4 + 4);
             ORI(xFlags, xFlags, 1 << F_ZF);
             break;
@@ -414,42 +429,7 @@ uintptr_t dynarec64_F30F(dynarec_rv64_t* dyn, uintptr_t addr, uintptr_t ip, int 
             ORI(xFlags, xFlags, 1 << F_CF);
             B_NEXT_nocond;
             MARK;
-            if (rv64_zbb) {
-                CLZxw(gd, ed);
-            } else {
-                if (ed != gd)
-                    u8 = gd;
-                else
-                    u8 = x1;
-                ADDI(u8, xZR, rex.w ? 63 : 31);
-                if (rex.w) {
-                    MV(x2, ed);
-                    SRLI(x3, x2, 32);
-                    BEQZ(x3, 4 + 2 * 4);
-                    SUBI(u8, u8, 32);
-                    MV(x2, x3);
-                } else {
-                    AND(x2, ed, xMASK);
-                }
-                SRLI(x3, x2, 16);
-                BEQZ(x3, 4 + 2 * 4);
-                SUBI(u8, u8, 16);
-                MV(x2, x3);
-                SRLI(x3, x2, 8);
-                BEQZ(x3, 4 + 2 * 4);
-                SUBI(u8, u8, 8);
-                MV(x2, x3);
-                SRLI(x3, x2, 4);
-                BEQZ(x3, 4 + 2 * 4);
-                SUBI(u8, u8, 4);
-                MV(x2, x3);
-                ANDI(x2, x2, 0b1111);
-                TABLE64(x3, (uintptr_t)&lead0tab);
-                ADD(x3, x3, x2);
-                LBU(x2, x3, 0);
-                SUB(gd, u8, x2);
-                MARK2;
-            }
+            CLZxw(gd, ed, rex.w, x1, x2, x3);
             ANDI(xFlags, xFlags, ~((1 << F_ZF) | (1 << F_CF)));
             BNE(gd, xZR, 4 + 4);
             ORI(xFlags, xFlags, 1 << F_ZF);

@@ -7,6 +7,7 @@
 #include <fts.h>
 #include <sys/stat.h>
 #include <sys/sem.h>
+#include <pthread.h>
 
 #include "x64emu.h"
 #include "emu/x64emu_private.h"
@@ -1131,3 +1132,229 @@ void myStackAlignScanfWValist(x64emu_t* emu, const char* fmt, uint64_t* mystack,
 }
 
 #endif
+
+#define MUTEX_SIZE_X64 40
+typedef struct my_xcb_ext_s {
+    pthread_mutex_t lock;
+    struct lazyreply *extensions;
+    int extensions_size;
+} my_xcb_ext_t;
+  
+typedef struct x64_xcb_ext_s {
+    uint8_t lock[MUTEX_SIZE_X64];
+    struct lazyreply *extensions;
+    int extensions_size;
+} x64_xcb_ext_t;
+
+typedef struct my_xcb_xid_s {
+    pthread_mutex_t lock;
+    uint32_t last;
+    uint32_t base;
+    uint32_t max;
+    uint32_t inc;
+} my_xcb_xid_t;
+
+typedef struct x64_xcb_xid_s {
+    uint8_t lock[MUTEX_SIZE_X64];
+    uint32_t last;
+    uint32_t base;
+    uint32_t max;
+    uint32_t inc;
+} x64_xcb_xid_t;
+
+typedef struct my_xcb_fd_s {
+    int fd[16];
+    int nfd;
+    int ifd;
+} my_xcb_fd_t;
+
+typedef struct my_xcb_in_s {
+    pthread_cond_t event_cond;
+    int reading;
+    char queue[4096];
+    int queue_len;
+    uint64_t request_expected;
+    uint64_t request_read;
+    uint64_t request_completed;
+    struct reply_list *current_reply;
+    struct reply_list **current_reply_tail;
+    void*  replies;
+    struct event_list *events;
+    struct event_list **events_tail;
+    struct reader_list *readers;
+    struct special_list *special_waiters;
+    struct pending_reply *pending_replies;
+    struct pending_reply **pending_replies_tail;
+    my_xcb_fd_t in_fd;
+    struct xcb_special_event *special_events;
+} my_xcb_in_t;
+
+typedef struct x64_xcb_out_s {
+    pthread_cond_t cond;
+    int writing;
+    pthread_cond_t socket_cond;
+    void (*return_socket)(void *closure);
+    void *socket_closure;
+    int socket_moving;
+    char queue[16384];
+    int queue_len;
+    uint64_t request;
+    uint64_t request_written;
+    uint8_t reqlenlock[40];
+    int maximum_request_length_tag;
+    uint32_t maximum_request_length;
+    my_xcb_fd_t out_fd;
+} x64_xcb_out_t;
+
+typedef struct my_xcb_out_s {
+    pthread_cond_t cond;
+    int writing;
+    pthread_cond_t socket_cond;
+    void (*return_socket)(void *closure);
+    void *socket_closure;
+    int socket_moving;
+    char queue[16384];
+    int queue_len;
+    uint64_t request;
+    uint64_t request_written;
+    pthread_mutex_t reqlenlock;
+    int maximum_request_length_tag;
+    uint32_t maximum_request_length;
+    my_xcb_fd_t out_fd;
+} my_xcb_out_t;
+
+typedef struct my_xcb_connection_s {
+    int has_error;
+    void *setup;
+    int fd;
+    pthread_mutex_t iolock;
+    my_xcb_in_t in;
+    my_xcb_out_t out;
+    my_xcb_ext_t ext;
+    my_xcb_xid_t xid;
+} my_xcb_connection_t;
+
+typedef struct x64_xcb_connection_s {
+    int has_error;
+    void *setup;
+    int fd;
+    uint8_t iolock[MUTEX_SIZE_X64];
+    my_xcb_in_t in;
+    x64_xcb_out_t out;
+    x64_xcb_ext_t ext;
+    x64_xcb_xid_t xid;
+} x64_xcb_connection_t;
+
+#define NXCB 8
+my_xcb_connection_t* my_xcb_connects[NXCB] = {0};
+x64_xcb_connection_t x64_xcb_connects[NXCB] = {0};
+
+void* align_xcb_connection(void* src)
+{
+    if(!src)
+        return src;
+    // find it
+    my_xcb_connection_t * dest = NULL;
+    for(int i=0; i<NXCB && !dest; ++i)
+        if(src==&x64_xcb_connects[i])
+            dest = my_xcb_connects[i];
+    #if 1
+    if(!dest)
+        dest = add_xcb_connection(src);
+    #else
+    if(!dest) {
+        printf_log(LOG_NONE, "BOX64: Error, xcb_connect %p not found\n", src);
+        abort();
+    }
+    #endif
+    #if 1
+    // do not update most values
+    x64_xcb_connection_t* source = src;
+    dest->has_error = source->has_error;
+    dest->setup = source->setup;
+    dest->fd = source->fd;
+    //memcpy(&dest->iolock, source->iolock, MUTEX_SIZE_X64);
+    //dest->in = source->in;
+    //dest->out = source->out;
+    //memcpy(&dest->ext.lock, source->ext.lock, MUTEX_SIZE_X64);
+    dest->ext.extensions = source->ext.extensions;
+    dest->ext.extensions_size = source->ext.extensions_size;
+    //memcpy(&dest->xid.lock, source->xid.lock, MUTEX_SIZE_X64);
+    dest->xid.base = source->xid.base;
+    dest->xid.inc = source->xid.inc;
+    dest->xid.last = source->xid.last;
+    dest->xid.max = source->xid.last;
+    #endif
+    return dest;
+}
+
+void unalign_xcb_connection(void* src, void* dst)
+{
+    if(!src || !dst || src==dst)
+        return;
+    // update values
+    my_xcb_connection_t* source = src;
+    x64_xcb_connection_t* dest = dst;
+    dest->has_error = source->has_error;
+    dest->setup = source->setup;
+    dest->fd = source->fd;
+    memcpy(dest->iolock, &source->iolock, MUTEX_SIZE_X64);
+    dest->in = source->in;
+    memcpy(dest->out.reqlenlock, &source->out.reqlenlock, MUTEX_SIZE_X64);
+    dest->out.cond = source->out.cond;
+    dest->out.maximum_request_length = source->out.maximum_request_length;
+    dest->out.maximum_request_length_tag = source->out.maximum_request_length_tag;
+    dest->out.out_fd = source->out.out_fd;
+    memcpy(dest->out.queue, source->out.queue, sizeof(dest->out.queue));
+    dest->out.queue_len = source->out.queue_len;
+    dest->out.request = source->out.request;
+    dest->out.request_written = source->out.request_written;
+    dest->out.return_socket = source->out.return_socket;
+    dest->out.socket_closure = source->out.socket_closure;
+    dest->out.socket_cond = source->out.socket_cond;
+    dest->out.socket_moving = source->out.socket_moving;
+    dest->out.writing = source->out.writing;
+    memcpy(dest->ext.lock, &source->ext.lock, MUTEX_SIZE_X64);
+    dest->ext.extensions = source->ext.extensions;
+    dest->ext.extensions_size = source->ext.extensions_size;
+    memcpy(dest->xid.lock, &source->xid.lock, MUTEX_SIZE_X64);
+    dest->xid.base = source->xid.base;
+    dest->xid.inc = source->xid.inc;
+    dest->xid.last = source->xid.last;
+    dest->xid.max = source->xid.last;
+}
+
+void* add_xcb_connection(void* src)
+{
+    if(!src)
+        return src;
+    // check if already exist
+    for(int i=0; i<NXCB; ++i)
+        if(my_xcb_connects[i] == src) {
+            unalign_xcb_connection(src, &x64_xcb_connects[i]);
+            return &x64_xcb_connects[i];
+        }
+    // find a free slot
+    for(int i=0; i<NXCB; ++i)
+        if(!my_xcb_connects[i]) {
+            my_xcb_connects[i] = src;
+            unalign_xcb_connection(src, &x64_xcb_connects[i]);
+            return &x64_xcb_connects[i];
+        }
+    printf_log(LOG_NONE, "BOX64: Error, no more free xcb_connect slot for %p\n", src);
+    return src;
+}
+
+void del_xcb_connection(void* src)
+{
+    if(!src)
+        return;
+    // find it
+    for(int i=0; i<NXCB; ++i)
+        if(src==&x64_xcb_connects[i]) {
+            my_xcb_connects[i] = NULL;
+            memset(&x64_xcb_connects[i], 0, sizeof(x64_xcb_connection_t));
+            return;
+        }
+    printf_log(LOG_NONE, "BOX64: Error, xcb_connect %p not found for deletion\n", src);
+}

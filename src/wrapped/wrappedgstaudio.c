@@ -32,6 +32,7 @@ typedef size_t  (*LFv_t)();
 
 #define ADDED_FUNCTIONS()                   \
     GO(gst_audio_decoder_get_type, LFv_t)   \
+    GO(gst_audio_filter_get_type, LFv_t)    \
 
 #include "generated/wrappedgstaudiotypes.h"
 
@@ -41,19 +42,14 @@ typedef size_t  (*LFv_t)();
     if(box64_nogtk) \
         return -1;
 
-#ifdef ANDROID
-    #define CUSTOM_INIT \
-        getMy(lib);     \
-        SetGstAudioDecoderID(my->gst_audio_decoder_get_type());\
-        setNeededLibs(lib, 1, "libgstreamer-1.0.so");
-#else
-    #define CUSTOM_INIT \
-        getMy(lib);     \
-        SetGstAudioDecoderID(my->gst_audio_decoder_get_type());\
-        setNeededLibs(lib, 1, "libgstreamer-1.0.so.0");
-#endif
+#define CUSTOM_INIT \
+    SetGstAudioDecoderID(my->gst_audio_decoder_get_type()); \
+    SetGstAudioFilterID(my->gst_audio_filter_get_type());
 
-#define CUSTOM_FINI \
-    freeMy();
+#ifdef ANDROID
+#define NEEDED_LIBS "libgstreamer-1.0.so"
+#else
+#define NEEDED_LIBS "libgstreamer-1.0.so.0"
+#endif
 
 #include "wrappedlib_init.h"
